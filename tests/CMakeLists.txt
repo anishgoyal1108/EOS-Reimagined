@@ -11,6 +11,10 @@ add_executable(unit_tests
     unit/test_wire.cpp
     unit/test_socket.cpp
     unit/test_message_router.cpp
+    unit/test_log.cpp
+    unit/test_settings.cpp
+    unit/test_client.cpp
+    unit/test_platform.cpp
 )
 target_link_libraries(unit_tests PRIVATE eosr_core doctest)
 

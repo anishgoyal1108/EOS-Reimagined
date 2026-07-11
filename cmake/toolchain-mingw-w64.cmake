@@ -14,9 +14,11 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 
-# The shipped DLL must not depend on the MinGW runtime; test executables link fully static
-# so they run under Wine with no extra DLLs alongside them.
-set(CMAKE_SHARED_LINKER_FLAGS_INIT "-static-libgcc -static-libstdc++")
+# The shipped DLL must not depend on the MinGW runtime: it drops in next to a game with no
+# extra DLLs alongside it. Linking fully static bundles libgcc, libstdc++, and libwinpthread
+# (pulled in by std::thread/std::mutex) into the DLL. Only the C ABI crosses the boundary, so
+# a self-contained runtime is safe. Test executables link static for the same reason.
+set(CMAKE_SHARED_LINKER_FLAGS_INIT "-static")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-static")
 
 # Let ctest run the cross-built test binaries by launching them through Wine.
