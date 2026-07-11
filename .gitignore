@@ -27,3 +27,7 @@ Thumbs.db
 # Local RE scratch (not for distribution)
 *.gpr
 *.rep
+
+# Local tooling (not for distribution)
+CLAUDE.md
+.claude/
