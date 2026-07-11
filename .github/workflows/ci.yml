@@ -1,0 +1,68 @@
+name: CI
+
+# Manual only: this project builds a drop-in library, and we run the matrix on demand rather
+# than on every push.
+on:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux (native)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Upload libEOSSDK-Linux-Shipping.so
+        uses: actions/upload-artifact@v4
+        with:
+          name: libEOSSDK-Linux-Shipping
+          path: build/libEOSSDK-Linux-Shipping.so
+          if-no-files-found: error
+
+  windows-cross:
+    name: Windows (MinGW-w64 cross + Wine)
+    runs-on: ubuntu-latest
+    env:
+      WINEDEBUG: -all
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MinGW-w64 and Wine
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 wine wine64
+      - name: Configure
+        run: cmake -S . -B build-win -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build-win --parallel
+      - name: Test (under Wine)
+        run: ctest --test-dir build-win --output-on-failure
+      - name: Upload EOSSDK-Win64-Shipping.dll
+        uses: actions/upload-artifact@v4
+        with:
+          name: EOSSDK-Win64-Shipping
+          path: build-win/EOSSDK-Win64-Shipping.dll
+          if-no-files-found: error
+
+  windows-msvc:
+    name: Windows (native MSVC)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Upload EOSSDK-Win64-Shipping.dll (MSVC)
+        uses: actions/upload-artifact@v4
+        with:
+          name: EOSSDK-Win64-Shipping-msvc
+          path: build/**/EOSSDK-Win64-Shipping.dll
+          if-no-files-found: error
