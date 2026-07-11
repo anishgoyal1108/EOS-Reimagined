@@ -1,0 +1,57 @@
+# Module: `EOSSDK_Auth` (Epic Account authentication)
+
+Tier A (2020 source `eossdk_auth.*`), but **substantially extended** in the newer build. Manages the `EOS_EpicAccountId` login. 28 methods.
+
+## 1. Identity & handle
+- `EOS_HAuth`, acquired via `EOS_Platform_GetAuthInterface`. Impl class `EOSSDK_Auth`.
+- Flat exports map 1:1 to methods; two carry the ABI-compat duplicates (`CopyUserAuthTokenOld` @`0x18007e560`, `AddNotifyLoginStatusChangedOld` @`0x18007eb90`) that `set_eos_compat` swaps in for `ApiVersion==1` (see `client.md`).
+
+## 2. Class shape & base mixins
+`IRunCallback` + `IRunNetwork` (has `OnNetworkMessage` @`0x180087f30`). Holds the local logged-in Epic account(s) in a map (single-user in practice — see below).
+
+## 3. Member state
+- Local-user store: a `std::map`-like structure of logged-in accounts (walked under an SRW lock in the login backends). **Single active user**: backends log *"Multiple login not implemented yet"* and refuse a second.
+- `EmuInit` (@`0x18007c330`) / `EmuDeinit` (@`0x180080630`): emu-specific setup/teardown (NEW; replaces the 2020 ctor/dtor registration duties for the newer per-module lifecycle).
+
+## 4. Lifecycle
+`EmuInit`/`EmuDeinit` register/unregister with Callback_Manager + Network (listener for the auth `oneof` case). Details TODO from decompilation.
+
+## 5. Synchronous accessors
+- `GetLoggedInAccountsCount` (@`0x18007e070`, returns the local count), `GetLoggedInAccountByIndex` (@`0x18007e1c0`), `GetSelectedAccountId` (@`0x18007fb80`).
+- `GetMergedAccountsCount`/`GetMergedAccountByIndex` (@`0x18007fd80`/`0x18007fe90`) — tiny stubs (166 bytes; merged-account feature likely returns 0/empty).
+- `CopyUserAuthToken`/`CopyIdToken` — produce token structs (JWT-ish); `CopyIdToken` also on Connect.
+
+## 6. Async operations
+- **`Login`** (@`0x18007c5e0`, the core, 3.8 KB) — see the credential dispatch below. `k_iCallback = EOS_Auth_LoginCallbackInfo`.
+- `Logout` (@`0x18007d850`), `LinkAccount` (@`0x18007db30`), `DeletePersistentAuth` (@`0x18007dd00`), `VerifyUserAuth` (@`0x18007deb0`), `QueryIdToken` (@`0x18007f1c0`), `VerifyIdToken` (@`0x18007f430`, 1.6 KB — real JWT verification).
+
+### Login credential dispatch (KEY, newer-build capability)
+`Login` switches on `Options->Credentials.Type` (`EOS_EExternalCredentialType`) and calls a real backend that **parses the actual external-platform ticket** to derive identity:
+
+| Type | Meaning | Backend | Validation |
+|---|---|---|---|
+| 0 | Epic external auth | `_EpicLogin` (@`0x180080a80`) | — |
+| 1 | `STEAM_APP_TICKET` | `_SteamLogin` (@`0x180081020`) | parse+validate Steam app ticket; continues even if invalid (warns) |
+| 5 | `GOG_SESSION_TICKET` | `_GoGLogin` (@`0x180081790`) | validate GoG ticket, require user type == 2 |
+| 0x12 | `STEAM_SESSION_TICKET` | `_SteamLogin` | parse+validate Steam session ticket |
+
+This is a major delta from 2020, which faked login unconditionally. The backends extract a stable account id from the ticket, register the local user, then complete the FrameResult with `EOS_Auth_LoginCallbackInfo` (deferred ≥ tick, like all async ops).
+
+## 7. Notifications
+`AddNotifyLoginStatusChanged` (@`0x18007ec40`) / `RemoveNotifyLoginStatusChanged` (@`0x18007eea0`), plus the `*Old` ABI variant. Callback-info `EOS_Auth_LoginStatusChangedCallbackInfo`; fired at login/logout.
+
+## 8. Network protocol — RESOLVED (new `EpicAuth_pb`)
+Handlers: `_OnAuthRequest` (@`0x180088130`), `_OnAuthResponse` (@`0x180088450`), `_SendAuthResponse` (@`0x180088950`), `_SendAuthResponseToAll` (@`0x180081fd0`); dispatched from `OnNetworkMessage`. Wire: **`EpicAuth_pb{ AuthRequest_pb | AuthResponse_pb | AuthInfos_pb{id, name} }`** — a peer Epic-account advertisement (`id` = EpicAccountId, `name` = display name). This is **new in this build** (the 2020 proto had no Auth message; identity was Connect-only). It lets peers learn each other's Epic account identity (distinct from Connect's ProductUserId). See `protocol.md`.
+
+## 9. Frame/tick
+`CBRunFrame` handles login timeouts/expiration; `RunCallbacks`/`FreeCallback` per the standard pattern.
+
+## 10. RE cross-reference & reimplementation notes
+- **Reimpl:** support Epic (no ticket), Steam (app+session ticket), and GoG (session ticket) login by parsing those platforms' ticket formats to derive a stable Epic account id; single active user is acceptable for parity. Expose both `CopyUserAuthToken` ABIs directly (skip mini_detour).
+- **JWT:** `VerifyIdToken`/`CopyIdToken` do real token work — reimpl needs a JWT sign/verify (the crypto backing is mbedtls, already present in the binary).
+- **Deltas vs 2020:** real external-ticket login backends; `EmuInit/EmuDeinit` lifecycle; auth network handshake; merged-accounts stubs; `*Old` ABI dupes.
+
+### Follow-ups (open)
+- Decompile `_OnAuthResponse`/`_OnAuthRequest` → protocol.md auth message schema.
+- Confirm Steam/GoG ticket parsing detail (which fields → account id) in the backends.
+- `VerifyIdToken` algorithm (issuer, signing key source).
