@@ -10,9 +10,9 @@ namespace eosr {
 namespace platform {
 
 // Holds an OS socket handle without dragging OS headers into this file: a POSIX fd or a
-// Windows SOCKET both fit, and both map their invalid value to -1 here.
-using native_socket = std::intptr_t;
-const native_socket invalid_socket = -1;
+// Windows SOCKET and a POSIX fd both fit. The invalid value is represented as all bits set.
+using native_socket = std::uintptr_t;
+constexpr native_socket invalid_socket = static_cast<native_socket>(-1);
 
 // An IPv4 endpoint in host byte order.
 struct endpoint {
@@ -23,8 +23,8 @@ struct endpoint {
     endpoint(u32 ip_value, u16 port_value) : ip(ip_value), port(port_value) {}
 };
 
-const u32 ip_any = 0x00000000u;
-const u32 ip_loopback = 0x7f000001u; // 127.0.0.1
+constexpr u32 ip_any = 0x00000000u;
+constexpr u32 ip_loopback = 0x7f000001u; // 127.0.0.1
 
 // The states a non-blocking operation can leave behind, unified across Winsock and POSIX.
 enum class sock_error {
@@ -43,9 +43,9 @@ void net_shutdown();
 class socket {
 public:
     socket();
-    ~socket();
-    socket(socket&& other);
-    socket& operator=(socket&& other);
+    ~socket() noexcept;
+    socket(socket&& other) noexcept;
+    socket& operator=(socket&& other) noexcept;
     socket(const socket&) = delete;
     socket& operator=(const socket&) = delete;
 

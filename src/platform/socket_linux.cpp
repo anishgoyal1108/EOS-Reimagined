@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include <fcntl.h>
@@ -16,6 +17,11 @@ namespace platform {
 
 static int fd_of(native_socket handle) {
     return static_cast<int>(handle);
+}
+
+static bool set_close_on_exec(int fd) {
+    const int flags = fcntl(fd, F_GETFD, 0);
+    return flags >= 0 && fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
 }
 
 static sock_error map_errno(int code) {
@@ -52,15 +58,15 @@ void net_shutdown() {
 socket::socket() : handle_(invalid_socket), last_error_(sock_error::none) {
 }
 
-socket::~socket() {
+socket::~socket() noexcept {
     close();
 }
 
-socket::socket(socket&& other) : handle_(other.handle_), last_error_(other.last_error_) {
+socket::socket(socket&& other) noexcept : handle_(other.handle_), last_error_(other.last_error_) {
     other.handle_ = invalid_socket;
 }
 
-socket& socket::operator=(socket&& other) {
+socket& socket::operator=(socket&& other) noexcept {
     if (this != &other) {
         close();
         handle_ = other.handle_;
@@ -72,12 +78,32 @@ socket& socket::operator=(socket&& other) {
 
 bool socket::open_udp() {
     handle_ = ::socket(AF_INET, SOCK_DGRAM, 0);
-    return is_open();
+    if (!is_open()) {
+        last_error_ = map_errno(errno);
+        return false;
+    }
+    if (!set_close_on_exec(fd_of(handle_))) {
+        last_error_ = map_errno(errno);
+        close();
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 bool socket::open_tcp() {
     handle_ = ::socket(AF_INET, SOCK_STREAM, 0);
-    return is_open();
+    if (!is_open()) {
+        last_error_ = map_errno(errno);
+        return false;
+    }
+    if (!set_close_on_exec(fd_of(handle_))) {
+        last_error_ = map_errno(errno);
+        close();
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 void socket::close() {
@@ -94,11 +120,17 @@ bool socket::bind(const endpoint& addr) {
         last_error_ = map_errno(errno);
         return false;
     }
+    last_error_ = sock_error::none;
     return true;
 }
 
 bool socket::listen(int backlog) {
-    return ::listen(fd_of(handle_), backlog) == 0;
+    if (::listen(fd_of(handle_), backlog) != 0) {
+        last_error_ = map_errno(errno);
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 bool socket::accept(socket& out, endpoint& peer) {
@@ -109,9 +141,16 @@ bool socket::accept(socket& out, endpoint& peer) {
         last_error_ = map_errno(errno);
         return false;
     }
+    if (!set_close_on_exec(fd)) {
+        last_error_ = map_errno(errno);
+        ::close(fd);
+        return false;
+    }
     out.close();
     out.handle_ = fd;
+    out.last_error_ = sock_error::none;
     peer = endpoint_of(sa);
+    last_error_ = sock_error::none;
     return true;
 }
 
@@ -119,7 +158,7 @@ bool socket::connect(const endpoint& addr) {
     sockaddr_in sa;
     fill_sockaddr(sa, addr);
     if (::connect(fd_of(handle_), reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) == 0) {
-        last_error_ = sock_error::is_connected;
+        last_error_ = sock_error::none;
         return true;
     }
     last_error_ = map_errno(errno);
@@ -129,33 +168,56 @@ bool socket::connect(const endpoint& addr) {
 }
 
 int socket::send(const u8* data, std::size_t len) {
-    const ssize_t count = ::send(fd_of(handle_), data, len, 0);
+    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        last_error_ = sock_error::other;
+        return -1;
+    }
+    const ssize_t count = ::send(fd_of(handle_), data, len, MSG_NOSIGNAL);
     if (count < 0) {
         last_error_ = map_errno(errno);
+    } else {
+        last_error_ = sock_error::none;
     }
     return static_cast<int>(count);
 }
 
 int socket::recv(u8* data, std::size_t len) {
+    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        last_error_ = sock_error::other;
+        return -1;
+    }
     const ssize_t count = ::recv(fd_of(handle_), data, len, 0);
     if (count < 0) {
         last_error_ = map_errno(errno);
+    } else {
+        last_error_ = sock_error::none;
     }
     return static_cast<int>(count);
 }
 
 int socket::send_to(const u8* data, std::size_t len, const endpoint& to) {
+    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        last_error_ = sock_error::other;
+        return -1;
+    }
     sockaddr_in sa;
     fill_sockaddr(sa, to);
     const ssize_t count =
-        ::sendto(fd_of(handle_), data, len, 0, reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
+        ::sendto(fd_of(handle_), data, len, MSG_NOSIGNAL,
+                 reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
     if (count < 0) {
         last_error_ = map_errno(errno);
+    } else {
+        last_error_ = sock_error::none;
     }
     return static_cast<int>(count);
 }
 
 int socket::recv_from(u8* data, std::size_t len, endpoint& from) {
+    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        last_error_ = sock_error::other;
+        return -1;
+    }
     sockaddr_in sa;
     socklen_t slen = sizeof(sa);
     const ssize_t count =
@@ -165,12 +227,14 @@ int socket::recv_from(u8* data, std::size_t len, endpoint& from) {
         return static_cast<int>(count);
     }
     from = endpoint_of(sa);
+    last_error_ = sock_error::none;
     return static_cast<int>(count);
 }
 
 bool socket::set_nonblocking(bool enabled) {
     int flags = fcntl(fd_of(handle_), F_GETFL, 0);
     if (flags < 0) {
+        last_error_ = map_errno(errno);
         return false;
     }
     if (enabled) {
@@ -178,24 +242,41 @@ bool socket::set_nonblocking(bool enabled) {
     } else {
         flags &= ~O_NONBLOCK;
     }
-    return fcntl(fd_of(handle_), F_SETFL, flags) == 0;
+    if (fcntl(fd_of(handle_), F_SETFL, flags) != 0) {
+        last_error_ = map_errno(errno);
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 bool socket::set_broadcast(bool enabled) {
     const int value = enabled ? 1 : 0;
-    return setsockopt(fd_of(handle_), SOL_SOCKET, SO_BROADCAST, &value, sizeof(value)) == 0;
+    if (setsockopt(fd_of(handle_), SOL_SOCKET, SO_BROADCAST, &value, sizeof(value)) != 0) {
+        last_error_ = map_errno(errno);
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 bool socket::set_reuseaddr(bool enabled) {
     const int value = enabled ? 1 : 0;
-    return setsockopt(fd_of(handle_), SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value)) == 0;
+    if (setsockopt(fd_of(handle_), SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value)) != 0) {
+        last_error_ = map_errno(errno);
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 std::size_t socket::bytes_available() {
     int count = 0;
     if (ioctl(fd_of(handle_), FIONREAD, &count) != 0 || count < 0) {
+        last_error_ = map_errno(errno);
         return 0;
     }
+    last_error_ = sock_error::none;
     return static_cast<std::size_t>(count);
 }
 
@@ -203,9 +284,11 @@ bool socket::local_endpoint(endpoint& out) {
     sockaddr_in sa;
     socklen_t len = sizeof(sa);
     if (getsockname(fd_of(handle_), reinterpret_cast<sockaddr*>(&sa), &len) != 0) {
+        last_error_ = map_errno(errno);
         return false;
     }
     out = endpoint_of(sa);
+    last_error_ = sock_error::none;
     return true;
 }
 
