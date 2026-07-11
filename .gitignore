@@ -1,0 +1,29 @@
+# Build output
+/build/
+/out/
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.a
+*.lib
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# IDE / editor
+.vs/
+.vscode/
+.idea/
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local RE scratch (not for distribution)
+*.gpr
+*.rep
