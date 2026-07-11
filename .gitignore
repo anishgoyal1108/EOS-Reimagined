@@ -1,5 +1,7 @@
 # Build output
 /build/
+/build-linux/
+/build-win/
 /out/
 *.o
 *.obj
@@ -31,3 +33,4 @@ Thumbs.db
 # Local tooling (not for distribution)
 CLAUDE.md
 .claude/
+.clangd
