@@ -9,11 +9,11 @@
 namespace eosr {
 
 // Bumped when the envelope or message layout changes in an incompatible way.
-const u8 wire_protocol_version = 1;
+constexpr u8 wire_protocol_version = 1;
 
 // Largest message body we accept from a peer; a larger declared frame is treated as
 // malformed rather than buffered, so a peer cannot exhaust memory.
-const u32 max_message_size = 4u * 1024u * 1024u;
+constexpr u32 max_message_size = 4u * 1024u * 1024u;
 
 // The kind of message an envelope carries. Replaces the protobuf oneof discriminator.
 // More tags are added as their interfaces are implemented.
@@ -42,14 +42,12 @@ enum class message_type : u16 {
 // already-serialized sub-message; the router dispatches on `type_tag` and the interface
 // decodes the payload. `dest_id` empty means broadcast.
 struct net_envelope {
-    u16 type_tag;
+    u16 type_tag = 0;
     std::string source_id;
     std::string dest_id;
     std::string game_id;
-    i64 timestamp;
+    i64 timestamp = 0; // milliseconds since the Unix epoch
     std::vector<u8> payload;
-
-    net_envelope() : type_tag(0), timestamp(0) {}
 };
 
 // The emu-info handshake peers exchange on connect so each learns the other's app and name.
@@ -70,21 +68,17 @@ struct connect_infos {
 // A P2P data packet.
 struct p2p_data {
     std::string socket_name;
-    i32 channel;
+    i32 channel = 0;
     std::vector<u8> data;
-
-    p2p_data() : channel(0) {}
 };
 
 // An advertised session. `players` is a repeated field, which exercises the codec's lists.
 struct session_infos {
     std::string session_id;
     std::string bucket_id;
-    u32 max_players;
+    u32 max_players = 0;
     std::string host_address;
     std::vector<std::string> players;
-
-    session_infos() : max_players(0) {}
 };
 
 } // namespace eosr

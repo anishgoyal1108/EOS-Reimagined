@@ -31,8 +31,8 @@ bool deserialize(byte_reader& reader, session_infos& msg);
 std::vector<u8> frame_message(const std::vector<u8>& body);
 
 // Extract one framed message from the front of `data`. Returns true and fills `body` +
-// `consumed` when a whole frame is present; false when more bytes are still needed. Never
-// reads out of bounds.
+// `consumed` when a whole frame is present. Returns false with `consumed == 0` when more bytes
+// are needed or the declared body exceeds max_message_size. Never reads out of bounds.
 bool try_deframe(const u8* data, std::size_t len, std::vector<u8>& body, std::size_t& consumed);
 
 } // namespace eosr
