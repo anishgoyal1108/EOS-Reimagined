@@ -8,6 +8,9 @@ add_executable(unit_tests
     unit/test_frame_result.cpp
     unit/test_callback_manager.cpp
     unit/test_ids.cpp
+    unit/test_wire.cpp
+    unit/test_socket.cpp
+    unit/test_message_router.cpp
 )
 target_link_libraries(unit_tests PRIVATE eosr_core doctest)
 
