@@ -1,0 +1,120 @@
+#include "doctest.h"
+
+#include <chrono>
+#include <string>
+#include <thread>
+
+#include "common/byte_buffer.h"
+#include "core/i_run_network.h"
+#include "net/message_router.h"
+#include "net/messages.h"
+#include "net/wire.h"
+#include "platform/socket.h"
+
+using namespace eosr;
+
+namespace {
+
+// Records how many envelopes it received and the last decoded username.
+struct capture_listener : i_run_network {
+    int count;
+    std::string last_username;
+
+    capture_listener() : count(0) {}
+
+    bool on_network_message(const net_envelope& msg) {
+        count++;
+        byte_reader reader(msg.payload.data(), msg.payload.size());
+        emu_infos info;
+        if (deserialize(reader, info)) {
+            last_username = info.username;
+        }
+        return true;
+    }
+};
+
+net_envelope make_envelope(message_type type, const std::string& username) {
+    emu_infos info;
+    info.appid = "CrabTest";
+    info.username = username;
+    byte_writer payload;
+    serialize(payload, info);
+
+    net_envelope e;
+    e.type_tag = static_cast<u16>(type);
+    e.source_id = "0123456789abcdef0123456789abcdef";
+    e.game_id = "CrabTest";
+    e.payload = payload.data();
+    return e;
+}
+
+// Pump the router until the predicate holds or a bounded number of ticks elapse.
+template<class Predicate>
+void pump_until(message_router& router, Predicate done) {
+    for (int i = 0; i < 200 && !done(); i++) {
+        router.cb_run_frame();
+        if (!done()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+}
+
+} // namespace
+
+TEST_CASE("the router delivers a self-sent message to its registered listener") {
+    REQUIRE(platform::net_init());
+    message_router router;
+    REQUIRE(router.start(0));
+
+    capture_listener listener;
+    router.register_listener(message_type::emu_infos_response, &listener);
+
+    REQUIRE(router.send_to_self(make_envelope(message_type::emu_infos_response, "InfernusHawk")));
+    pump_until(router, [&]() { return listener.count == 1; });
+
+    REQUIRE(listener.count == 1);
+    CHECK(listener.last_username == "InfernusHawk");
+
+    router.stop();
+    platform::net_shutdown();
+}
+
+TEST_CASE("the router does not deliver a message of an unregistered type") {
+    REQUIRE(platform::net_init());
+    message_router router;
+    REQUIRE(router.start(0));
+
+    capture_listener listener;
+    router.register_listener(message_type::emu_infos_response, &listener);
+
+    // Send a different type than the one the listener registered for.
+    REQUIRE(router.send_to_self(make_envelope(message_type::emu_infos_request, "nobody")));
+    for (int i = 0; i < 30; i++) {
+        router.cb_run_frame();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(listener.count == 0);
+
+    router.stop();
+    platform::net_shutdown();
+}
+
+TEST_CASE("an unregistered listener stops receiving") {
+    REQUIRE(platform::net_init());
+    message_router router;
+    REQUIRE(router.start(0));
+
+    capture_listener listener;
+    router.register_listener(message_type::emu_infos_response, &listener);
+    router.unregister_listener(message_type::emu_infos_response, &listener);
+
+    REQUIRE(router.send_to_self(make_envelope(message_type::emu_infos_response, "gone")));
+    for (int i = 0; i < 30; i++) {
+        router.cb_run_frame();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(listener.count == 0);
+
+    router.stop();
+    platform::net_shutdown();
+}
