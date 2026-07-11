@@ -1,0 +1,43 @@
+# Module: `EOSSDK_Presence` (+ `EOSSDK_PresenceModification`)
+
+Tier A (2020 `eossdk_presence.*`). Rich-presence status broadcast over the TCP peer mesh. 18 methods + 6 on the modification sub-handle.
+
+## 1. Identity & handle
+- `EOS_HPresence` via `EOS_Platform_GetPresenceInterface`. Sub-handle `EOS_HPresenceModification` (heap `EOSSDK_PresenceModification*`).
+
+## 2. Class shape & base mixins
+`IRunCallback` + `IRunNetwork` (`OnNetworkMessage` @`0x180139eb0`). Partial refactor: retains 2020-style handler names (`on_presence_request` @`0x18013a560`, `on_presence_infos` @`0x18013a820`, `send_my_presence_info` @`0x18013b080`) alongside new `_SendPresenceInfoRequest` @`0x180134dd0`, `_SendMyPresenceInfoToAllPeers` @`0x180138540`.
+
+## 3. Member state
+- `_presences`: cache `EOS_EpicAccountId -> Presence_Info_pb` (self included, seeded by `setup_myself` at platform init).
+- `_presence_queries`: `EpicAccountId -> list<pFrameResult_t>` (pending `QueryPresence`).
+- Constant: query timeout ~1000 ms. `EmuInit` @`0x180131910` / `EmuDeinit` @`0x180134480`.
+
+## 4. Lifecycle
+`EmuInit` registers callbacks + frame + network listener (`kPresence`); `setup_myself()` seeds own presence. Own presence broadcast to authenticated peers.
+
+## 5. Synchronous accessors
+- `HasPresence` @`0x1801326e0` (cache probe), `CopyPresence` @`0x180132930` (alloc `EOS_Presence_Info`, `EOS_Presence_Info_Release` contract), `GetJoinInfo` @`0x180133cf0` (join-info string).
+
+## 6. Async operations
+- `QueryPresence` @`0x180132210` — `CreateCallback<EOS_Presence_QueryPresenceCallbackInfo>` (100 ms timeout), stash in `_presence_queries[target]`, send request; resolved by `on_presence_infos`. (Decompiles with the callback-info type symbolically — typing confirmed.)
+- `SetPresence` @`0x180133240` — applies a `PresenceModification`, updates own cache, broadcasts to all peers; `k_iCallback = EOS_Presence_SetPresenceCallbackInfo`.
+- `CreatePresenceModification` @`0x180132ef0` — makes the sub-handle.
+
+## 7. Notifications
+`AddNotifyOnPresenceChanged`/`Remove` (@`0x180133670`/`0x1801338d0`), `AddNotifyJoinGameAccepted`/`Remove` (@`0x1801339b0`/`0x180133c10`). Callback-infos `EOS_Presence_PresenceChangedCallbackInfo`, `EOS_Presence_JoinGameAcceptedCallbackInfo`. Fired at the event site (e.g. `on_presence_infos` change).
+
+## 8. Network protocol
+Envelope `oneof` `kPresence`; sub `Presence_Message_pb{ presence_info_request | presence_info(Presence_Info_pb{userid,status,productid,productversion,platform,richtext,map<string,string> records,productname}) }`.
+- `on_presence_request` @`0x18013a560` → reply `send_my_presence_info`.
+- `on_presence_infos` @`0x18013a820` → upsert `_presences[userid]`, resolve pending `QueryPresence`, fire `OnPresenceChanged`. Presence rides the TCP mesh (unicast to authenticated peers), not UDP broadcast.
+
+## 9. Frame/tick
+`CBRunFrame` times out stale `_presence_queries`. `RunCallbacks` → `res->done`.
+
+## 10. `EOSSDK_PresenceModification` sub-handle
+Setters that mutate a staged `Presence_Info_pb`: `SetStatus` @`0x180136270`, `SetRawRichText` @`0x180136350`, `SetData` @`0x180136530`, `DeleteData` @`0x180136a70`, `SetJoinInfo` @`0x180136c50`, `Release` @`0x180136f30`. Applied by `Presence::SetPresence`.
+
+## Reimpl notes / follow-ups
+- Reimpl: presence cache keyed by EpicAccountId; broadcast own status to authenticated peers on change; answer requests. Depends on Connect roster.
+- Follow-up: confirm `records`/`richtext` field handling; join-info format for `GetJoinInfo`/`SetJoinInfo` (used by JoinGameAccepted).
