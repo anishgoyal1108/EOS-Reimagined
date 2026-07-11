@@ -22,49 +22,73 @@ bool message_router::start(u16 discovery_port) {
     if (running_) {
         return true;
     }
+    // Recover cleanly if an earlier start attempt only initialized some sockets.
+    stop();
 
     // Discovery socket: broadcast-capable and shareable so several instances can co-exist.
     if (!udp_.open_udp()) {
         return false;
     }
-    udp_.set_reuseaddr(true);
-    udp_.set_broadcast(true);
-    if (!udp_.bind(endpoint(ip_any, discovery_port))) {
+    if (!udp_.set_reuseaddr(true) || !udp_.set_broadcast(true)) {
+        stop();
         return false;
     }
-    udp_.set_nonblocking(true);
+    if (!udp_.bind(endpoint(ip_any, discovery_port))) {
+        stop();
+        return false;
+    }
+    if (!udp_.set_nonblocking(true)) {
+        stop();
+        return false;
+    }
 
     // Self-pipe: a loopback TCP connection whose two ends we keep, so locally-originated
     // messages travel the same decode path as messages from peers.
     socket listener;
     if (!listener.open_tcp()) {
+        stop();
         return false;
     }
-    listener.set_reuseaddr(true);
+    if (!listener.set_reuseaddr(true)) {
+        stop();
+        return false;
+    }
     if (!listener.bind(endpoint(ip_loopback, 0))) {
+        stop();
         return false;
     }
     endpoint local;
     if (!listener.local_endpoint(local)) {
+        stop();
         return false;
     }
     if (!listener.listen(1)) {
+        stop();
         return false;
     }
     if (!self_send_.open_tcp()) {
+        stop();
         return false;
     }
     if (!self_send_.connect(endpoint(ip_loopback, local.port))) {
+        stop();
         return false;
     }
     bool ready = false;
     native_socket listener_handle = listener.native();
-    poll_readable(&listener_handle, 1, self_pipe_accept_timeout_ms, &ready);
-    endpoint peer;
-    if (!listener.accept(self_recv_, peer)) {
+    if (poll_readable(&listener_handle, 1, self_pipe_accept_timeout_ms, &ready) <= 0 || !ready) {
+        stop();
         return false;
     }
-    self_recv_.set_nonblocking(true);
+    endpoint peer;
+    if (!listener.accept(self_recv_, peer)) {
+        stop();
+        return false;
+    }
+    if (!self_recv_.set_nonblocking(true)) {
+        stop();
+        return false;
+    }
 
     running_ = true;
     return true;
@@ -79,14 +103,30 @@ void message_router::stop() {
 }
 
 void message_router::register_listener(message_type type, i_run_network* listener) {
-    listeners_[static_cast<u16>(type)].push_back(listener);
+    if (listener == 0) {
+        return;
+    }
+    std::vector<i_run_network*>& bucket = listeners_[type];
+    for (std::size_t i = 0; i < bucket.size(); i++) {
+        if (bucket[i] == listener) {
+            return;
+        }
+    }
+    bucket.push_back(listener);
 }
 
 void message_router::unregister_listener(message_type type, i_run_network* listener) {
-    std::vector<i_run_network*>& bucket = listeners_[static_cast<u16>(type)];
+    std::map<message_type, std::vector<i_run_network*>>::iterator found = listeners_.find(type);
+    if (found == listeners_.end()) {
+        return;
+    }
+    std::vector<i_run_network*>& bucket = found->second;
     for (std::size_t i = 0; i < bucket.size(); i++) {
         if (bucket[i] == listener) {
             bucket.erase(bucket.begin() + i);
+            if (bucket.empty()) {
+                listeners_.erase(found);
+            }
             return;
         }
     }
@@ -96,7 +136,15 @@ bool message_router::send_to_self(const net_envelope& msg) {
     byte_writer writer;
     serialize(writer, msg);
     const std::vector<u8> framed = frame_message(writer.data());
-    return self_send_.send(framed.data(), framed.size()) == static_cast<int>(framed.size());
+    std::size_t sent = 0;
+    while (sent < framed.size()) {
+        const int count = self_send_.send(framed.data() + sent, framed.size() - sent);
+        if (count <= 0) {
+            return false;
+        }
+        sent += static_cast<std::size_t>(count);
+    }
+    return true;
 }
 
 void message_router::cb_run_frame() {
@@ -162,12 +210,18 @@ void message_router::drain_datagrams(socket& sock) {
 }
 
 void message_router::dispatch(const net_envelope& msg) {
-    std::map<u16, std::vector<i_run_network*>>::iterator it = listeners_.find(msg.type_tag);
+    const message_type type = static_cast<message_type>(msg.type_tag);
+    std::map<message_type, std::vector<i_run_network*>>::iterator it = listeners_.find(type);
     if (it == listeners_.end()) {
         return;
     }
-    for (std::size_t i = 0; i < it->second.size(); i++) {
-        it->second[i]->on_network_message(msg);
+    // Callbacks may register or unregister listeners. Iterate a stable snapshot so those
+    // mutations take effect on the next message and cannot invalidate this traversal.
+    const std::vector<i_run_network*> listeners = it->second;
+    for (std::size_t i = 0; i < listeners.size(); i++) {
+        if (listeners[i] != 0) {
+            listeners[i]->on_network_message(msg);
+        }
     }
 }
 

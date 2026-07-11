@@ -33,6 +33,32 @@ struct capture_listener : i_run_network {
     }
 };
 
+struct unregistering_listener : capture_listener {
+    message_router* router;
+
+    explicit unregistering_listener(message_router& value) : router(&value) {}
+
+    bool on_network_message(const net_envelope& msg) {
+        capture_listener::on_network_message(msg);
+        router->unregister_listener(message_type::emu_infos_response, this);
+        return true;
+    }
+};
+
+struct registering_listener : capture_listener {
+    message_router* router;
+    i_run_network* listener_to_add;
+
+    registering_listener(message_router& value, i_run_network& added)
+        : router(&value), listener_to_add(&added) {}
+
+    bool on_network_message(const net_envelope& msg) {
+        capture_listener::on_network_message(msg);
+        router->register_listener(message_type::emu_infos_response, listener_to_add);
+        return true;
+    }
+};
+
 net_envelope make_envelope(message_type type, const std::string& username) {
     emu_infos info;
     info.appid = "CrabTest";
@@ -114,6 +140,92 @@ TEST_CASE("an unregistered listener stops receiving") {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     CHECK(listener.count == 0);
+
+    router.stop();
+    platform::net_shutdown();
+}
+
+TEST_CASE("listener mutation during dispatch takes effect on the next message") {
+    REQUIRE(platform::net_init());
+    message_router router;
+    REQUIRE(router.start(0));
+
+    unregistering_listener removes_itself(router);
+    capture_listener stable;
+    router.register_listener(message_type::emu_infos_response, &removes_itself);
+    router.register_listener(message_type::emu_infos_response, &stable);
+
+    REQUIRE(router.send_to_self(make_envelope(message_type::emu_infos_response, "first")));
+    pump_until(router, [&]() { return stable.count == 1; });
+    REQUIRE(removes_itself.count == 1);
+    REQUIRE(stable.count == 1);
+
+    REQUIRE(router.send_to_self(make_envelope(message_type::emu_infos_response, "second")));
+    pump_until(router, [&]() { return stable.count == 2; });
+    CHECK(removes_itself.count == 1);
+    CHECK(stable.count == 2);
+
+    router.stop();
+    platform::net_shutdown();
+}
+
+TEST_CASE("a listener registered during dispatch does not receive the current message") {
+    REQUIRE(platform::net_init());
+    message_router router;
+    REQUIRE(router.start(0));
+
+    capture_listener added;
+    registering_listener registrar(router, added);
+    router.register_listener(message_type::emu_infos_response, &registrar);
+
+    REQUIRE(router.send_to_self(make_envelope(message_type::emu_infos_response, "first")));
+    pump_until(router, [&]() { return registrar.count == 1; });
+    REQUIRE(registrar.count == 1);
+    CHECK(added.count == 0);
+
+    REQUIRE(router.send_to_self(make_envelope(message_type::emu_infos_response, "second")));
+    pump_until(router, [&]() { return added.count == 1; });
+    CHECK(registrar.count == 2);
+    CHECK(added.count == 1);
+
+    router.stop();
+    platform::net_shutdown();
+}
+
+TEST_CASE("duplicate and null listener registrations are ignored") {
+    REQUIRE(platform::net_init());
+    message_router router;
+    REQUIRE(router.start(0));
+
+    capture_listener listener;
+    router.register_listener(message_type::emu_infos_response, &listener);
+    router.register_listener(message_type::emu_infos_response, &listener);
+    router.register_listener(message_type::emu_infos_response, 0);
+
+    REQUIRE(router.send_to_self(make_envelope(message_type::emu_infos_response, "once")));
+    pump_until(router, [&]() { return listener.count == 1; });
+    CHECK(listener.count == 1);
+
+    router.stop();
+    platform::net_shutdown();
+}
+
+TEST_CASE("the router can stop and restart while retaining registrations") {
+    REQUIRE(platform::net_init());
+    message_router router;
+    capture_listener listener;
+    router.register_listener(message_type::emu_infos_response, &listener);
+
+    CHECK_FALSE(router.send_to_self(make_envelope(message_type::emu_infos_response, "stopped")));
+    REQUIRE(router.start(0));
+    router.stop();
+    router.stop();
+    REQUIRE(router.start(0));
+
+    REQUIRE(router.send_to_self(make_envelope(message_type::emu_infos_response, "restarted")));
+    pump_until(router, [&]() { return listener.count == 1; });
+    CHECK(listener.count == 1);
+    CHECK(listener.last_username == "restarted");
 
     router.stop();
     platform::net_shutdown();

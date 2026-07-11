@@ -48,7 +48,8 @@ private:
     platform::socket self_send_;
     platform::socket self_recv_;
     std::vector<u8> self_buffer_;
-    std::map<u16, std::vector<i_run_network*>> listeners_;
+    // Listeners are non-owning and must unregister before they are destroyed.
+    std::map<message_type, std::vector<i_run_network*>> listeners_;
     bool running_;
 };
 
