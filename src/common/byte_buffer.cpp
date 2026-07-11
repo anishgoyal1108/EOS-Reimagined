@@ -126,6 +126,11 @@ bool byte_reader::get_var(u64& out) {
         }
         const u8 byte = data_[pos_];
         pos_++;
+        // A u64 varint has only one payload bit available in its tenth byte.
+        if (shift == 63 && (byte & varint_payload_mask) > 1) {
+            pos_ = start;
+            return false;
+        }
         value |= static_cast<u64>(byte & varint_payload_mask) << shift;
         if ((byte & varint_more_bit) == 0) {
             out = value;

@@ -1,5 +1,7 @@
 #include "net/wire.h"
 
+#include <limits>
+
 namespace eosr {
 
 static const std::size_t frame_prefix_len = 4;
@@ -67,6 +69,10 @@ bool deserialize(byte_reader& reader, p2p_data& msg) {
     if (!reader.get_svar(channel)) {
         return false;
     }
+    if (channel < std::numeric_limits<i32>::min() ||
+        channel > std::numeric_limits<i32>::max()) {
+        return false;
+    }
     if (!reader.get_bytes(msg.data)) {
         return false;
     }
@@ -108,6 +114,7 @@ bool deserialize(byte_reader& reader, session_infos& msg) {
         return false;
     }
     msg.players.clear();
+    msg.players.reserve(static_cast<std::size_t>(count));
     for (u64 i = 0; i < count; i++) {
         std::string player;
         if (!reader.get_string(player)) {
@@ -131,6 +138,7 @@ std::vector<u8> frame_message(const std::vector<u8>& body) {
 }
 
 bool try_deframe(const u8* data, std::size_t len, std::vector<u8>& body, std::size_t& consumed) {
+    consumed = 0;
     if (len < frame_prefix_len) {
         return false;
     }
@@ -138,6 +146,9 @@ bool try_deframe(const u8* data, std::size_t len, std::vector<u8>& body, std::si
                          (static_cast<u32>(data[1]) << 16) |
                          (static_cast<u32>(data[2]) << 8) |
                          static_cast<u32>(data[3]);
+    if (body_len > max_message_size) {
+        return false;
+    }
     if (len - frame_prefix_len < body_len) {
         return false;
     }

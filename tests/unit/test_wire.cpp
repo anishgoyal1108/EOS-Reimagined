@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -98,6 +99,17 @@ TEST_CASE("an overlong varint is rejected") {
     CHECK_FALSE(r.get_var(out));
 }
 
+TEST_CASE("a tenth varint byte cannot overflow u64") {
+    std::vector<u8> bad(9, 0x80);
+    bad.push_back(0x02); // only 0 or 1 is valid in the final payload bit
+    byte_reader r(bad.data(), bad.size());
+    u64 out = 123;
+
+    CHECK_FALSE(r.get_var(out));
+    CHECK(r.remaining() == bad.size());
+    CHECK(out == 123);
+}
+
 TEST_CASE("emu_infos round-trips") {
     emu_infos a;
     a.emulator = "1.0.0";
@@ -136,6 +148,29 @@ TEST_CASE("p2p_data round-trips a binary payload with zero bytes") {
     CHECK(b.data[0] == 0);
     CHECK(b.data[1] == 0xff);
     CHECK(b.data[2] == 0);
+}
+
+TEST_CASE("p2p_data rejects channels outside the i32 range") {
+    const i64 invalid_channels[] = {
+        static_cast<i64>(std::numeric_limits<i32>::max()) + 1,
+        static_cast<i64>(std::numeric_limits<i32>::min()) - 1
+    };
+    for (std::size_t i = 0; i < sizeof(invalid_channels) / sizeof(invalid_channels[0]); i++) {
+        byte_writer w;
+        w.put_string("game");
+        w.put_svar(invalid_channels[i]);
+        const u8 payload[] = {1, 2, 3};
+        w.put_bytes(payload, sizeof(payload));
+
+        p2p_data out;
+        out.channel = 17;
+        out.data.push_back(9);
+        byte_reader r(w.data().data(), w.size());
+        CHECK_FALSE(deserialize(r, out));
+        CHECK(out.channel == 17);
+        REQUIRE(out.data.size() == 1);
+        CHECK(out.data[0] == 9);
+    }
 }
 
 TEST_CASE("session_infos round-trips a repeated field") {
@@ -217,12 +252,47 @@ TEST_CASE("TCP framing round-trips and reports incomplete frames") {
     CHECK(body == w.data());
 
     std::vector<u8> partial(framed.begin(), framed.end() - 1); // one byte short
-    std::vector<u8> body2;
-    std::size_t consumed2 = 0;
+    std::vector<u8> body2(1, 0xaa);
+    std::size_t consumed2 = 123;
     CHECK_FALSE(try_deframe(partial.data(), partial.size(), body2, consumed2));
+    CHECK(consumed2 == 0);
+    REQUIRE(body2.size() == 1);
+    CHECK(body2[0] == 0xaa);
 
     std::vector<u8> prefix_only(framed.begin(), framed.begin() + 4); // length only, no body
+    consumed2 = 456;
     CHECK_FALSE(try_deframe(prefix_only.data(), prefix_only.size(), body2, consumed2));
+    CHECK(consumed2 == 0);
+    REQUIRE(body2.size() == 1);
+    CHECK(body2[0] == 0xaa);
+}
+
+TEST_CASE("deframing a short prefix resets consumed without touching the body") {
+    const u8 short_prefix[] = {0, 0, 0};
+    std::vector<u8> body(2, 0x55);
+    std::size_t consumed = 999;
+
+    CHECK_FALSE(try_deframe(short_prefix, sizeof(short_prefix), body, consumed));
+    CHECK(consumed == 0);
+    REQUIRE(body.size() == 2);
+    CHECK(body[0] == 0x55);
+    CHECK(body[1] == 0x55);
+}
+
+TEST_CASE("deframing rejects a body larger than the configured message limit") {
+    const u32 declared = max_message_size + 1;
+    std::vector<u8> framed(static_cast<std::size_t>(declared) + 4, 0);
+    framed[0] = static_cast<u8>(declared >> 24);
+    framed[1] = static_cast<u8>(declared >> 16);
+    framed[2] = static_cast<u8>(declared >> 8);
+    framed[3] = static_cast<u8>(declared);
+    std::vector<u8> body(1, 0x42);
+    std::size_t consumed = 17;
+
+    CHECK_FALSE(try_deframe(framed.data(), framed.size(), body, consumed));
+    CHECK(consumed == 0);
+    REQUIRE(body.size() == 1);
+    CHECK(body[0] == 0x42);
 }
 
 TEST_CASE("two framed messages in one buffer deframe one at a time") {
