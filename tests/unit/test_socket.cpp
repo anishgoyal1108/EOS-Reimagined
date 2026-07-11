@@ -1,7 +1,13 @@
 #include "doctest.h"
 
 #include <chrono>
+#include <limits>
+#include <type_traits>
 #include <vector>
+
+#if !defined(_WIN32)
+#include <fcntl.h>
+#endif
 
 #include "common/byte_buffer.h"
 #include "common/types.h"
@@ -106,6 +112,73 @@ TEST_CASE("SO_REUSEADDR is settable") {
     CHECK(s.set_reuseaddr(true));
     net_shutdown();
 }
+
+TEST_CASE("socket ownership operations are noexcept") {
+    CHECK(std::is_nothrow_destructible<socket>::value);
+    CHECK(std::is_nothrow_move_constructible<socket>::value);
+    CHECK(std::is_nothrow_move_assignable<socket>::value);
+}
+
+TEST_CASE("successful socket operations clear a prior would-block error") {
+    REQUIRE(net_init());
+    socket client;
+    socket server;
+    REQUIRE(make_tcp_pair(client, server));
+    CHECK(client.last_error() == sock_error::none);
+
+    REQUIRE(server.set_nonblocking(true));
+    u8 byte = 0;
+    CHECK(server.recv(&byte, 1) == -1);
+    CHECK(server.last_error() == sock_error::would_block);
+
+    const u8 sent = 0x7a;
+    REQUIRE(client.send(&sent, 1) == 1);
+    REQUIRE(wait_readable(server, 1000));
+    REQUIRE(server.recv(&byte, 1) == 1);
+    CHECK(byte == sent);
+    CHECK(server.last_error() == sock_error::none);
+    net_shutdown();
+}
+
+TEST_CASE("socket calls reject lengths that cannot fit their int result contract") {
+    if (std::numeric_limits<std::size_t>::max() <=
+        static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        return;
+    }
+
+    REQUIRE(net_init());
+    socket s;
+    REQUIRE(s.open_udp());
+    const std::size_t too_large =
+        static_cast<std::size_t>(std::numeric_limits<int>::max()) + 1;
+    const u8* no_input = 0;
+    u8* no_output = 0;
+    endpoint peer;
+
+    CHECK(s.send(no_input, too_large) == -1);
+    CHECK(s.recv(no_output, too_large) == -1);
+    CHECK(s.send_to(no_input, too_large, endpoint(ip_loopback, 1)) == -1);
+    CHECK(s.recv_from(no_output, too_large, peer) == -1);
+    CHECK(s.last_error() == sock_error::other);
+    net_shutdown();
+}
+
+#if !defined(_WIN32)
+TEST_CASE("created and accepted sockets are close-on-exec") {
+    REQUIRE(net_init());
+    socket client;
+    socket server;
+    REQUIRE(make_tcp_pair(client, server));
+
+    const int client_flags = fcntl(static_cast<int>(client.native()), F_GETFD);
+    const int server_flags = fcntl(static_cast<int>(server.native()), F_GETFD);
+    REQUIRE(client_flags >= 0);
+    REQUIRE(server_flags >= 0);
+    CHECK((client_flags & FD_CLOEXEC) != 0);
+    CHECK((server_flags & FD_CLOEXEC) != 0);
+    net_shutdown();
+}
+#endif
 
 // The interaction test the pipeline relies on: a message goes through serialize -> frame ->
 // a real TCP socket -> deframe -> deserialize and comes back equal. Exercises wire, messages,

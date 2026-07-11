@@ -1,6 +1,7 @@
 #include "platform/socket.h"
 
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include <winsock2.h>
@@ -49,15 +50,15 @@ void net_shutdown() {
 socket::socket() : handle_(invalid_socket), last_error_(sock_error::none) {
 }
 
-socket::~socket() {
+socket::~socket() noexcept {
     close();
 }
 
-socket::socket(socket&& other) : handle_(other.handle_), last_error_(other.last_error_) {
+socket::socket(socket&& other) noexcept : handle_(other.handle_), last_error_(other.last_error_) {
     other.handle_ = invalid_socket;
 }
 
-socket& socket::operator=(socket&& other) {
+socket& socket::operator=(socket&& other) noexcept {
     if (this != &other) {
         close();
         handle_ = other.handle_;
@@ -69,12 +70,22 @@ socket& socket::operator=(socket&& other) {
 
 bool socket::open_udp() {
     handle_ = static_cast<native_socket>(::socket(AF_INET, SOCK_DGRAM, 0));
-    return is_open();
+    if (!is_open()) {
+        last_error_ = map_wsa(WSAGetLastError());
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 bool socket::open_tcp() {
     handle_ = static_cast<native_socket>(::socket(AF_INET, SOCK_STREAM, 0));
-    return is_open();
+    if (!is_open()) {
+        last_error_ = map_wsa(WSAGetLastError());
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 void socket::close() {
@@ -91,11 +102,17 @@ bool socket::bind(const endpoint& addr) {
         last_error_ = map_wsa(WSAGetLastError());
         return false;
     }
+    last_error_ = sock_error::none;
     return true;
 }
 
 bool socket::listen(int backlog) {
-    return ::listen(sock_of(handle_), backlog) == 0;
+    if (::listen(sock_of(handle_), backlog) != 0) {
+        last_error_ = map_wsa(WSAGetLastError());
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 bool socket::accept(socket& out, endpoint& peer) {
@@ -108,7 +125,9 @@ bool socket::accept(socket& out, endpoint& peer) {
     }
     out.close();
     out.handle_ = static_cast<native_socket>(accepted);
+    out.last_error_ = sock_error::none;
     peer = endpoint_of(sa);
+    last_error_ = sock_error::none;
     return true;
 }
 
@@ -116,7 +135,7 @@ bool socket::connect(const endpoint& addr) {
     sockaddr_in sa;
     fill_sockaddr(sa, addr);
     if (::connect(sock_of(handle_), reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) == 0) {
-        last_error_ = sock_error::is_connected;
+        last_error_ = sock_error::none;
         return true;
     }
     last_error_ = map_wsa(WSAGetLastError());
@@ -126,33 +145,55 @@ bool socket::connect(const endpoint& addr) {
 }
 
 int socket::send(const u8* data, std::size_t len) {
+    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        last_error_ = sock_error::other;
+        return -1;
+    }
     const int count = ::send(sock_of(handle_), reinterpret_cast<const char*>(data), static_cast<int>(len), 0);
     if (count < 0) {
         last_error_ = map_wsa(WSAGetLastError());
+    } else {
+        last_error_ = sock_error::none;
     }
     return count;
 }
 
 int socket::recv(u8* data, std::size_t len) {
+    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        last_error_ = sock_error::other;
+        return -1;
+    }
     const int count = ::recv(sock_of(handle_), reinterpret_cast<char*>(data), static_cast<int>(len), 0);
     if (count < 0) {
         last_error_ = map_wsa(WSAGetLastError());
+    } else {
+        last_error_ = sock_error::none;
     }
     return count;
 }
 
 int socket::send_to(const u8* data, std::size_t len, const endpoint& to) {
+    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        last_error_ = sock_error::other;
+        return -1;
+    }
     sockaddr_in sa;
     fill_sockaddr(sa, to);
     const int count = ::sendto(sock_of(handle_), reinterpret_cast<const char*>(data),
                                static_cast<int>(len), 0, reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
     if (count < 0) {
         last_error_ = map_wsa(WSAGetLastError());
+    } else {
+        last_error_ = sock_error::none;
     }
     return count;
 }
 
 int socket::recv_from(u8* data, std::size_t len, endpoint& from) {
+    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        last_error_ = sock_error::other;
+        return -1;
+    }
     sockaddr_in sa;
     int slen = sizeof(sa);
     const int count = ::recvfrom(sock_of(handle_), reinterpret_cast<char*>(data),
@@ -162,31 +203,49 @@ int socket::recv_from(u8* data, std::size_t len, endpoint& from) {
         return count;
     }
     from = endpoint_of(sa);
+    last_error_ = sock_error::none;
     return count;
 }
 
 bool socket::set_nonblocking(bool enabled) {
     u_long mode = enabled ? 1 : 0;
-    return ::ioctlsocket(sock_of(handle_), FIONBIO, &mode) == 0;
+    if (::ioctlsocket(sock_of(handle_), FIONBIO, &mode) != 0) {
+        last_error_ = map_wsa(WSAGetLastError());
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 bool socket::set_broadcast(bool enabled) {
     const int value = enabled ? 1 : 0;
-    return ::setsockopt(sock_of(handle_), SOL_SOCKET, SO_BROADCAST,
-                        reinterpret_cast<const char*>(&value), sizeof(value)) == 0;
+    if (::setsockopt(sock_of(handle_), SOL_SOCKET, SO_BROADCAST,
+                     reinterpret_cast<const char*>(&value), sizeof(value)) != 0) {
+        last_error_ = map_wsa(WSAGetLastError());
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 bool socket::set_reuseaddr(bool enabled) {
     const int value = enabled ? 1 : 0;
-    return ::setsockopt(sock_of(handle_), SOL_SOCKET, SO_REUSEADDR,
-                        reinterpret_cast<const char*>(&value), sizeof(value)) == 0;
+    if (::setsockopt(sock_of(handle_), SOL_SOCKET, SO_REUSEADDR,
+                     reinterpret_cast<const char*>(&value), sizeof(value)) != 0) {
+        last_error_ = map_wsa(WSAGetLastError());
+        return false;
+    }
+    last_error_ = sock_error::none;
+    return true;
 }
 
 std::size_t socket::bytes_available() {
     u_long count = 0;
     if (::ioctlsocket(sock_of(handle_), FIONREAD, &count) != 0) {
+        last_error_ = map_wsa(WSAGetLastError());
         return 0;
     }
+    last_error_ = sock_error::none;
     return static_cast<std::size_t>(count);
 }
 
@@ -194,13 +253,18 @@ bool socket::local_endpoint(endpoint& out) {
     sockaddr_in sa;
     int len = sizeof(sa);
     if (::getsockname(sock_of(handle_), reinterpret_cast<sockaddr*>(&sa), &len) != 0) {
+        last_error_ = map_wsa(WSAGetLastError());
         return false;
     }
     out = endpoint_of(sa);
+    last_error_ = sock_error::none;
     return true;
 }
 
 int poll_readable(const native_socket* handles, std::size_t count, int timeout_ms, bool* readable_out) {
+    if (count > static_cast<std::size_t>(std::numeric_limits<ULONG>::max())) {
+        return -1;
+    }
     std::vector<WSAPOLLFD> fds(count);
     for (std::size_t i = 0; i < count; i++) {
         fds[i].fd = sock_of(handles[i]);
