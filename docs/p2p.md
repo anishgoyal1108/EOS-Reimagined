@@ -1,0 +1,37 @@
+# Module: `EOSSDK_P2P` (peer-to-peer messaging)
+
+Tier A (2020 `eossdk_p2p.*`). Real packet transport between peers: control over TCP, data over UDP. 37 methods — the richest non-lobby interface.
+
+## 1. Identity & handle
+`EOS_HP2P` via `EOS_Platform_GetP2PInterface` (platform vtable +0x90).
+
+## 2. Class shape & base mixins
+`IRunCallback` + `IRunNetwork` (`OnNetworkMessage` @`0x18011a990`) + `OnUserEvent` @`0x18011a410` (peer connect/disconnect from Connect fan-out).
+
+## 3. Member state
+- Connection table keyed by `(EOS_ProductUserId, SocketId)` with a state machine `requesting/connecting/connected/connection_loss/closed` (2020 `p2p_state_t`).
+- Per-`(socket,channel)` inbound packet queues for `ReceivePacket`; queue-size/packet-queue config.
+- NAT type, relay control, port range settings. `EmuInit` @`0x18010f2a0` / `EmuDeinit` @`0x180115240`.
+
+## 4. Lifecycle
+`EmuInit` registers callbacks + frame + network listener (`kP2P`) + Connect peer-event hook (`OnUserEvent`). Connections timed out in `CBRunFrame`.
+
+## 5–6. API (sync + the connection lifecycle)
+- **Data**: `SendPacket` @`0x18010fb90` (validate RemoteUserId/SocketId/data → UDP `data_message`); `ReceivePacket`/`GetNextReceivedPacketSize` (drain in-queue — see flat exports); `GetPacketQueueInfo` @`0x180112f10`, `ClearPacketQueue` @`0x1801135e0`, `SetPacketQueueSize` @`0x180112e20`.
+- **Connections**: `AcceptConnection` @`0x1801115f0`, `CloseConnection` @`0x180111c90`, `CloseConnections` @`0x1801120f0`.
+- **NAT/relay/ports**: `QueryNATType` @`0x1801124c0` (async), `GetNATType` @`0x1801127a0`, `GetRelayControl`/`SetRelayControl`, `GetPortRange`/`SetPortRange`.
+
+## 7. Notifications
+`AddNotifyPeerConnectionRequest` (@`0x180110740`), `...Established` (@`0x180110b10`), `...Interrupted` (@`0x180110eb0`), `...Closed` (@`0x180111250`), `AddNotifyIncomingPacketQueueFull` (@`0x180113250`) + removers. Callback-infos `EOS_P2P_On*ConnectionRequest/Established/Interrupted/ClosedInfo`, `EOS_P2P_OnIncomingPacketQueueFullInfo`.
+
+## 8. Network protocol
+Envelope `oneof` `kP2P`; sub `P2P_Message_pb{ connect_request{socket_name} | connect_response{accepted} | data_message{bytes data,int32 channel,socket_name,user_id} | data_acknowledge{channel,accepted} | connection_close }`.
+- **Control (TCP):** `_OnP2PConnectionRequest` @`0x18011b140` → `AddNotifyPeerConnectionRequest` fires; `_OnP2PConnectionResponse` @`0x18011b6e0`; `_OnP2PConnectionClose` @`0x18011c580`. Senders `_SendP2PConnectionRequest/Response/Close`.
+- **Data (UDP):** `_OnP2PData` @`0x18011bb50` → queue payload + reply `_SendP2PDataAck`; `_OnP2PDataAck` @`0x18011c250`. Senders `_SendP2PData` @`0x180115710`, `_SendP2PDataAck` @`0x18011db60`.
+
+## 9. Frame/tick
+`CBRunFrame` drives the connection state machine + timeouts. `OnUserEvent` handles abrupt peer loss.
+
+## Reimpl notes / follow-ups
+- Reimpl: connection FSM keyed by (remote user, socket id); TCP for request/response/close, UDP for data+ack; per-channel receive queues with configurable size + queue-full notification. NAT type can be a static value (e.g. Open/Moderate) for LAN.
+- Follow-ups: exact reliability handling (`EOS_EPacketReliability`) on send; relay-control semantics (likely no-op on LAN).
