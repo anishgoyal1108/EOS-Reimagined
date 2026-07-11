@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="EOS Reimagined logo">
+  <title>EOS Reimagined</title>
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="80" y1="80" x2="432" y2="432">
+      <stop offset="0" stop-color="#14B8A6"/>
+      <stop offset="0.5" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#6366F1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- revival arcs -->
+  <g fill="none" stroke="url(#g)" stroke-width="13" stroke-linecap="round">
+    <path d="M 448.25 145 A 222 222 0 0 0 63.75 145"/>
+    <path d="M 63.75 367 A 222 222 0 0 0 448.25 367"/>
+  </g>
+  <polygon points="52.8,164.1 74.1,151 53.4,139" fill="#14B8A6"/>
+  <polygon points="459.3,348 458.6,373 437.9,361" fill="#6366F1"/>
+
+  <!-- peer mesh -->
+  <g stroke="url(#g)" stroke-linecap="round" fill="none">
+    <!-- inner chords -->
+    <g stroke-width="4.5" opacity="0.3">
+      <path d="M 256 106 L 385.9 331"/>
+      <path d="M 256 106 L 126.1 331"/>
+      <path d="M 126.1 181 L 385.9 181"/>
+      <path d="M 126.1 181 L 256 406"/>
+      <path d="M 126.1 331 L 385.9 331"/>
+      <path d="M 256 406 L 385.9 181"/>
+      <path d="M 256 106 L 256 406"/>
+      <path d="M 126.1 181 L 385.9 331"/>
+      <path d="M 126.1 331 L 385.9 181"/>
+    </g>
+    <!-- ring edges -->
+    <g stroke-width="7" opacity="0.85">
+      <path d="M 256 106 L 385.9 181"/>
+      <path d="M 385.9 181 L 385.9 331"/>
+      <path d="M 385.9 331 L 256 406"/>
+      <path d="M 256 406 L 126.1 331"/>
+      <path d="M 126.1 331 L 126.1 181"/>
+      <path d="M 126.1 181 L 256 106"/>
+    </g>
+  </g>
+
+  <!-- peer nodes -->
+  <g>
+    <circle cx="256" cy="106" r="18" fill="url(#g)"/>
+    <circle cx="385.9" cy="181" r="18" fill="url(#g)"/>
+    <circle cx="385.9" cy="331" r="18" fill="url(#g)"/>
+    <circle cx="256" cy="406" r="18" fill="url(#g)"/>
+    <circle cx="126.1" cy="331" r="18" fill="url(#g)"/>
+    <circle cx="126.1" cy="181" r="18" fill="url(#g)"/>
+    <g fill="#FFFFFF" opacity="0.95">
+      <circle cx="256" cy="106" r="6.5"/>
+      <circle cx="385.9" cy="181" r="6.5"/>
+      <circle cx="385.9" cy="331" r="6.5"/>
+      <circle cx="256" cy="406" r="6.5"/>
+      <circle cx="126.1" cy="331" r="6.5"/>
+      <circle cx="126.1" cy="181" r="6.5"/>
+    </g>
+  </g>
+
+  <!-- play core -->
+  <circle cx="256" cy="256" r="68" fill="url(#g)"/>
+  <path d="M 237 224 L 295 256 L 237 288 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round"/>
+</svg>
