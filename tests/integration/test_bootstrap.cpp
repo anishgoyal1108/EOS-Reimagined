@@ -6,6 +6,7 @@
 #include "eos_sdk.h"
 #include "eos_init.h"
 #include "eos_logging.h"
+#include "eos_connect.h"
 
 #include "platform/dynlib.h"
 
@@ -18,6 +19,27 @@ namespace {
 
 int g_log_count = 0;
 void EOS_CALL on_log(const EOS_LogMessage*) { g_log_count++; }
+
+// Connect login/status captures for the real-library exercise.
+bool g_conn_login_fired = false;
+EOS_EResult g_conn_login_result = EOS_EResult::EOS_UnexpectedError;
+EOS_ProductUserId g_conn_login_user = 0;
+int g_conn_status_count = 0;
+EOS_ELoginStatus g_conn_status_current = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
+
+void EOS_CALL on_connect_login(const EOS_Connect_LoginCallbackInfo* info) {
+    g_conn_login_fired = true;
+    g_conn_login_result = info->ResultCode;
+    g_conn_login_user = info->LocalUserId;
+}
+
+void EOS_CALL on_connect_status(const EOS_Connect_LoginStatusChangedCallbackInfo* info) {
+    g_conn_status_count++;
+    g_conn_status_current = info->CurrentStatus;
+}
+
+bool g_conn_logout_fired = false;
+void EOS_CALL on_connect_logout(const EOS_Connect_LogoutCallbackInfo*) { g_conn_logout_fired = true; }
 
 // Every interface getter shares one ABI shape: (EOS_HPlatform) -> opaque pointer.
 typedef void* (EOS_CALL* pfn_getter)(EOS_HPlatform);
@@ -128,6 +150,65 @@ TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
     // Tick is the async pump; it must stay stable across repeated calls with no work queued.
     for (int i = 0; i < 8; i++) {
         fn_tick(platform);
+    }
+
+    // Drive the Connect interface through the real library exactly as a game would: log in,
+    // pump ticks until the deferred callback lands, and confirm the roster and notification.
+    {
+        RESOLVE(fn_get_connect, EOS_Platform_GetConnectInterface);
+        RESOLVE(fn_login, EOS_Connect_Login);
+        RESOLVE(fn_logout, EOS_Connect_Logout);
+        RESOLVE(fn_users_count, EOS_Connect_GetLoggedInUsersCount);
+        RESOLVE(fn_user_by_index, EOS_Connect_GetLoggedInUserByIndex);
+        RESOLVE(fn_login_status, EOS_Connect_GetLoginStatus);
+        RESOLVE(fn_add_notify, EOS_Connect_AddNotifyLoginStatusChanged);
+        RESOLVE(fn_remove_notify, EOS_Connect_RemoveNotifyLoginStatusChanged);
+        RESOLVE(fn_puid_valid, EOS_ProductUserId_IsValid);
+
+        EOS_HConnect connect = fn_get_connect(platform);
+        REQUIRE((connect != nullptr));
+
+        EOS_Connect_AddNotifyLoginStatusChangedOptions notify_options = {};
+        notify_options.ApiVersion = EOS_CONNECT_ADDNOTIFYLOGINSTATUSCHANGED_API_LATEST;
+        const EOS_NotificationId notify_id =
+            fn_add_notify(connect, &notify_options, nullptr, on_connect_status);
+        CHECK(notify_id != 0);
+
+        EOS_Connect_Credentials credentials = {};
+        credentials.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
+        credentials.Token = "device";
+        credentials.Type = EOS_EExternalCredentialType::EOS_ECT_DEVICEID_ACCESS_TOKEN;
+        EOS_Connect_LoginOptions login_options = {};
+        login_options.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
+        login_options.Credentials = &credentials;
+        fn_login(connect, &login_options, nullptr, on_connect_login);
+
+        for (int i = 0; i < 32 && !g_conn_login_fired; i++) {
+            fn_tick(platform);
+        }
+        CHECK(g_conn_login_fired);
+        CHECK(g_conn_login_result == EOS_EResult::EOS_Success);
+        CHECK(fn_puid_valid(g_conn_login_user) == EOS_TRUE);
+
+        CHECK(fn_users_count(connect) == 1);
+        CHECK((fn_user_by_index(connect, 0) == g_conn_login_user));
+        CHECK(fn_login_status(connect, g_conn_login_user) == EOS_ELoginStatus::EOS_LS_LoggedIn);
+        CHECK(g_conn_status_count == 1);
+        CHECK(g_conn_status_current == EOS_ELoginStatus::EOS_LS_LoggedIn);
+
+        EOS_Connect_LogoutOptions logout_options = {};
+        logout_options.ApiVersion = EOS_CONNECT_LOGOUT_API_LATEST;
+        logout_options.LocalUserId = g_conn_login_user;
+        fn_logout(connect, &logout_options, nullptr, on_connect_logout);
+        for (int i = 0; i < 8 && !g_conn_logout_fired; i++) {
+            fn_tick(platform);
+        }
+        CHECK(g_conn_logout_fired);
+        CHECK(fn_users_count(connect) == 0);
+        CHECK(g_conn_status_count == 2);
+        CHECK(g_conn_status_current == EOS_ELoginStatus::EOS_LS_NotLoggedIn);
+
+        fn_remove_notify(connect, notify_id);
     }
 
     // Release, then confirm stale-handle calls degrade to safe no-ops.
