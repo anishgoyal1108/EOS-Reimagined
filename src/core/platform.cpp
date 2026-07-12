@@ -7,7 +7,8 @@
 
 namespace eosr {
 
-sdk_platform::sdk_platform() : created_(false) {
+sdk_platform::sdk_platform()
+    : connect_(settings_, cb_manager_, network_), created_(false) {
     for (int i = 0; i < if_count; i++) {
         interfaces_[i].id = static_cast<interface_id>(i);
     }
@@ -27,6 +28,7 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
     }
     settings_.apply_platform_options(options);
     cb_manager_.set_max_tick_budget(std::chrono::milliseconds(settings_.tick_budget_ms()));
+    connect_.emu_init();
     created_ = true;
     log_info("platform created for product '" + settings_.product_id() + "'");
     return true;
@@ -36,9 +38,11 @@ void sdk_platform::release() {
     if (!created_) {
         return;
     }
+    // Unregister the interfaces before clearing the engine, then discard any queued callbacks
+    // and registrations so a platform created after this one never inherits stale async state
+    // or fires through a destroyed owner.
+    connect_.emu_deinit();
     network_.stop();
-    // Discard any queued callbacks and registrations so a platform created after this one never
-    // inherits stale async state or fires through a destroyed owner.
     cb_manager_.clear();
     platform::net_shutdown();
     created_ = false;
@@ -59,6 +63,10 @@ void sdk_platform::tick() {
 void* sdk_platform::interface_handle(interface_id id) {
     if (!created_ || id < 0 || id >= if_count) {
         return 0;
+    }
+    // Implemented interfaces hand back their real object; the rest return their placeholder.
+    if (id == if_connect) {
+        return &connect_;
     }
     return &interfaces_[id];
 }
