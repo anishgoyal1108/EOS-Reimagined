@@ -1,6 +1,7 @@
 #include "core/runtime.h"
 
 #include <mutex>
+#include <vector>
 
 #include "core/client.h"
 #include "core/platform.h"
@@ -11,6 +12,17 @@ namespace {
 
 std::mutex platform_mutex;
 sdk_platform* live_platform = 0;
+
+// Every platform we ever create is kept here and never freed for the life of the process. A
+// released platform is torn down (its sockets and callbacks are freed) but its object memory is
+// retained, so the allocator can never hand its address to a later platform. That is what keeps
+// a handle from a released platform from ever matching a new one. Games create and release a
+// platform once, so this holds a single object in practice. The container is itself immortal so
+// the retained platforms stay reachable at exit and read as intentional, not as leaks.
+std::vector<sdk_platform*>& retained_platforms() {
+    static std::vector<sdk_platform*>* platforms = new std::vector<sdk_platform*>();
+    return *platforms;
+}
 
 } // namespace
 
@@ -23,6 +35,7 @@ sdk_platform* platform_create() {
     std::lock_guard<std::mutex> lock(platform_mutex);
     if (live_platform == 0) {
         live_platform = new sdk_platform();
+        retained_platforms().push_back(live_platform);
     }
     return live_platform;
 }
@@ -39,9 +52,12 @@ void platform_destroy() {
         doomed = live_platform;
         live_platform = 0;
     }
-    // Delete outside the lock: ~sdk_platform runs release(), which we keep off the registry
-    // lock so a teardown path can never contend with it.
-    delete doomed;
+    // Tear down the platform but keep the object: releasing (not freeing) means a concurrent or
+    // subsequent call that still holds this handle sees a not-created platform, never freed
+    // memory. release() runs off the registry lock so a teardown can never contend with it.
+    if (doomed != 0) {
+        doomed->release();
+    }
 }
 
 } // namespace eosr

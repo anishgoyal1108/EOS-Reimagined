@@ -8,6 +8,7 @@
 #include "core/callback_manager.h"
 #include "core/frame_result.h"
 #include "core/platform.h"
+#include "core/runtime.h"
 
 using namespace eosr;
 
@@ -118,6 +119,23 @@ TEST_CASE("the platform can be recreated after release") {
     CHECK(p.is_created());
     CHECK((p.interface_handle(if_lobby) != 0));
     p.release();
+}
+
+TEST_CASE("a released platform's address is never handed to a later platform") {
+    // The runtime retains released platforms, so a handle from one lifetime can never alias a
+    // platform from the next even if the allocator would otherwise reuse the freed address.
+    sdk_platform* first = platform_create();
+    REQUIRE((first != 0));
+    CHECK((platform_current() == first));
+
+    platform_destroy();
+    CHECK((platform_current() == 0));
+
+    sdk_platform* second = platform_create();
+    REQUIRE((second != 0));
+    CHECK((second != first));
+    CHECK((platform_current() == second));
+    platform_destroy();
 }
 
 TEST_CASE("release discards callbacks and frame registrations before recreation") {

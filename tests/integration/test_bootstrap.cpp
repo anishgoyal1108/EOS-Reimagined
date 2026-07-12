@@ -219,6 +219,15 @@ TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
     CHECK((connect_getter(platform) == nullptr));
     fn_release(platform); // a second release is harmless
 
+    // Recreate: the new handle differs from the released one, and the stale handle stays
+    // rejected even though the allocator might otherwise have reused the address.
+    EOS_HPlatform platform2 = fn_create(&popts);
+    REQUIRE((platform2 != nullptr));
+    CHECK((platform2 != platform));
+    CHECK((connect_getter(platform) == nullptr));
+    CHECK((connect_getter(platform2) != nullptr));
+    fn_release(platform2);
+
     // Shut down, then distinguish a repeated shutdown from a never-configured client.
     CHECK(fn_shutdown() == EOS_EResult::EOS_Success);
     CHECK(fn_shutdown() == EOS_EResult::EOS_UnexpectedError);
