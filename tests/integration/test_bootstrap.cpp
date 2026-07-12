@@ -8,6 +8,9 @@
 #include "eos_logging.h"
 #include "eos_connect.h"
 #include "eos_auth.h"
+#include "eos_p2p.h"
+
+#include <cstring>
 
 #include "platform/dynlib.h"
 
@@ -50,6 +53,9 @@ void EOS_CALL on_auth_login(const EOS_Auth_LoginCallbackInfo* info) {
     g_auth_login_result = info->ResultCode;
     g_auth_login_user = info->LocalUserId;
 }
+int g_p2p_request_count = 0;
+void EOS_CALL on_p2p_request(const EOS_P2P_OnIncomingConnectionRequestInfo*) { g_p2p_request_count++; }
+
 bool g_auth_logout_fired = false;
 EOS_EResult g_auth_logout_result = EOS_EResult::EOS_UnexpectedError;
 void EOS_CALL on_auth_logout(const EOS_Auth_LogoutCallbackInfo* info) {
@@ -390,6 +396,63 @@ TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
         CHECK(g_auth_status_previous == EOS_ELoginStatus::EOS_LS_LoggedIn);
         CHECK(g_auth_status_current == EOS_ELoginStatus::EOS_LS_NotLoggedIn);
         fn_auth_remove_notify(auth, notification);
+    }
+
+    // Drive the P2P interface through the real library: register a connection-request listener,
+    // then send a packet and confirm the synchronous validation contract.
+    {
+        RESOLVE(fn_get_p2p, EOS_Platform_GetP2PInterface);
+        RESOLVE(fn_send, EOS_P2P_SendPacket);
+        RESOLVE(fn_next_size, EOS_P2P_GetNextReceivedPacketSize);
+        RESOLVE(fn_add_req, EOS_P2P_AddNotifyPeerConnectionRequest);
+        RESOLVE(fn_remove_req, EOS_P2P_RemoveNotifyPeerConnectionRequest);
+        RESOLVE(fn_get_nat, EOS_P2P_GetNATType);
+        RESOLVE(fn_puid_from_string, EOS_ProductUserId_FromString);
+
+        EOS_HP2P p2p = fn_get_p2p(platform);
+        REQUIRE((p2p != nullptr));
+
+        EOS_P2P_AddNotifyPeerConnectionRequestOptions notify_options = {};
+        notify_options.ApiVersion = EOS_P2P_ADDNOTIFYPEERCONNECTIONREQUEST_API_LATEST;
+        const EOS_NotificationId req_id =
+            fn_add_req(p2p, &notify_options, nullptr, on_p2p_request);
+        CHECK(req_id != 0);
+
+        EOS_ProductUserId remote = fn_puid_from_string("fedcba9876543210fedcba9876543210");
+        EOS_P2P_SocketId socket = {};
+        socket.ApiVersion = EOS_P2P_SOCKETID_API_LATEST;
+        std::strncpy(socket.SocketName, "game", EOS_P2P_SOCKETID_SOCKETNAME_SIZE - 1);
+        const unsigned char payload[] = {1, 2, 3, 4};
+
+        EOS_P2P_SendPacketOptions send_options = {};
+        send_options.ApiVersion = EOS_P2P_SENDPACKET_API_LATEST;
+        send_options.LocalUserId = fn_puid_from_string("00112233445566778899aabbccddeeff");
+        send_options.RemoteUserId = remote;
+        send_options.SocketId = &socket;
+        send_options.Channel = 0;
+        send_options.DataLengthBytes = sizeof(payload);
+        send_options.Data = payload;
+        send_options.Reliability = EOS_EPacketReliability::EOS_PR_ReliableOrdered;
+        send_options.bDisableAutoAcceptConnection = EOS_FALSE;
+        CHECK(fn_send(p2p, &send_options) == EOS_EResult::EOS_Success);
+
+        send_options.DataLengthBytes = EOS_P2P_MAX_PACKET_SIZE + 1;
+        CHECK(fn_send(p2p, &send_options) == EOS_EResult::EOS_LimitExceeded);
+
+        // No packets have arrived over the (deferred) mesh, so the receive queue is empty.
+        EOS_P2P_GetNextReceivedPacketSizeOptions size_options = {};
+        size_options.ApiVersion = EOS_P2P_GETNEXTRECEIVEDPACKETSIZE_API_LATEST;
+        size_options.LocalUserId = send_options.LocalUserId;
+        uint32_t size = 0;
+        CHECK(fn_next_size(p2p, &size_options, &size) == EOS_EResult::EOS_NotFound);
+
+        EOS_P2P_GetNATTypeOptions nat_options = {};
+        nat_options.ApiVersion = EOS_P2P_GETNATTYPE_API_LATEST;
+        EOS_ENATType nat = EOS_ENATType::EOS_NAT_Unknown;
+        CHECK(fn_get_nat(p2p, &nat_options, &nat) == EOS_EResult::EOS_Success);
+        CHECK(nat == EOS_ENATType::EOS_NAT_Open);
+
+        fn_remove_req(p2p, req_id);
     }
 
     // Release, then confirm stale-handle calls degrade to safe no-ops.
