@@ -1,6 +1,6 @@
 // Flat C ABI trampolines for the P2P interface. Each validates the handle against the live
-// platform's P2P object, then calls through. P2P's core is synchronous; the deferred functions
-// return benign valid values (an open NAT, default relay/port settings) rather than errors.
+// platform's P2P object, then calls through. P2P's core is synchronous, so most of these return
+// their result directly rather than queueing a callback.
 #include "eos_p2p.h"
 
 #include "core/platform.h"
@@ -8,9 +8,6 @@
 #include "interfaces/p2p.h"
 
 namespace {
-
-const uint16_t default_p2p_port = 7777;
-const uint16_t default_p2p_additional_ports = 99;
 
 eosr::sdk_p2p* checked_p2p(EOS_HP2P handle) {
     eosr::sdk_platform* platform = eosr::platform_current();
@@ -69,8 +66,9 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_P2P_AddNotifyPeerConnectionRequest(
     void* ClientData, EOS_P2P_OnIncomingConnectionRequestCallback ConnectionRequestHandler) {
     eosr::sdk_p2p* p2p = checked_p2p(Handle);
     if (p2p == 0 || Options == 0 ||
-        Options->ApiVersion != EOS_P2P_ADDNOTIFYPEERCONNECTIONREQUEST_API_LATEST) {
-        return 0;
+        Options->ApiVersion != EOS_P2P_ADDNOTIFYPEERCONNECTIONREQUEST_API_LATEST ||
+        !p2p->is_local_user(Options->LocalUserId)) {
+        return EOS_INVALID_NOTIFICATIONID;
     }
     return p2p->add_notify_connection_request(Options->SocketId, ClientData, ConnectionRequestHandler);
 }
@@ -87,10 +85,12 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_P2P_AddNotifyPeerConnectionEstablished(
     void* ClientData, EOS_P2P_OnPeerConnectionEstablishedCallback ConnectionEstablishedHandler) {
     eosr::sdk_p2p* p2p = checked_p2p(Handle);
     if (p2p == 0 || Options == 0 ||
-        Options->ApiVersion != EOS_P2P_ADDNOTIFYPEERCONNECTIONESTABLISHED_API_LATEST) {
-        return 0;
+        Options->ApiVersion != EOS_P2P_ADDNOTIFYPEERCONNECTIONESTABLISHED_API_LATEST ||
+        !p2p->is_local_user(Options->LocalUserId)) {
+        return EOS_INVALID_NOTIFICATIONID;
     }
-    return p2p->add_notify_connection_established(ClientData, ConnectionEstablishedHandler);
+    return p2p->add_notify_connection_established(ClientData, ConnectionEstablishedHandler,
+                                                 Options->SocketId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_P2P_RemoveNotifyPeerConnectionEstablished(EOS_HP2P Handle, EOS_NotificationId NotificationId) {
@@ -105,10 +105,12 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_P2P_AddNotifyPeerConnectionInterrupted(
     void* ClientData, EOS_P2P_OnPeerConnectionInterruptedCallback ConnectionInterruptedHandler) {
     eosr::sdk_p2p* p2p = checked_p2p(Handle);
     if (p2p == 0 || Options == 0 ||
-        Options->ApiVersion != EOS_P2P_ADDNOTIFYPEERCONNECTIONINTERRUPTED_API_LATEST) {
-        return 0;
+        Options->ApiVersion != EOS_P2P_ADDNOTIFYPEERCONNECTIONINTERRUPTED_API_LATEST ||
+        !p2p->is_local_user(Options->LocalUserId)) {
+        return EOS_INVALID_NOTIFICATIONID;
     }
-    return p2p->add_notify_connection_interrupted(ClientData, ConnectionInterruptedHandler);
+    return p2p->add_notify_connection_interrupted(ClientData, ConnectionInterruptedHandler,
+                                                 Options->SocketId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_P2P_RemoveNotifyPeerConnectionInterrupted(EOS_HP2P Handle, EOS_NotificationId NotificationId) {
@@ -123,10 +125,11 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_P2P_AddNotifyPeerConnectionClosed(
     void* ClientData, EOS_P2P_OnRemoteConnectionClosedCallback ConnectionClosedHandler) {
     eosr::sdk_p2p* p2p = checked_p2p(Handle);
     if (p2p == 0 || Options == 0 ||
-        Options->ApiVersion != EOS_P2P_ADDNOTIFYPEERCONNECTIONCLOSED_API_LATEST) {
-        return 0;
+        Options->ApiVersion != EOS_P2P_ADDNOTIFYPEERCONNECTIONCLOSED_API_LATEST ||
+        !p2p->is_local_user(Options->LocalUserId)) {
+        return EOS_INVALID_NOTIFICATIONID;
     }
-    return p2p->add_notify_connection_closed(ClientData, ConnectionClosedHandler);
+    return p2p->add_notify_connection_closed(ClientData, ConnectionClosedHandler, Options->SocketId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_P2P_RemoveNotifyPeerConnectionClosed(EOS_HP2P Handle, EOS_NotificationId NotificationId) {
@@ -136,84 +139,76 @@ EOS_DECLARE_FUNC(void) EOS_P2P_RemoveNotifyPeerConnectionClosed(EOS_HP2P Handle,
     }
 }
 
-// --- Benign deferred: NAT / relay / ports / packet-queue ---
+// --- NAT, relay, ports, and the packet queue ---
 
 EOS_DECLARE_FUNC(void) EOS_P2P_QueryNATType(EOS_HP2P Handle, const EOS_P2P_QueryNATTypeOptions* Options,
                                             void* ClientData, const EOS_P2P_OnQueryNATTypeCompleteCallback CompletionDelegate) {
-    (void)Options;
     eosr::sdk_p2p* p2p = checked_p2p(Handle);
     if (p2p != 0) {
-        p2p->query_nat_type(ClientData, CompletionDelegate);
+        p2p->query_nat_type(Options, ClientData, CompletionDelegate);
     }
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_P2P_GetNATType(EOS_HP2P Handle, const EOS_P2P_GetNATTypeOptions* Options,
                                                  EOS_ENATType* OutNATType) {
-    (void)Options;
-    if (checked_p2p(Handle) == 0 || OutNATType == 0) {
+    eosr::sdk_p2p* p2p = checked_p2p(Handle);
+    if (p2p == 0 || Options == 0 || Options->ApiVersion != EOS_P2P_GETNATTYPE_API_LATEST) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    *OutNATType = EOS_ENATType::EOS_NAT_Open;
-    return EOS_EResult::EOS_Success;
+    return p2p->get_nat_type(OutNATType);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_P2P_SetRelayControl(EOS_HP2P Handle, const EOS_P2P_SetRelayControlOptions* Options) {
-    (void)Options;
-    return (checked_p2p(Handle) != 0) ? EOS_EResult::EOS_Success : EOS_EResult::EOS_InvalidParameters;
+    eosr::sdk_p2p* p2p = checked_p2p(Handle);
+    return (p2p != 0) ? p2p->set_relay_control(Options) : EOS_EResult::EOS_InvalidParameters;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_P2P_GetRelayControl(EOS_HP2P Handle, const EOS_P2P_GetRelayControlOptions* Options,
                                                       EOS_ERelayControl* OutRelayControl) {
-    (void)Options;
-    if (checked_p2p(Handle) == 0 || OutRelayControl == 0) {
+    eosr::sdk_p2p* p2p = checked_p2p(Handle);
+    if (p2p == 0 || Options == 0 || Options->ApiVersion != EOS_P2P_GETRELAYCONTROL_API_LATEST) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    *OutRelayControl = EOS_ERelayControl::EOS_RC_AllowRelays;
-    return EOS_EResult::EOS_Success;
+    return p2p->get_relay_control(OutRelayControl);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_P2P_SetPortRange(EOS_HP2P Handle, const EOS_P2P_SetPortRangeOptions* Options) {
-    (void)Options;
-    return (checked_p2p(Handle) != 0) ? EOS_EResult::EOS_Success : EOS_EResult::EOS_InvalidParameters;
+    eosr::sdk_p2p* p2p = checked_p2p(Handle);
+    return (p2p != 0) ? p2p->set_port_range(Options) : EOS_EResult::EOS_InvalidParameters;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_P2P_GetPortRange(EOS_HP2P Handle, const EOS_P2P_GetPortRangeOptions* Options,
                                                    uint16_t* OutPort, uint16_t* OutNumAdditionalPortsToTry) {
-    (void)Options;
-    if (checked_p2p(Handle) == 0 || OutPort == 0 || OutNumAdditionalPortsToTry == 0) {
+    eosr::sdk_p2p* p2p = checked_p2p(Handle);
+    if (p2p == 0 || Options == 0 || Options->ApiVersion != EOS_P2P_GETPORTRANGE_API_LATEST) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    *OutPort = default_p2p_port;
-    *OutNumAdditionalPortsToTry = default_p2p_additional_ports;
-    return EOS_EResult::EOS_Success;
+    return p2p->get_port_range(OutPort, OutNumAdditionalPortsToTry);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_P2P_SetPacketQueueSize(EOS_HP2P Handle, const EOS_P2P_SetPacketQueueSizeOptions* Options) {
-    (void)Options;
-    return (checked_p2p(Handle) != 0) ? EOS_EResult::EOS_Success : EOS_EResult::EOS_InvalidParameters;
+    eosr::sdk_p2p* p2p = checked_p2p(Handle);
+    return (p2p != 0) ? p2p->set_packet_queue_size(Options) : EOS_EResult::EOS_InvalidParameters;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_P2P_GetPacketQueueInfo(EOS_HP2P Handle, const EOS_P2P_GetPacketQueueInfoOptions* Options,
                                                          EOS_P2P_PacketQueueInfo* OutPacketQueueInfo) {
-    (void)Options;
-    if (checked_p2p(Handle) == 0 || OutPacketQueueInfo == 0) {
+    eosr::sdk_p2p* p2p = checked_p2p(Handle);
+    if (p2p == 0 || Options == 0 || Options->ApiVersion != EOS_P2P_GETPACKETQUEUEINFO_API_LATEST) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    OutPacketQueueInfo->IncomingPacketQueueMaxSizeBytes = 0;
-    OutPacketQueueInfo->IncomingPacketQueueCurrentSizeBytes = 0;
-    OutPacketQueueInfo->IncomingPacketQueueCurrentPacketCount = 0;
-    OutPacketQueueInfo->OutgoingPacketQueueMaxSizeBytes = 0;
-    OutPacketQueueInfo->OutgoingPacketQueueCurrentSizeBytes = 0;
-    OutPacketQueueInfo->OutgoingPacketQueueCurrentPacketCount = 0;
-    return EOS_EResult::EOS_Success;
+    return p2p->get_packet_queue_info(OutPacketQueueInfo);
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_P2P_AddNotifyIncomingPacketQueueFull(
     EOS_HP2P Handle, const EOS_P2P_AddNotifyIncomingPacketQueueFullOptions* Options,
     void* ClientData, EOS_P2P_OnIncomingPacketQueueFullCallback IncomingPacketQueueFullHandler) {
-    (void)Options;
     eosr::sdk_p2p* p2p = checked_p2p(Handle);
-    return (p2p != 0) ? p2p->add_notify_incoming_packet_queue_full(ClientData, IncomingPacketQueueFullHandler) : 0;
+    if (p2p == 0 || Options == 0 ||
+        Options->ApiVersion != EOS_P2P_ADDNOTIFYINCOMINGPACKETQUEUEFULL_API_LATEST) {
+        return EOS_INVALID_NOTIFICATIONID;
+    }
+    return p2p->add_notify_incoming_packet_queue_full(ClientData, IncomingPacketQueueFullHandler);
 }
 
 EOS_DECLARE_FUNC(void) EOS_P2P_RemoveNotifyIncomingPacketQueueFull(EOS_HP2P Handle, EOS_NotificationId NotificationId) {
@@ -224,11 +219,6 @@ EOS_DECLARE_FUNC(void) EOS_P2P_RemoveNotifyIncomingPacketQueueFull(EOS_HP2P Hand
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_P2P_ClearPacketQueue(EOS_HP2P Handle, const EOS_P2P_ClearPacketQueueOptions* Options) {
-    (void)Options;
     eosr::sdk_p2p* p2p = checked_p2p(Handle);
-    if (p2p == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
-    }
-    p2p->clear_packet_queue();
-    return EOS_EResult::EOS_Success;
+    return (p2p != 0) ? p2p->clear_packet_queue(Options) : EOS_EResult::EOS_InvalidParameters;
 }

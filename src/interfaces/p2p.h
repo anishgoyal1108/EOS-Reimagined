@@ -23,10 +23,10 @@ struct net_envelope;
 
 // The P2P interface: the packet data path co-op gameplay rides on. A local user sends packets to
 // a remote peer on a named socket and channel, and receives packets queued from peers. Unlike
-// Connect and Auth this interface is almost entirely synchronous; the notifications fire on the
-// tick when connection events arrive over the network. Cross-peer delivery of a sent packet
-// rides on the peer mesh, which lands with the networked-discovery milestone; the receive path,
-// the packet queue, and the connection state machine are implemented and driven here.
+// Connect and Auth this interface is almost entirely synchronous; the connection notifications
+// fire on the tick when connection events arrive over the network. Cross-peer delivery of a sent
+// packet rides on the peer mesh, which lands with the networked-discovery milestone; the receive
+// path, the packet queue, and the connection state machine are implemented and driven here.
 // Spec: EOSSDK_P2P (docs/p2p.md), the P2P data path (docs/protocol.md)
 class sdk_p2p : public i_run_callback, public i_run_network {
 public:
@@ -39,7 +39,7 @@ public:
     void emu_init();
     void emu_deinit();
 
-    // --- Flat API surface (all synchronous) ---
+    // --- Flat API surface (all synchronous except query_nat_type) ---
 
     EOS_EResult send_packet(const EOS_P2P_SendPacketOptions* options);
     EOS_EResult get_next_received_packet_size(const EOS_P2P_GetNextReceivedPacketSizeOptions* options,
@@ -56,19 +56,35 @@ public:
         const EOS_P2P_SocketId* socket_filter, void* client_data,
         EOS_P2P_OnIncomingConnectionRequestCallback delegate);
     EOS_NotificationId add_notify_connection_established(
-        void* client_data, EOS_P2P_OnPeerConnectionEstablishedCallback delegate);
+        void* client_data, EOS_P2P_OnPeerConnectionEstablishedCallback delegate,
+        const EOS_P2P_SocketId* socket_filter = 0);
     EOS_NotificationId add_notify_connection_closed(
-        void* client_data, EOS_P2P_OnRemoteConnectionClosedCallback delegate);
+        void* client_data, EOS_P2P_OnRemoteConnectionClosedCallback delegate,
+        const EOS_P2P_SocketId* socket_filter = 0);
     EOS_NotificationId add_notify_connection_interrupted(
-        void* client_data, EOS_P2P_OnPeerConnectionInterruptedCallback delegate);
+        void* client_data, EOS_P2P_OnPeerConnectionInterruptedCallback delegate,
+        const EOS_P2P_SocketId* socket_filter = 0);
     EOS_NotificationId add_notify_incoming_packet_queue_full(
         void* client_data, EOS_P2P_OnIncomingPacketQueueFullCallback delegate);
     void remove_notify(EOS_NotificationId id);
 
-    // The receive queue is unbounded, so the queue-full notification never fires; QueryNATType
-    // completes immediately since a LAN peer is always directly reachable.
-    void query_nat_type(void* client_data, EOS_P2P_OnQueryNATTypeCompleteCallback delegate);
+    // NAT type is unknown until a query completes; a LAN peer is always directly reachable.
+    void query_nat_type(const EOS_P2P_QueryNATTypeOptions* options, void* client_data,
+                        EOS_P2P_OnQueryNATTypeCompleteCallback delegate);
+    EOS_EResult get_nat_type(EOS_ENATType* out_nat_type) const;
+
+    EOS_EResult set_relay_control(const EOS_P2P_SetRelayControlOptions* options);
+    EOS_EResult get_relay_control(EOS_ERelayControl* out_relay_control) const;
+    EOS_EResult set_port_range(const EOS_P2P_SetPortRangeOptions* options);
+    EOS_EResult get_port_range(u16* out_port, u16* out_additional_ports) const;
+    EOS_EResult set_packet_queue_size(const EOS_P2P_SetPacketQueueSizeOptions* options);
+    EOS_EResult get_packet_queue_info(EOS_P2P_PacketQueueInfo* out_info) const;
+    EOS_EResult clear_packet_queue(const EOS_P2P_ClearPacketQueueOptions* options);
     void clear_packet_queue();
+
+    // True when `user` is the configured local user. The flat layer validates the LocalUserId of
+    // every notification registration through this.
+    bool is_local_user(EOS_ProductUserId user) const;
 
     // --- i_run_callback ---
     bool cb_run_frame();
@@ -96,27 +112,51 @@ private:
         }
     };
 
+    // We accept a connection locally before the peer confirms it, so a connection is only open
+    // once the peer's response arrives. Reporting it established any earlier would tell the game
+    // it can talk to a peer that never agreed.
+    enum connection_state {
+        connection_pending,
+        connection_open
+    };
+
     // A connection notification to deliver on the next frame, so firing happens on the tick.
     struct pending_event {
-        enum kind { request, established, closed } type;
+        enum kind { request, established, interrupted, closed } type;
         std::string peer;
         std::string socket;
         EOS_EConnectionClosedReason reason;
     };
 
-    bool is_local_user(EOS_ProductUserId user) const;
+    // A registered connection notification, with the socket it is limited to (empty = any).
+    struct notify_filter {
+        std::string socket;
+    };
+
+    void remember_filter(EOS_NotificationId id, const EOS_P2P_SocketId* socket_filter);
+    void queue_event(pending_event::kind type, const std::string& peer, const std::string& socket,
+                     EOS_EConnectionClosedReason reason);
     void fire_connection_notifications();
+    // Drop every queued packet from `peer` on `socket`; an empty socket means every socket.
+    void flush_packets(const std::string& peer, const std::string& socket);
 
     sdk_settings& settings_;
     callback_manager& callbacks_;
     message_router& network_;
 
     std::deque<received_packet> receive_queue_;
-    // A connection is present once accepted; the value is unused today but leaves room for state.
-    std::map<connection_key, bool> connections_;
+    std::map<connection_key, connection_state> connections_;
     std::vector<pending_event> pending_events_;
-    // Socket filters per connection-request notification id (empty string means unfiltered).
-    std::map<EOS_NotificationId, std::string> request_filters_;
+    std::map<EOS_NotificationId, notify_filter> notify_filters_;
+
+    // Configuration a game sets and reads back. The emulator does not act on the relay and port
+    // settings (a LAN peer is reached directly), but it must report what the game configured.
+    bool nat_queried_;
+    EOS_ERelayControl relay_control_;
+    u16 port_;
+    u16 additional_ports_;
+    u64 incoming_queue_max_bytes_;
+    u64 outgoing_queue_max_bytes_;
     bool registered_;
 };
 

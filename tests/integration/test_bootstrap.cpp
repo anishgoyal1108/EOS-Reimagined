@@ -55,6 +55,16 @@ void EOS_CALL on_auth_login(const EOS_Auth_LoginCallbackInfo* info) {
 }
 int g_p2p_request_count = 0;
 void EOS_CALL on_p2p_request(const EOS_P2P_OnIncomingConnectionRequestInfo*) { g_p2p_request_count++; }
+bool g_p2p_nat_fired = false;
+EOS_EResult g_p2p_nat_result = EOS_EResult::EOS_UnexpectedError;
+EOS_ENATType g_p2p_nat_type = EOS_ENATType::EOS_NAT_Unknown;
+void EOS_CALL on_p2p_nat(const EOS_P2P_OnQueryNATTypeCompleteInfo* info) {
+    g_p2p_nat_fired = true;
+    g_p2p_nat_result = info->ResultCode;
+    g_p2p_nat_type = info->NATType;
+}
+void EOS_CALL on_p2p_queue_full(const EOS_P2P_OnIncomingPacketQueueFullInfo*) {
+}
 
 bool g_auth_logout_fired = false;
 EOS_EResult g_auth_logout_result = EOS_EResult::EOS_UnexpectedError;
@@ -406,19 +416,52 @@ TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
         RESOLVE(fn_next_size, EOS_P2P_GetNextReceivedPacketSize);
         RESOLVE(fn_add_req, EOS_P2P_AddNotifyPeerConnectionRequest);
         RESOLVE(fn_remove_req, EOS_P2P_RemoveNotifyPeerConnectionRequest);
+        RESOLVE(fn_query_nat, EOS_P2P_QueryNATType);
         RESOLVE(fn_get_nat, EOS_P2P_GetNATType);
+        RESOLVE(fn_set_relay, EOS_P2P_SetRelayControl);
+        RESOLVE(fn_get_relay, EOS_P2P_GetRelayControl);
+        RESOLVE(fn_set_port, EOS_P2P_SetPortRange);
+        RESOLVE(fn_get_port, EOS_P2P_GetPortRange);
+        RESOLVE(fn_set_queue, EOS_P2P_SetPacketQueueSize);
+        RESOLVE(fn_get_queue, EOS_P2P_GetPacketQueueInfo);
+        RESOLVE(fn_add_queue_full, EOS_P2P_AddNotifyIncomingPacketQueueFull);
+        RESOLVE(fn_remove_queue_full, EOS_P2P_RemoveNotifyIncomingPacketQueueFull);
+        RESOLVE(fn_clear_queue, EOS_P2P_ClearPacketQueue);
         RESOLVE(fn_puid_from_string, EOS_ProductUserId_FromString);
 
         EOS_HP2P p2p = fn_get_p2p(platform);
         REQUIRE((p2p != nullptr));
 
+        EOS_ProductUserId local = g_conn_login_user;
+        EOS_ProductUserId remote = fn_puid_from_string("fedcba9876543210fedcba9876543210");
+
         EOS_P2P_AddNotifyPeerConnectionRequestOptions notify_options = {};
         notify_options.ApiVersion = EOS_P2P_ADDNOTIFYPEERCONNECTIONREQUEST_API_LATEST;
+        const EOS_NotificationId rejected_local =
+            fn_add_req(p2p, &notify_options, nullptr, on_p2p_request);
+        CHECK(rejected_local == EOS_INVALID_NOTIFICATIONID);
+        if (rejected_local != EOS_INVALID_NOTIFICATIONID) {
+            fn_remove_req(p2p, rejected_local);
+        }
+
+        EOS_P2P_SocketId invalid_socket = {};
+        invalid_socket.ApiVersion = EOS_P2P_SOCKETID_API_LATEST;
+        std::strncpy(invalid_socket.SocketName, "bad/socket",
+                     EOS_P2P_SOCKETID_SOCKETNAME_SIZE - 1);
+        notify_options.LocalUserId = local;
+        notify_options.SocketId = &invalid_socket;
+        const EOS_NotificationId rejected_socket =
+            fn_add_req(p2p, &notify_options, nullptr, on_p2p_request);
+        CHECK(rejected_socket == EOS_INVALID_NOTIFICATIONID);
+        if (rejected_socket != EOS_INVALID_NOTIFICATIONID) {
+            fn_remove_req(p2p, rejected_socket);
+        }
+
+        notify_options.SocketId = nullptr;
         const EOS_NotificationId req_id =
             fn_add_req(p2p, &notify_options, nullptr, on_p2p_request);
         CHECK(req_id != 0);
 
-        EOS_ProductUserId remote = fn_puid_from_string("fedcba9876543210fedcba9876543210");
         EOS_P2P_SocketId socket = {};
         socket.ApiVersion = EOS_P2P_SOCKETID_API_LATEST;
         std::strncpy(socket.SocketName, "game", EOS_P2P_SOCKETID_SOCKETNAME_SIZE - 1);
@@ -426,7 +469,7 @@ TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
 
         EOS_P2P_SendPacketOptions send_options = {};
         send_options.ApiVersion = EOS_P2P_SENDPACKET_API_LATEST;
-        send_options.LocalUserId = fn_puid_from_string("00112233445566778899aabbccddeeff");
+        send_options.LocalUserId = local;
         send_options.RemoteUserId = remote;
         send_options.SocketId = &socket;
         send_options.Channel = 0;
@@ -446,12 +489,91 @@ TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
         uint32_t size = 0;
         CHECK(fn_next_size(p2p, &size_options, &size) == EOS_EResult::EOS_NotFound);
 
+        // GetNATType has no cached value until a successful query completes.
         EOS_P2P_GetNATTypeOptions nat_options = {};
         nat_options.ApiVersion = EOS_P2P_GETNATTYPE_API_LATEST;
         EOS_ENATType nat = EOS_ENATType::EOS_NAT_Unknown;
+        CHECK(fn_get_nat(p2p, &nat_options, &nat) == EOS_EResult::EOS_NotFound);
+
+        CHECK(fn_get_nat(p2p, nullptr, &nat) == EOS_EResult::EOS_InvalidParameters);
+        g_p2p_nat_fired = false;
+        fn_query_nat(p2p, nullptr, nullptr, on_p2p_nat);
+        for (int i = 0; i < 8 && !g_p2p_nat_fired; i++) {
+            fn_tick(platform);
+        }
+        CHECK(g_p2p_nat_fired);
+        CHECK(g_p2p_nat_result == EOS_EResult::EOS_InvalidParameters);
+
+        EOS_P2P_QueryNATTypeOptions query_options = {};
+        query_options.ApiVersion = EOS_P2P_QUERYNATTYPE_API_LATEST;
+        g_p2p_nat_fired = false;
+        g_p2p_nat_result = EOS_EResult::EOS_UnexpectedError;
+        fn_query_nat(p2p, &query_options, nullptr, on_p2p_nat);
+        for (int i = 0; i < 8 && !g_p2p_nat_fired; i++) {
+            fn_tick(platform);
+        }
+        CHECK(g_p2p_nat_fired);
+        CHECK(g_p2p_nat_result == EOS_EResult::EOS_Success);
+        CHECK(g_p2p_nat_type == EOS_ENATType::EOS_NAT_Open);
         CHECK(fn_get_nat(p2p, &nat_options, &nat) == EOS_EResult::EOS_Success);
         CHECK(nat == EOS_ENATType::EOS_NAT_Open);
 
+        // Setters that report success must be observable through their paired getters.
+        CHECK(fn_set_relay(p2p, nullptr) == EOS_EResult::EOS_InvalidParameters);
+        EOS_P2P_SetRelayControlOptions relay_options = {};
+        relay_options.ApiVersion = EOS_P2P_SETRELAYCONTROL_API_LATEST;
+        relay_options.RelayControl = EOS_ERelayControl::EOS_RC_ForceRelays;
+        CHECK(fn_set_relay(p2p, &relay_options) == EOS_EResult::EOS_Success);
+        EOS_P2P_GetRelayControlOptions get_relay_options = {};
+        get_relay_options.ApiVersion = EOS_P2P_GETRELAYCONTROL_API_LATEST;
+        EOS_ERelayControl relay = EOS_ERelayControl::EOS_RC_AllowRelays;
+        CHECK(fn_get_relay(p2p, &get_relay_options, &relay) == EOS_EResult::EOS_Success);
+        CHECK(relay == EOS_ERelayControl::EOS_RC_ForceRelays);
+
+        CHECK(fn_set_port(p2p, nullptr) == EOS_EResult::EOS_InvalidParameters);
+        EOS_P2P_SetPortRangeOptions port_options = {};
+        port_options.ApiVersion = EOS_P2P_SETPORTRANGE_API_LATEST;
+        port_options.Port = 9000;
+        port_options.MaxAdditionalPortsToTry = 4;
+        CHECK(fn_set_port(p2p, &port_options) == EOS_EResult::EOS_Success);
+        EOS_P2P_GetPortRangeOptions get_port_options = {};
+        get_port_options.ApiVersion = EOS_P2P_GETPORTRANGE_API_LATEST;
+        uint16_t port = 0;
+        uint16_t additional_ports = 0;
+        CHECK(fn_get_port(p2p, &get_port_options, &port, &additional_ports) == EOS_EResult::EOS_Success);
+        CHECK(port == 9000);
+        CHECK(additional_ports == 4);
+
+        CHECK(fn_set_queue(p2p, nullptr) == EOS_EResult::EOS_InvalidParameters);
+        EOS_P2P_SetPacketQueueSizeOptions queue_options = {};
+        queue_options.ApiVersion = EOS_P2P_SETPACKETQUEUESIZE_API_LATEST;
+        queue_options.IncomingPacketQueueMaxSizeBytes = 4096;
+        queue_options.OutgoingPacketQueueMaxSizeBytes = 8192;
+        CHECK(fn_set_queue(p2p, &queue_options) == EOS_EResult::EOS_Success);
+        EOS_P2P_GetPacketQueueInfoOptions get_queue_options = {};
+        get_queue_options.ApiVersion = EOS_P2P_GETPACKETQUEUEINFO_API_LATEST;
+        EOS_P2P_PacketQueueInfo queue_info = {};
+        CHECK(fn_get_queue(p2p, &get_queue_options, &queue_info) == EOS_EResult::EOS_Success);
+        CHECK(queue_info.IncomingPacketQueueMaxSizeBytes == 4096);
+        CHECK(queue_info.OutgoingPacketQueueMaxSizeBytes == 8192);
+
+        CHECK(fn_add_queue_full(p2p, nullptr, nullptr, on_p2p_queue_full) ==
+              EOS_INVALID_NOTIFICATIONID);
+        EOS_P2P_AddNotifyIncomingPacketQueueFullOptions queue_notify_options = {};
+        queue_notify_options.ApiVersion = EOS_P2P_ADDNOTIFYINCOMINGPACKETQUEUEFULL_API_LATEST;
+        const EOS_NotificationId queue_notification =
+            fn_add_queue_full(p2p, &queue_notify_options, nullptr, on_p2p_queue_full);
+        REQUIRE(queue_notification != EOS_INVALID_NOTIFICATIONID);
+
+        CHECK(fn_clear_queue(p2p, nullptr) == EOS_EResult::EOS_InvalidParameters);
+        EOS_P2P_ClearPacketQueueOptions clear_options = {};
+        clear_options.ApiVersion = EOS_P2P_CLEARPACKETQUEUE_API_LATEST + 1;
+        clear_options.LocalUserId = send_options.LocalUserId;
+        clear_options.RemoteUserId = remote;
+        clear_options.SocketId = &socket;
+        CHECK(fn_clear_queue(p2p, &clear_options) == EOS_EResult::EOS_IncompatibleVersion);
+
+        fn_remove_queue_full(p2p, queue_notification);
         fn_remove_req(p2p, req_id);
     }
 
