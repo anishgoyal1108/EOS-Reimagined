@@ -5,6 +5,7 @@
 
 #include "core/callback_manager.h"
 #include "core/settings.h"
+#include "interfaces/auth.h"
 #include "interfaces/connect.h"
 #include "net/message_router.h"
 
@@ -81,14 +82,16 @@ public:
     callback_manager& callbacks() { return cb_manager_; }
     message_router& network() { return network_; }
     sdk_connect& connect() { return connect_; }
+    sdk_auth& auth() { return auth_; }
 
 private:
     sdk_settings settings_;
     callback_manager cb_manager_;
     message_router network_;
-    // Implemented interfaces are real objects; the rest are placeholders until promoted. connect_
-    // is declared after its dependencies so it is constructed with valid references to them.
+    // Implemented interfaces are real objects; the rest are placeholders until promoted. These
+    // are declared after their dependencies so they construct with valid references to them.
     sdk_connect connect_;
+    sdk_auth auth_;
     stub_interface interfaces_[if_count];
     bool created_;
 };

@@ -27,6 +27,7 @@ add_library(eosr_core STATIC
     src/core/platform.cpp
     src/core/runtime.cpp
     src/interfaces/connect.cpp
+    src/interfaces/auth.cpp
     src/net/wire.cpp
     src/net/message_router.cpp
 )
@@ -67,6 +68,7 @@ add_library(eos_shared SHARED
     src/flat/eos_logging_flat.cpp
     src/flat/eos_common_flat.cpp
     src/flat/eos_connect_flat.cpp
+    src/flat/eos_auth_flat.cpp
 )
 target_link_libraries(eos_shared PRIVATE eosr_core)
 set_target_properties(eos_shared PROPERTIES
