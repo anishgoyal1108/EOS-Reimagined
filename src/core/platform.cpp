@@ -37,6 +37,9 @@ void sdk_platform::release() {
         return;
     }
     network_.stop();
+    // Discard any queued callbacks and registrations so a platform created after this one never
+    // inherits stale async state or fires through a destroyed owner.
+    cb_manager_.clear();
     platform::net_shutdown();
     created_ = false;
     log_info("platform released");

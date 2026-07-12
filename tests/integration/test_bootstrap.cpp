@@ -138,9 +138,9 @@ TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
     CHECK((connect_getter(platform) == nullptr));
     fn_release(platform); // a second release is harmless
 
-    // Shut down, then reject a second shutdown.
+    // Shut down, then distinguish a repeated shutdown from a never-configured client.
     CHECK(fn_shutdown() == EOS_EResult::EOS_Success);
-    CHECK(fn_shutdown() == EOS_EResult::EOS_NotConfigured);
+    CHECK(fn_shutdown() == EOS_EResult::EOS_UnexpectedError);
 }
 
 TEST_CASE("the built SDK library exposes the common id and result helpers") {
@@ -170,12 +170,42 @@ TEST_CASE("the built SDK library exposes the common id and result helpers") {
     // Interning is stable: the same string resolves to the same handle.
     CHECK((fn_puid_from_string(id) == puid));
 
-    // The all-zero id is the null sentinel and is not valid.
+    // FromString performs no format validation, as required by the EOS contract.
     EOS_ProductUserId null_id = fn_puid_from_string("00000000000000000000000000000000");
-    CHECK(fn_puid_is_valid(null_id) == EOS_FALSE);
+    CHECK(fn_puid_is_valid(null_id) == EOS_TRUE);
+
+    const char* serialized_id = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+    EOS_ProductUserId serialized = fn_puid_from_string(serialized_id);
+    REQUIRE((serialized != nullptr));
+    CHECK(fn_puid_is_valid(serialized) == EOS_TRUE);
+    length = static_cast<int32_t>(sizeof(buffer));
+    CHECK(fn_puid_to_string(serialized, buffer, &length) == EOS_EResult::EOS_Success);
+    CHECK(std::string(buffer) == serialized_id);
 
     // A too-small buffer is rejected and reports the required size.
     int32_t small = 4;
     CHECK(fn_puid_to_string(puid, buffer, &small) == EOS_EResult::EOS_LimitExceeded);
     CHECK(small == 33); // 32 characters plus the null terminator
+}
+
+TEST_CASE("the dynamic library wrapper handles failures and repeated cleanup") {
+    REQUIRE_FALSE(g_library_path.empty());
+    dynamic_library lib;
+    CHECK_FALSE(lib.is_open());
+    CHECK_FALSE(lib.open(0));
+    CHECK_FALSE(lib.is_open());
+    CHECK((lib.symbol("EOS_Initialize") == nullptr));
+
+    CHECK_FALSE(lib.open("this-library-does-not-exist"));
+    CHECK_FALSE(lib.is_open());
+
+    REQUIRE(lib.open(g_library_path.c_str()));
+    CHECK(lib.is_open());
+    CHECK((lib.symbol("EOS_Initialize") != nullptr));
+    CHECK((lib.symbol("EOS_SymbolThatDoesNotExist") == nullptr));
+
+    lib.close();
+    lib.close();
+    CHECK_FALSE(lib.is_open());
+    CHECK((lib.symbol("EOS_Initialize") == nullptr));
 }

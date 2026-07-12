@@ -14,6 +14,11 @@ dynamic_library::~dynamic_library() {
 
 bool dynamic_library::open(const char* path) {
     close();
+    if (path == 0) {
+        // dlopen(nullptr) returns a handle to the main program rather than failing, which
+        // would wrongly report success and expose the host's symbols. Reject it, matching win32.
+        return false;
+    }
     handle_ = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     return handle_ != 0;
 }

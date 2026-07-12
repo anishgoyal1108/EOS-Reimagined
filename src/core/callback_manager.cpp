@@ -53,6 +53,14 @@ void callback_manager::remove_notification(i_run_callback* owner, EOS_Notificati
     }
 }
 
+void callback_manager::clear() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    frames_to_run_.clear();
+    callbacks_to_run_.clear();
+    notifications_.clear();
+    next_notification_id_ = first_notification_id;
+}
+
 void callback_manager::remove_all_notifications(i_run_callback* owner) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     notifications_.erase(owner);

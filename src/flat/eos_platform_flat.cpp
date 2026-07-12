@@ -8,15 +8,16 @@
 
 namespace {
 
-// A platform handle is only valid if it is our one live, created platform. This rejects null,
-// a stray pointer, and a handle used after EOS_Platform_Release, so every trampoline degrades
-// to a safe no-op instead of dereferencing garbage.
+// A platform handle is only valid if it is the current live platform. Because each create
+// allocates a fresh instance, this rejects null, a stray pointer, and a handle left over from
+// a released platform, so every trampoline degrades to a safe no-op. We only compare the stale
+// handle, never dereference it.
 eosr::sdk_platform* checked_platform(EOS_HPlatform handle) {
-    eosr::sdk_platform& platform = eosr::global_platform();
-    if (handle != reinterpret_cast<EOS_HPlatform>(&platform) || !platform.is_created()) {
+    eosr::sdk_platform* platform = eosr::platform_current();
+    if (platform == 0 || handle != reinterpret_cast<EOS_HPlatform>(platform) || !platform->is_created()) {
         return 0;
     }
-    return &platform;
+    return platform;
 }
 
 } // namespace
@@ -25,17 +26,21 @@ EOS_DECLARE_FUNC(EOS_HPlatform) EOS_Platform_Create(const EOS_Platform_Options* 
     if (Options == 0 || !eosr::global_client().is_initialized()) {
         return 0;
     }
-    eosr::sdk_platform& platform = eosr::global_platform();
-    if (!platform.create(Options)) {
+    eosr::sdk_platform* platform = eosr::platform_create();
+    if (!platform->create(Options)) {
+        eosr::platform_destroy();
         return 0;
     }
-    return reinterpret_cast<EOS_HPlatform>(&platform);
+    return reinterpret_cast<EOS_HPlatform>(platform);
 }
 
 EOS_DECLARE_FUNC(void) EOS_Platform_Release(EOS_HPlatform Handle) {
     eosr::sdk_platform* platform = checked_platform(Handle);
     if (platform != 0) {
         platform->release();
+        // Free the instance so its address is never reused by a later create; the next create
+        // hands out a distinct handle and this one becomes permanently unrecognized.
+        eosr::platform_destroy();
     }
 }
 

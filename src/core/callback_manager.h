@@ -44,6 +44,10 @@ public:
 
     void set_max_tick_budget(std::chrono::milliseconds budget);
 
+    // Drop every registration, queued callback, and notification. The platform calls this on
+    // release so a later platform never inherits a prior one's async state or stale owners.
+    void clear();
+
     // Run one frame: housekeeping, then deliver ready callbacks. Delegates are fired after
     // the lock is released so a re-entrant EOS call from inside a callback (which games do)
     // cannot stall the network thread or a slow delegate hold the lock.

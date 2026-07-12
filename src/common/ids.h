@@ -55,7 +55,9 @@ private:
         }
         std::unique_ptr<Details> details(new Details());
         details->id_str = id_str;
-        details->valid = id_string_is_valid(id_str);
+        // EOS_*_FromString performs no format validation, and EOS_*_IsValid returns true for
+        // any handle it produced. Only a null handle is invalid, so an interned id is valid.
+        details->valid = true;
         Details* handle = details.get();
         table.emplace(id_str, std::move(details));
         return handle;

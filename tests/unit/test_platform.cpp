@@ -20,6 +20,19 @@ struct ready_owner : i_run_callback {
     void free_callback(frame_result&) {}
 };
 
+struct counting_owner : i_run_callback {
+    counting_owner() : frame_count(0) {}
+
+    bool cb_run_frame() {
+        frame_count++;
+        return false;
+    }
+    bool run_callbacks(frame_result&) { return true; }
+    void free_callback(frame_result&) {}
+
+    int frame_count;
+};
+
 bool g_fired;
 void EOS_CALL on_fire(const void*) { g_fired = true; }
 
@@ -105,4 +118,27 @@ TEST_CASE("the platform can be recreated after release") {
     CHECK(p.is_created());
     CHECK((p.interface_handle(if_lobby) != 0));
     p.release();
+}
+
+TEST_CASE("release discards callbacks and frame registrations before recreation") {
+    g_fired = false;
+    sdk_platform platform;
+    EOS_Platform_Options options = options_with_product("game-5");
+    REQUIRE(platform.create(&options));
+
+    counting_owner owner;
+    platform.callbacks().register_frame(&owner);
+    platform.callbacks().register_callbacks(&owner);
+    std::unique_ptr<frame_result> result(new frame_result());
+    result->create_callback(1, 8, on_fire);
+    result->set_done(true);
+    platform.callbacks().add_callback(&owner, std::move(result));
+
+    platform.release();
+    REQUIRE(platform.create(&options));
+    platform.tick();
+
+    CHECK_FALSE(g_fired);
+    CHECK(owner.frame_count == 0);
+    platform.release();
 }

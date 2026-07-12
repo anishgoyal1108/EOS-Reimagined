@@ -10,9 +10,15 @@ using namespace eosr;
 namespace {
 
 std::vector<std::string> g_captured;
+int g_self_removing_count = 0;
 
 void EOS_CALL capture(const EOS_LogMessage* message) {
     g_captured.push_back(message->Message);
+}
+
+void EOS_CALL capture_once(const EOS_LogMessage*) {
+    g_self_removing_count++;
+    logger::instance().set_callback(0);
 }
 
 // The logger is a process-global singleton, so each case restores the default state it found.
@@ -81,5 +87,19 @@ TEST_CASE("logging without a callback is a safe no-op") {
                                  EOS_ELogLevel::EOS_LOG_Verbose);
     log_info("into the void");
     CHECK(g_captured.empty());
+    reset_logger();
+}
+
+TEST_CASE("a callback can remove itself without deadlocking") {
+    reset_logger();
+    g_self_removing_count = 0;
+    logger::instance().set_level(EOS_ELogCategory::EOS_LC_ALL_CATEGORIES,
+                                 EOS_ELogLevel::EOS_LOG_Verbose);
+    logger::instance().set_callback(capture_once);
+
+    log_info("first");
+    log_info("second");
+
+    CHECK(g_self_removing_count == 1);
     reset_logger();
 }
