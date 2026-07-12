@@ -1,0 +1,10 @@
+# Linker version script: export only the EOS_* C ABI. Everything else — including the weak
+# libstdc++ template instantiations the compiler emits with vague linkage, which
+# -fvisibility=hidden does not hide — is made local so the drop-in library exposes exactly the
+# SDK surface and cannot collide with a host process's own libstdc++ symbols.
+{
+    global:
+        EOS_*;
+    local:
+        *;
+};

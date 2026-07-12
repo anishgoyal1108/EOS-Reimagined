@@ -47,3 +47,13 @@ set_target_properties(integration_tests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 add_test(NAME integration_tests COMMAND integration_tests $<TARGET_FILE:eos_shared>)
+
+if(UNIX AND CMAKE_NM)
+    add_test(
+        NAME export_surface
+        COMMAND ${CMAKE_COMMAND}
+            -DNM=${CMAKE_NM}
+            -DLIBRARY=$<TARGET_FILE:eos_shared>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_exports.cmake
+    )
+endif()

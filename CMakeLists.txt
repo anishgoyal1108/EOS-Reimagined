@@ -20,6 +20,7 @@ add_library(eosr_core STATIC
     src/common/ids.cpp
     src/common/byte_buffer.cpp
     src/common/log.cpp
+    src/common/crypto.cpp
     src/core/frame_result.cpp
     src/core/callback_manager.cpp
     src/core/settings.cpp
@@ -81,6 +82,16 @@ if(WIN32)
 else()
     set_target_properties(eos_shared PROPERTIES
         OUTPUT_NAME "EOSSDK-Linux-Shipping" PREFIX "lib" SUFFIX ".so")
+    # -fvisibility=hidden does not hide the weak libstdc++ template instantiations the compiler
+    # emits with vague linkage, so pin the exported surface to EOS_* with a linker version script.
+    include(CheckCXXSourceCompiles)
+    set(eosr_version_script "${CMAKE_CURRENT_SOURCE_DIR}/cmake/eos_exports.map")
+    set(CMAKE_REQUIRED_FLAGS "-Wl,--version-script=${eosr_version_script}")
+    check_cxx_source_compiles("int main(){return 0;}" EOSR_HAVE_VERSION_SCRIPT)
+    unset(CMAKE_REQUIRED_FLAGS)
+    if(EOSR_HAVE_VERSION_SCRIPT)
+        target_link_options(eos_shared PRIVATE "-Wl,--version-script=${eosr_version_script}")
+    endif()
 endif()
 eosr_apply_warnings(eos_shared)
 
