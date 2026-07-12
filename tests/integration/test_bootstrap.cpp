@@ -7,6 +7,7 @@
 #include "eos_init.h"
 #include "eos_logging.h"
 #include "eos_connect.h"
+#include "eos_auth.h"
 
 #include "platform/dynlib.h"
 
@@ -40,6 +41,17 @@ void EOS_CALL on_connect_status(const EOS_Connect_LoginStatusChangedCallbackInfo
 
 bool g_conn_logout_fired = false;
 void EOS_CALL on_connect_logout(const EOS_Connect_LogoutCallbackInfo*) { g_conn_logout_fired = true; }
+
+bool g_auth_login_fired = false;
+EOS_EResult g_auth_login_result = EOS_EResult::EOS_UnexpectedError;
+EOS_EpicAccountId g_auth_login_user = 0;
+void EOS_CALL on_auth_login(const EOS_Auth_LoginCallbackInfo* info) {
+    g_auth_login_fired = true;
+    g_auth_login_result = info->ResultCode;
+    g_auth_login_user = info->LocalUserId;
+}
+bool g_auth_logout_fired = false;
+void EOS_CALL on_auth_logout(const EOS_Auth_LogoutCallbackInfo*) { g_auth_logout_fired = true; }
 
 // Every interface getter shares one ABI shape: (EOS_HPlatform) -> opaque pointer.
 typedef void* (EOS_CALL* pfn_getter)(EOS_HPlatform);
@@ -209,6 +221,76 @@ TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
         CHECK(g_conn_status_current == EOS_ELoginStatus::EOS_LS_NotLoggedIn);
 
         fn_remove_notify(connect, notify_id);
+    }
+
+    // Drive the Auth interface through the real library: log in, then mint and free the auth and
+    // id tokens (the release helpers must actually free, unlike Connect's no-op releases).
+    {
+        RESOLVE(fn_get_auth, EOS_Platform_GetAuthInterface);
+        RESOLVE(fn_auth_login, EOS_Auth_Login);
+        RESOLVE(fn_auth_logout, EOS_Auth_Logout);
+        RESOLVE(fn_auth_count, EOS_Auth_GetLoggedInAccountsCount);
+        RESOLVE(fn_auth_by_index, EOS_Auth_GetLoggedInAccountByIndex);
+        RESOLVE(fn_auth_status, EOS_Auth_GetLoginStatus);
+        RESOLVE(fn_auth_selected, EOS_Auth_GetSelectedAccountId);
+        RESOLVE(fn_copy_token, EOS_Auth_CopyUserAuthToken);
+        RESOLVE(fn_token_release, EOS_Auth_Token_Release);
+        RESOLVE(fn_copy_id, EOS_Auth_CopyIdToken);
+        RESOLVE(fn_id_release, EOS_Auth_IdToken_Release);
+        RESOLVE(fn_eaid_valid, EOS_EpicAccountId_IsValid);
+
+        EOS_HAuth auth = fn_get_auth(platform);
+        REQUIRE((auth != nullptr));
+
+        EOS_Auth_Credentials credentials = {};
+        credentials.ApiVersion = EOS_AUTH_CREDENTIALS_API_LATEST;
+        credentials.Token = "code";
+        credentials.Type = EOS_ELoginCredentialType::EOS_LCT_ExchangeCode;
+        EOS_Auth_LoginOptions login_options = {};
+        login_options.ApiVersion = EOS_AUTH_LOGIN_API_LATEST;
+        login_options.Credentials = &credentials;
+        fn_auth_login(auth, &login_options, nullptr, on_auth_login);
+
+        for (int i = 0; i < 32 && !g_auth_login_fired; i++) {
+            fn_tick(platform);
+        }
+        CHECK(g_auth_login_fired);
+        CHECK(g_auth_login_result == EOS_EResult::EOS_Success);
+        CHECK(fn_eaid_valid(g_auth_login_user) == EOS_TRUE);
+        CHECK(fn_auth_count(auth) == 1);
+        CHECK((fn_auth_by_index(auth, 0) == g_auth_login_user));
+        CHECK(fn_auth_status(auth, g_auth_login_user) == EOS_ELoginStatus::EOS_LS_LoggedIn);
+
+        EOS_EpicAccountId selected = 0;
+        CHECK(fn_auth_selected(auth, g_auth_login_user, &selected) == EOS_EResult::EOS_Success);
+        CHECK((selected == g_auth_login_user));
+
+        // Mint and free the auth token and the id token.
+        EOS_Auth_CopyUserAuthTokenOptions token_options = {};
+        token_options.ApiVersion = EOS_AUTH_COPYUSERAUTHTOKEN_API_LATEST;
+        EOS_Auth_Token* token = nullptr;
+        CHECK(fn_copy_token(auth, &token_options, g_auth_login_user, &token) == EOS_EResult::EOS_Success);
+        REQUIRE((token != nullptr));
+        CHECK((token->AccountId == g_auth_login_user));
+        fn_token_release(token);
+
+        EOS_Auth_CopyIdTokenOptions id_options = {};
+        id_options.ApiVersion = EOS_AUTH_COPYIDTOKEN_API_LATEST;
+        id_options.AccountId = g_auth_login_user;
+        EOS_Auth_IdToken* id_token = nullptr;
+        CHECK(fn_copy_id(auth, &id_options, &id_token) == EOS_EResult::EOS_Success);
+        REQUIRE((id_token != nullptr));
+        fn_id_release(id_token);
+
+        EOS_Auth_LogoutOptions logout_options = {};
+        logout_options.ApiVersion = EOS_AUTH_LOGOUT_API_LATEST;
+        logout_options.LocalUserId = g_auth_login_user;
+        fn_auth_logout(auth, &logout_options, nullptr, on_auth_logout);
+        for (int i = 0; i < 8 && !g_auth_logout_fired; i++) {
+            fn_tick(platform);
+        }
+        CHECK(g_auth_logout_fired);
+        CHECK(fn_auth_count(auth) == 0);
     }
 
     // Release, then confirm stale-handle calls degrade to safe no-ops.
