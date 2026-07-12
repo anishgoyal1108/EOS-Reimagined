@@ -2,6 +2,7 @@
 #define EOSR_INTERFACES_AUTH_H
 
 #include <cstddef>
+#include <set>
 #include <vector>
 
 #include "eos_common.h"
@@ -80,6 +81,9 @@ private:
 
     // Logged-in Epic accounts, self at index 0. Empty means not logged in.
     std::vector<EOS_EpicAccountId> accounts_;
+    // Every account that has logged in during this session, retained across logout so we can tell
+    // an unknown account (never seen) apart from a known one that is currently logged out.
+    std::set<EOS_EpicAccountId> known_accounts_;
     std::vector<status_transition> pending_status_changes_;
     bool registered_;
 };

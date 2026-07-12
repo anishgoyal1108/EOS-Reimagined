@@ -21,8 +21,8 @@ eosr::sdk_auth* checked_auth(EOS_HAuth handle) {
     return reinterpret_cast<eosr::sdk_auth*>(handle);
 }
 
-template <class Delegate>
-void stub_async(EOS_HAuth handle, void* client_data, Delegate delegate, std::size_t info_size) {
+template <class delegate_type>
+void stub_async(EOS_HAuth handle, void* client_data, delegate_type delegate, std::size_t info_size) {
     eosr::sdk_auth* auth = checked_auth(handle);
     if (auth != 0) {
         auth->queue_stub_result(client_data, reinterpret_cast<eosr::completion_delegate>(delegate),
@@ -76,10 +76,12 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Auth_GetSelectedAccountId(EOS_HAuth Handle, co
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Auth_CopyUserAuthToken(EOS_HAuth Handle, const EOS_Auth_CopyUserAuthTokenOptions* Options,
                                                         EOS_EpicAccountId LocalUserId, EOS_Auth_Token** OutUserAuthToken) {
-    (void)Options;
     eosr::sdk_auth* auth = checked_auth(Handle);
-    if (auth == 0) {
+    if (auth == 0 || OutUserAuthToken == 0 || Options == 0) {
         return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (Options->ApiVersion != EOS_AUTH_COPYUSERAUTHTOKEN_API_LATEST) {
+        return EOS_EResult::EOS_VersionMismatch;
     }
     return auth->copy_user_auth_token(LocalUserId, OutUserAuthToken);
 }
@@ -87,19 +89,24 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Auth_CopyUserAuthToken(EOS_HAuth Handle, const
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Auth_CopyIdToken(EOS_HAuth Handle, const EOS_Auth_CopyIdTokenOptions* Options,
                                                    EOS_Auth_IdToken** OutIdToken) {
     eosr::sdk_auth* auth = checked_auth(Handle);
-    if (auth == 0) {
+    if (auth == 0 || OutIdToken == 0 || Options == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    EOS_EpicAccountId account = (Options != 0) ? Options->AccountId : 0;
-    return auth->copy_id_token(account, OutIdToken);
+    if (Options->ApiVersion != EOS_AUTH_COPYIDTOKEN_API_LATEST) {
+        return EOS_EResult::EOS_VersionMismatch;
+    }
+    return auth->copy_id_token(Options->AccountId, OutIdToken);
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Auth_AddNotifyLoginStatusChanged(
     EOS_HAuth Handle, const EOS_Auth_AddNotifyLoginStatusChangedOptions* Options,
     void* ClientData, const EOS_Auth_OnLoginStatusChangedCallback Notification) {
-    (void)Options;
     eosr::sdk_auth* auth = checked_auth(Handle);
-    return (auth != 0) ? auth->add_notify_login_status_changed(ClientData, Notification) : 0;
+    if (auth == 0 || Options == 0 ||
+        Options->ApiVersion != EOS_AUTH_ADDNOTIFYLOGINSTATUSCHANGED_API_LATEST) {
+        return 0; // EOS_INVALID_NOTIFICATIONID
+    }
+    return auth->add_notify_login_status_changed(ClientData, Notification);
 }
 
 EOS_DECLARE_FUNC(void) EOS_Auth_RemoveNotifyLoginStatusChanged(EOS_HAuth Handle, EOS_NotificationId InId) {

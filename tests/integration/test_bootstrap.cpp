@@ -51,7 +51,19 @@ void EOS_CALL on_auth_login(const EOS_Auth_LoginCallbackInfo* info) {
     g_auth_login_user = info->LocalUserId;
 }
 bool g_auth_logout_fired = false;
-void EOS_CALL on_auth_logout(const EOS_Auth_LogoutCallbackInfo*) { g_auth_logout_fired = true; }
+EOS_EResult g_auth_logout_result = EOS_EResult::EOS_UnexpectedError;
+void EOS_CALL on_auth_logout(const EOS_Auth_LogoutCallbackInfo* info) {
+    g_auth_logout_fired = true;
+    g_auth_logout_result = info->ResultCode;
+}
+int g_auth_status_count = 0;
+EOS_ELoginStatus g_auth_status_previous = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
+EOS_ELoginStatus g_auth_status_current = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
+void EOS_CALL on_auth_status(const EOS_Auth_LoginStatusChangedCallbackInfo* info) {
+    g_auth_status_count++;
+    g_auth_status_previous = info->PrevStatus;
+    g_auth_status_current = info->CurrentStatus;
+}
 
 // Every interface getter shares one ABI shape: (EOS_HPlatform) -> opaque pointer.
 typedef void* (EOS_CALL* pfn_getter)(EOS_HPlatform);
@@ -237,6 +249,8 @@ TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
         RESOLVE(fn_token_release, EOS_Auth_Token_Release);
         RESOLVE(fn_copy_id, EOS_Auth_CopyIdToken);
         RESOLVE(fn_id_release, EOS_Auth_IdToken_Release);
+        RESOLVE(fn_auth_add_notify, EOS_Auth_AddNotifyLoginStatusChanged);
+        RESOLVE(fn_auth_remove_notify, EOS_Auth_RemoveNotifyLoginStatusChanged);
         RESOLVE(fn_eaid_valid, EOS_EpicAccountId_IsValid);
 
         EOS_HAuth auth = fn_get_auth(platform);
@@ -265,8 +279,30 @@ TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
         CHECK(fn_auth_selected(auth, g_auth_login_user, &selected) == EOS_EResult::EOS_Success);
         CHECK((selected == g_auth_login_user));
 
-        // Mint and free the auth token and the id token.
+        // The flat ABI must validate the options object before minting a token.
         EOS_Auth_CopyUserAuthTokenOptions token_options = {};
+        token_options.ApiVersion = EOS_AUTH_COPYUSERAUTHTOKEN_API_LATEST;
+        EOS_Auth_Token* rejected_token = nullptr;
+        CHECK(fn_copy_token(auth, nullptr, g_auth_login_user, &rejected_token) ==
+              EOS_EResult::EOS_InvalidParameters);
+        if (rejected_token != nullptr) {
+            fn_token_release(rejected_token);
+        }
+        token_options.ApiVersion = EOS_AUTH_COPYUSERAUTHTOKEN_API_LATEST + 1;
+        rejected_token = nullptr;
+        CHECK(fn_copy_token(auth, &token_options, g_auth_login_user, &rejected_token) ==
+              EOS_EResult::EOS_VersionMismatch);
+        if (rejected_token != nullptr) {
+            fn_token_release(rejected_token);
+        }
+        token_options.ApiVersion = 0;
+        rejected_token = nullptr;
+        CHECK(fn_copy_token(auth, &token_options, g_auth_login_user, &rejected_token) !=
+              EOS_EResult::EOS_Success);
+        if (rejected_token != nullptr) {
+            fn_token_release(rejected_token);
+        }
+
         token_options.ApiVersion = EOS_AUTH_COPYUSERAUTHTOKEN_API_LATEST;
         EOS_Auth_Token* token = nullptr;
         CHECK(fn_copy_token(auth, &token_options, g_auth_login_user, &token) == EOS_EResult::EOS_Success);
@@ -277,20 +313,83 @@ TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
         EOS_Auth_CopyIdTokenOptions id_options = {};
         id_options.ApiVersion = EOS_AUTH_COPYIDTOKEN_API_LATEST;
         id_options.AccountId = g_auth_login_user;
+        EOS_Auth_IdToken* rejected_id_token = nullptr;
+        CHECK(fn_copy_id(auth, nullptr, &rejected_id_token) == EOS_EResult::EOS_InvalidParameters);
+        CHECK((rejected_id_token == nullptr));
+        id_options.ApiVersion = EOS_AUTH_COPYIDTOKEN_API_LATEST + 1;
+        CHECK(fn_copy_id(auth, &id_options, &rejected_id_token) == EOS_EResult::EOS_VersionMismatch);
+        if (rejected_id_token != nullptr) {
+            fn_id_release(rejected_id_token);
+        }
+        id_options.ApiVersion = 0;
+        rejected_id_token = nullptr;
+        CHECK(fn_copy_id(auth, &id_options, &rejected_id_token) != EOS_EResult::EOS_Success);
+        if (rejected_id_token != nullptr) {
+            fn_id_release(rejected_id_token);
+        }
+
+        id_options.ApiVersion = EOS_AUTH_COPYIDTOKEN_API_LATEST;
         EOS_Auth_IdToken* id_token = nullptr;
         CHECK(fn_copy_id(auth, &id_options, &id_token) == EOS_EResult::EOS_Success);
         REQUIRE((id_token != nullptr));
         fn_id_release(id_token);
 
+        // Notification registration also has a required, versioned options object.
+        const EOS_NotificationId rejected_notification =
+            fn_auth_add_notify(auth, nullptr, nullptr, on_auth_status);
+        CHECK(rejected_notification == EOS_INVALID_NOTIFICATIONID);
+        if (rejected_notification != EOS_INVALID_NOTIFICATIONID) {
+            fn_auth_remove_notify(auth, rejected_notification);
+        }
+        EOS_Auth_AddNotifyLoginStatusChangedOptions notify_options = {};
+        notify_options.ApiVersion = EOS_AUTH_ADDNOTIFYLOGINSTATUSCHANGED_API_LATEST + 1;
+        const EOS_NotificationId rejected_notification_version =
+            fn_auth_add_notify(auth, &notify_options, nullptr, on_auth_status);
+        CHECK(rejected_notification_version == EOS_INVALID_NOTIFICATIONID);
+        if (rejected_notification_version != EOS_INVALID_NOTIFICATIONID) {
+            fn_auth_remove_notify(auth, rejected_notification_version);
+        }
+
+        notify_options.ApiVersion = EOS_AUTH_ADDNOTIFYLOGINSTATUSCHANGED_API_LATEST;
+        const EOS_NotificationId notification =
+            fn_auth_add_notify(auth, &notify_options, nullptr, on_auth_status);
+        REQUIRE(notification != EOS_INVALID_NOTIFICATIONID);
+
         EOS_Auth_LogoutOptions logout_options = {};
-        logout_options.ApiVersion = EOS_AUTH_LOGOUT_API_LATEST;
+        logout_options.ApiVersion = EOS_AUTH_LOGOUT_API_LATEST + 1;
         logout_options.LocalUserId = g_auth_login_user;
+        g_auth_logout_fired = false;
+        g_auth_logout_result = EOS_EResult::EOS_UnexpectedError;
         fn_auth_logout(auth, &logout_options, nullptr, on_auth_logout);
         for (int i = 0; i < 8 && !g_auth_logout_fired; i++) {
             fn_tick(platform);
         }
         CHECK(g_auth_logout_fired);
+        CHECK(g_auth_logout_result != EOS_EResult::EOS_Success);
+        CHECK(fn_auth_count(auth) == 1);
+
+        // Keep teardown valid even when the implementation under review accepted the bad call.
+        if (fn_auth_count(auth) == 0) {
+            g_auth_login_fired = false;
+            fn_auth_login(auth, &login_options, nullptr, on_auth_login);
+            for (int i = 0; i < 8 && !g_auth_login_fired; i++) {
+                fn_tick(platform);
+            }
+        }
+
+        logout_options.ApiVersion = EOS_AUTH_LOGOUT_API_LATEST;
+        g_auth_logout_fired = false;
+        fn_auth_logout(auth, &logout_options, nullptr, on_auth_logout);
+        for (int i = 0; i < 8 && !g_auth_logout_fired; i++) {
+            fn_tick(platform);
+        }
+        CHECK(g_auth_logout_fired);
+        CHECK(g_auth_logout_result == EOS_EResult::EOS_Success);
         CHECK(fn_auth_count(auth) == 0);
+        CHECK(g_auth_status_count == 1);
+        CHECK(g_auth_status_previous == EOS_ELoginStatus::EOS_LS_LoggedIn);
+        CHECK(g_auth_status_current == EOS_ELoginStatus::EOS_LS_NotLoggedIn);
+        fn_auth_remove_notify(auth, notification);
     }
 
     // Release, then confirm stale-handle calls degrade to safe no-ops.

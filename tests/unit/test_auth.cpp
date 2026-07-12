@@ -57,6 +57,15 @@ void EOS_CALL on_status(const EOS_Auth_LoginStatusChangedCallbackInfo* info) {
     g_status_curr = info->CurrentStatus;
 }
 
+bool jwt_has_signature(const char* token) {
+    if (token == 0) {
+        return false;
+    }
+    const std::string value(token);
+    const std::size_t separator = value.rfind('.');
+    return separator != std::string::npos && separator + 1 < value.size();
+}
+
 EOS_Auth_LoginOptions login_options(EOS_Auth_Credentials& credentials) {
     credentials.ApiVersion = EOS_AUTH_CREDENTIALS_API_LATEST;
     credentials.Id = 0;
@@ -142,10 +151,86 @@ TEST_CASE("auth login rejects malformed credentials without logging in") {
         options.ApiVersion = EOS_AUTH_LOGIN_API_LATEST + 1;
         expect_rejected(options, &creds);
     }
+    SUBCASE("zero login option version") {
+        EOS_Auth_Credentials creds = {};
+        EOS_Auth_LoginOptions options = login_options(creds);
+        options.ApiVersion = 0;
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("zero credentials version") {
+        EOS_Auth_Credentials creds = {};
+        EOS_Auth_LoginOptions options = login_options(creds);
+        creds.ApiVersion = 0;
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("unsupported credentials version") {
+        EOS_Auth_Credentials creds = {};
+        EOS_Auth_LoginOptions options = login_options(creds);
+        creds.ApiVersion = EOS_AUTH_CREDENTIALS_API_LATEST + 1;
+        expect_rejected(options, &creds);
+    }
     SUBCASE("credential type out of range") {
         EOS_Auth_Credentials creds = {};
         EOS_Auth_LoginOptions options = login_options(creds);
         creds.Type = static_cast<EOS_ELoginCredentialType>(9999);
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("unsupported device-code login") {
+        EOS_Auth_Credentials creds = {};
+        EOS_Auth_LoginOptions options = login_options(creds);
+        creds.Id = 0;
+        creds.Token = 0;
+        creds.Type = EOS_ELoginCredentialType::EOS_LCT_DeviceCode;
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("exchange code without a token") {
+        EOS_Auth_Credentials creds = {};
+        EOS_Auth_LoginOptions options = login_options(creds);
+        creds.Token = 0;
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("exchange code with an unused id") {
+        EOS_Auth_Credentials creds = {};
+        EOS_Auth_LoginOptions options = login_options(creds);
+        creds.Id = "must-be-null";
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("password without an email address") {
+        EOS_Auth_Credentials creds = {};
+        EOS_Auth_LoginOptions options = login_options(creds);
+        creds.Id = 0;
+        creds.Token = "password";
+        creds.Type = EOS_ELoginCredentialType::EOS_LCT_Password;
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("developer login without a credential name") {
+        EOS_Auth_Credentials creds = {};
+        EOS_Auth_LoginOptions options = login_options(creds);
+        creds.Id = "localhost:6547";
+        creds.Token = 0;
+        creds.Type = EOS_ELoginCredentialType::EOS_LCT_Developer;
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("refresh login without a refresh token") {
+        EOS_Auth_Credentials creds = {};
+        EOS_Auth_LoginOptions options = login_options(creds);
+        creds.Token = 0;
+        creds.Type = EOS_ELoginCredentialType::EOS_LCT_RefreshToken;
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("account portal with unused credentials") {
+        EOS_Auth_Credentials creds = {};
+        EOS_Auth_LoginOptions options = login_options(creds);
+        creds.Id = "must-be-null";
+        creds.Token = "must-be-null";
+        creds.Type = EOS_ELoginCredentialType::EOS_LCT_AccountPortal;
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("external auth without an external token") {
+        EOS_Auth_Credentials creds = {};
+        EOS_Auth_LoginOptions options = login_options(creds);
+        creds.Token = 0;
+        creds.Type = EOS_ELoginCredentialType::EOS_LCT_ExternalAuth;
         expect_rejected(options, &creds);
     }
 }
@@ -174,10 +259,30 @@ TEST_CASE("auth logout clears the account and fires the status change") {
     CHECK(g_status_curr == EOS_ELoginStatus::EOS_LS_NotLoggedIn);
 }
 
+TEST_CASE("auth logout rejects unsupported option versions without changing state") {
+    auth_fixture fx;
+    fx.do_login(0);
+    fx.callbacks.tick();
+    REQUIRE(fx.auth.logged_in_accounts_count() == 1);
+
+    EOS_Auth_LogoutOptions options = {};
+    options.ApiVersion = EOS_AUTH_LOGOUT_API_LATEST + 1;
+    options.LocalUserId = fx.auth.logged_in_account_by_index(0);
+    fx.auth.logout(&options, 0, on_logout);
+    fx.callbacks.tick();
+
+    CHECK(g_logout.fired);
+    CHECK(g_logout.result != EOS_EResult::EOS_Success);
+    CHECK(fx.auth.logged_in_accounts_count() == 1);
+}
+
 TEST_CASE("get selected account id distinguishes not-logged-in from unknown user") {
     auth_fixture fx;
     EOS_EpicAccountId out = 0;
-    CHECK(fx.auth.selected_account_id(0, &out) == EOS_EResult::EOS_InvalidAuth);
+    EOS_EpicAccountId stranger =
+        id_registry::instance().get_epic_account_id("0123456789abcdef0123456789abcdef");
+    CHECK(fx.auth.selected_account_id(0, &out) == EOS_EResult::EOS_InvalidUser);
+    CHECK(fx.auth.selected_account_id(stranger, &out) == EOS_EResult::EOS_InvalidUser);
 
     fx.do_login(0);
     fx.callbacks.tick();
@@ -186,10 +291,15 @@ TEST_CASE("get selected account id distinguishes not-logged-in from unknown user
     CHECK(fx.auth.selected_account_id(self, &out) == EOS_EResult::EOS_Success);
     CHECK((out == self));
 
-    EOS_EpicAccountId stranger =
-        id_registry::instance().get_epic_account_id("0123456789abcdef0123456789abcdef");
     CHECK(fx.auth.selected_account_id(stranger, &out) == EOS_EResult::EOS_InvalidUser);
     CHECK(fx.auth.selected_account_id(self, 0) == EOS_EResult::EOS_InvalidParameters);
+
+    EOS_Auth_LogoutOptions options = {};
+    options.ApiVersion = EOS_AUTH_LOGOUT_API_LATEST;
+    options.LocalUserId = self;
+    fx.auth.logout(&options, 0, on_logout);
+    fx.callbacks.tick();
+    CHECK(fx.auth.selected_account_id(self, &out) == EOS_EResult::EOS_InvalidAuth);
 }
 
 TEST_CASE("copy user auth token mints a token that release then frees") {
@@ -203,17 +313,20 @@ TEST_CASE("copy user auth token mints a token that release then frees") {
     REQUIRE((token != 0));
     CHECK((token->AccountId == self));
     CHECK(token->AuthType == EOS_EAuthTokenType::EOS_ATT_User);
-    // The access token is an unsigned JWT, which always begins with the base64url header "eyJ".
     REQUIRE((token->AccessToken != 0));
     CHECK(std::string(token->AccessToken).substr(0, 3) == "eyJ");
+    CHECK((token->ExpiresAt != 0));
+    CHECK(std::string(token->ExpiresAt).size() > 0);
     CHECK((token->RefreshToken != 0));
+    CHECK((token->RefreshExpiresAt != 0));
+    CHECK(std::string(token->RefreshExpiresAt).size() > 0);
     release_auth_token(token); // under ASan this proves the holder and its strings are freed
 
     // An unknown user has no token.
     EOS_EpicAccountId stranger =
         id_registry::instance().get_epic_account_id("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     EOS_Auth_Token* none = 0;
-    CHECK(fx.auth.copy_user_auth_token(stranger, &none) == EOS_EResult::EOS_InvalidUser);
+    CHECK(fx.auth.copy_user_auth_token(stranger, &none) == EOS_EResult::EOS_NotFound);
     CHECK((none == 0));
 }
 
@@ -229,7 +342,14 @@ TEST_CASE("copy id token mints a JWT that release then frees") {
     CHECK((token->AccountId == self));
     REQUIRE((token->JsonWebToken != 0));
     CHECK(std::string(token->JsonWebToken).substr(0, 3) == "eyJ");
+    CHECK(jwt_has_signature(token->JsonWebToken));
     release_id_token(token);
+
+    EOS_EpicAccountId stranger =
+        id_registry::instance().get_epic_account_id("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    EOS_Auth_IdToken* none = 0;
+    CHECK(fx.auth.copy_id_token(stranger, &none) == EOS_EResult::EOS_NotFound);
+    CHECK((none == 0));
 }
 
 TEST_CASE("releasing a null or unknown token is a safe no-op") {
@@ -239,6 +359,77 @@ TEST_CASE("releasing a null or unknown token is a safe no-op") {
     release_auth_token(&bogus); // never handed out by us, so ignored rather than freed
     EOS_Auth_IdToken bogus_id = {};
     release_id_token(&bogus_id);
+}
+
+TEST_CASE("a stale auth-token pointer cannot release a newer live token") {
+    auth_fixture fx;
+    fx.do_login(0);
+    fx.callbacks.tick();
+    const EOS_EpicAccountId self = fx.auth.logged_in_account_by_index(0);
+
+    const int max_attempts = 1024;
+    for (int i = 0; i < max_attempts; i++) {
+        EOS_Auth_Token* stale = 0;
+        REQUIRE(fx.auth.copy_user_auth_token(self, &stale) == EOS_EResult::EOS_Success);
+        release_auth_token(stale);
+
+        EOS_Auth_Token* live = 0;
+        REQUIRE(fx.auth.copy_user_auth_token(self, &live) == EOS_EResult::EOS_Success);
+        if (stale != live) {
+            release_auth_token(live);
+            continue;
+        }
+
+        release_auth_token(stale);
+
+        EOS_Auth_Token* replacement = 0;
+        REQUIRE(fx.auth.copy_user_auth_token(self, &replacement) == EOS_EResult::EOS_Success);
+        CHECK((replacement != live));
+        if (replacement == live) {
+            release_auth_token(replacement);
+        } else {
+            release_auth_token(live);
+            release_auth_token(replacement);
+        }
+        break;
+    }
+
+    // Allocators with a quarantine may not reuse an address during this test. In that case the
+    // dangerous stale-pointer branch was not reachable, but all allocated tokens were released.
+}
+
+TEST_CASE("a stale id-token pointer cannot release a newer live token") {
+    auth_fixture fx;
+    fx.do_login(0);
+    fx.callbacks.tick();
+    const EOS_EpicAccountId self = fx.auth.logged_in_account_by_index(0);
+
+    const int max_attempts = 1024;
+    for (int i = 0; i < max_attempts; i++) {
+        EOS_Auth_IdToken* stale = 0;
+        REQUIRE(fx.auth.copy_id_token(self, &stale) == EOS_EResult::EOS_Success);
+        release_id_token(stale);
+
+        EOS_Auth_IdToken* live = 0;
+        REQUIRE(fx.auth.copy_id_token(self, &live) == EOS_EResult::EOS_Success);
+        if (stale != live) {
+            release_id_token(live);
+            continue;
+        }
+
+        release_id_token(stale);
+
+        EOS_Auth_IdToken* replacement = 0;
+        REQUIRE(fx.auth.copy_id_token(self, &replacement) == EOS_EResult::EOS_Success);
+        CHECK((replacement != live));
+        if (replacement == live) {
+            release_id_token(replacement);
+        } else {
+            release_id_token(live);
+            release_id_token(replacement);
+        }
+        break;
+    }
 }
 
 TEST_CASE("an auth notification that removes another while firing is memory-safe") {
@@ -274,11 +465,12 @@ TEST_CASE("an auth notification that removes another while firing is memory-safe
     remover_auth = 0;
 }
 
-TEST_CASE("auth login is idempotent for the same account") {
+TEST_CASE("auth refuses a second login while an account is already active") {
     auth_fixture fx;
     fx.do_login(0);
     fx.callbacks.tick();
     fx.do_login(0);
     fx.callbacks.tick();
+    CHECK(g_login.result != EOS_EResult::EOS_Success);
     CHECK(fx.auth.logged_in_accounts_count() == 1);
 }

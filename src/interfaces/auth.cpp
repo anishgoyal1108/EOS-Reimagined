@@ -1,10 +1,12 @@
 #include "interfaces/auth.h"
 
-#include <map>
+#include <cstring>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 
+#include "common/crypto.h"
 #include "common/ids.h"
 #include "common/log.h"
 #include "common/types.h"
@@ -26,40 +28,25 @@ struct common_completion_prefix {
     void* client_data;
 };
 
-// base64url without padding, per RFC 7515. Used to mint the unsigned tokens below.
-std::string base64url_encode(const std::string& in) {
-    static const char table[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    std::string out;
-    std::size_t i = 0;
-    for (; i + 3 <= in.size(); i += 3) {
-        const u32 n = (static_cast<u8>(in[i]) << 16) | (static_cast<u8>(in[i + 1]) << 8) |
-                      static_cast<u8>(in[i + 2]);
-        out += table[(n >> 18) & 63];
-        out += table[(n >> 12) & 63];
-        out += table[(n >> 6) & 63];
-        out += table[n & 63];
-    }
-    const std::size_t remaining = in.size() - i;
-    if (remaining == 1) {
-        const u32 n = static_cast<u8>(in[i]) << 16;
-        out += table[(n >> 18) & 63];
-        out += table[(n >> 12) & 63];
-    } else if (remaining == 2) {
-        const u32 n = (static_cast<u8>(in[i]) << 16) | (static_cast<u8>(in[i + 1]) << 8);
-        out += table[(n >> 18) & 63];
-        out += table[(n >> 12) & 63];
-        out += table[(n >> 6) & 63];
-    }
-    return out;
-}
+// Token lifetime and expiry we report; the emulator's tokens do not actually expire.
+const double token_lifetime_seconds = 3600.0;
+const char* token_expiry_placeholder = "2099-12-31T23:59:59.000Z";
 
-// An unsigned (alg:none) JWT for the given subject. We have no backend to sign against, so the
-// foundation issues unsigned tokens; real signing is a later refinement.
-std::string make_unsigned_jwt(const std::string& subject) {
-    const std::string header = "{\"alg\":\"none\",\"typ\":\"JWT\"}";
+// A fixed key shared by every emulator instance. Tokens are self-issued: this is not a secret
+// against a real backend, but it lets any peer running this SDK verify a token another peer
+// signed, which is the self-consistent scheme the LAN use case needs.
+const char* self_signing_key = "eos-reimagined-shared-signing-key";
+
+// A JWT signed with HS256 (HMAC-SHA256) under the shared self-signing key. It is genuinely
+// signed and self-verifiable across peers, but it is self-issued, not backed by Epic's servers.
+std::string make_signed_jwt(const std::string& subject) {
+    const std::string header = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
     const std::string payload = "{\"iss\":\"eosr\",\"sub\":\"" + subject + "\"}";
-    return base64url_encode(header) + "." + base64url_encode(payload) + ".";
+    const std::string signing_input = base64url_encode(header) + "." + base64url_encode(payload);
+    const std::vector<u8> signature =
+        hmac_sha256(reinterpret_cast<const u8*>(self_signing_key), std::strlen(self_signing_key),
+                    reinterpret_cast<const u8*>(signing_input.data()), signing_input.size());
+    return signing_input + "." + base64url_encode(signature.data(), signature.size());
 }
 
 // A minted auth token plus the strings it points at. The token points into these, so the holder
@@ -79,12 +66,59 @@ struct id_token_holder {
     std::string json_web_token;
 };
 
-// Live minted tokens, keyed by the exact pointer we handed out. Looking the holder up by that
-// pointer (rather than casting the token pointer back to the holder) keeps release well-defined
-// and makes releasing an unknown or already-freed pointer a safe no-op.
+// Minted token holders are retained for the life of the process and never freed, so a token's
+// address is never returned to the allocator and can never be reused by a later token. That is
+// what makes a stale-pointer release harmless: it can never collide with a live token. Games copy
+// tokens rarely, so this holds a handful of small objects in practice. The stores are immortal so
+// leak checkers see the holders as intentionally reachable; the live sets track which tokens have
+// not yet been released, so releasing a null, foreign, or already-released pointer is a no-op.
 std::mutex g_token_mutex;
-std::map<EOS_Auth_Token*, auth_token_holder*> g_auth_tokens;
-std::map<EOS_Auth_IdToken*, id_token_holder*> g_id_tokens;
+
+std::vector<std::unique_ptr<auth_token_holder> >& auth_token_store() {
+    static std::vector<std::unique_ptr<auth_token_holder> >* store =
+        new std::vector<std::unique_ptr<auth_token_holder> >();
+    return *store;
+}
+std::vector<std::unique_ptr<id_token_holder> >& id_token_store() {
+    static std::vector<std::unique_ptr<id_token_holder> >* store =
+        new std::vector<std::unique_ptr<id_token_holder> >();
+    return *store;
+}
+std::set<EOS_Auth_Token*>& live_auth_tokens() {
+    static std::set<EOS_Auth_Token*>* live = new std::set<EOS_Auth_Token*>();
+    return *live;
+}
+std::set<EOS_Auth_IdToken*>& live_id_tokens() {
+    static std::set<EOS_Auth_IdToken*>* live = new std::set<EOS_Auth_IdToken*>();
+    return *live;
+}
+
+// The token/id requirements differ per credential type. We do not authenticate the values, but
+// we do reject a request whose required fields are missing or whose forbidden fields are set, and
+// we reject the credential types the SDK marks unsupported (Device Code).
+bool credentials_are_valid(const EOS_Auth_Credentials& credentials) {
+    const bool has_id = credentials.Id != 0;
+    const bool has_token = credentials.Token != 0;
+    switch (credentials.Type) {
+        case EOS_ELoginCredentialType::EOS_LCT_Password:
+            return has_id && has_token; // account email + password
+        case EOS_ELoginCredentialType::EOS_LCT_ExchangeCode:
+            return has_token && !has_id; // exchange-code token only
+        case EOS_ELoginCredentialType::EOS_LCT_PersistentAuth:
+            return true; // the refresh token is SDK-managed, so no field is required
+        case EOS_ELoginCredentialType::EOS_LCT_Developer:
+            return has_id && has_token; // dev-tool host + credential name
+        case EOS_ELoginCredentialType::EOS_LCT_RefreshToken:
+            return has_token; // the refresh token
+        case EOS_ELoginCredentialType::EOS_LCT_AccountPortal:
+            return !has_id && !has_token; // credentials are unused
+        case EOS_ELoginCredentialType::EOS_LCT_ExternalAuth:
+            return has_token; // the external auth token
+        case EOS_ELoginCredentialType::EOS_LCT_DeviceCode:
+        default:
+            return false; // unsupported or unknown credential type
+    }
+}
 
 bool login_options_are_valid(const EOS_Auth_LoginOptions* options) {
     if (options == 0 || options->Credentials == 0) {
@@ -97,13 +131,7 @@ bool login_options_are_valid(const EOS_Auth_LoginOptions* options) {
     if (credentials->ApiVersion <= 0 || credentials->ApiVersion > EOS_AUTH_CREDENTIALS_API_LATEST) {
         return false;
     }
-    const i32 type = static_cast<i32>(credentials->Type);
-    const i32 lowest = static_cast<i32>(EOS_ELoginCredentialType::EOS_LCT_Password);
-    const i32 highest = static_cast<i32>(EOS_ELoginCredentialType::EOS_LCT_ExternalAuth);
-    if (type < lowest || type > highest) {
-        return false;
-    }
-    return true;
+    return credentials_are_valid(*credentials);
 }
 
 } // namespace
@@ -132,6 +160,7 @@ void sdk_auth::emu_deinit() {
     callbacks_.unregister_callbacks(this);
     callbacks_.unregister_frame(this);
     accounts_.clear();
+    known_accounts_.clear();
     pending_status_changes_.clear();
     registered_ = false;
 }
@@ -161,14 +190,23 @@ void sdk_auth::login(const EOS_Auth_LoginOptions* options, void* client_data,
         return;
     }
 
+    // A single active user is supported; a second login while one is active is refused rather
+    // than silently succeeding, matching the emulator's "multiple login not implemented".
+    if (is_logged_in()) {
+        info->ResultCode = EOS_EResult::EOS_LimitExceeded;
+        info->LocalUserId = local_account();
+        info->SelectedAccountId = local_account();
+        result->set_done(true);
+        callbacks_.add_callback(this, std::move(result));
+        return;
+    }
+
     // The emulator does not authenticate against a backend: any supported credential type
     // resolves to the one stable local Epic account derived from the configured user.
     EOS_EpicAccountId self =
         id_registry::instance().get_epic_account_id(settings_.epic_account_id());
-    const bool was_logged_in = is_logged_in();
-    if (!was_logged_in) {
-        accounts_.push_back(self);
-    }
+    accounts_.push_back(self);
+    known_accounts_.insert(self);
 
     info->ResultCode = EOS_EResult::EOS_Success;
     info->LocalUserId = self;
@@ -176,14 +214,12 @@ void sdk_auth::login(const EOS_Auth_LoginOptions* options, void* client_data,
     result->set_done(true);
     callbacks_.add_callback(this, std::move(result));
 
-    if (!was_logged_in) {
-        status_transition change;
-        change.user = self;
-        change.previous = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
-        change.current = EOS_ELoginStatus::EOS_LS_LoggedIn;
-        pending_status_changes_.push_back(change);
-        log_info("auth: logged in " + settings_.epic_account_id());
-    }
+    status_transition change;
+    change.user = self;
+    change.previous = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
+    change.current = EOS_ELoginStatus::EOS_LS_LoggedIn;
+    pending_status_changes_.push_back(change);
+    log_info("auth: logged in " + settings_.epic_account_id());
 }
 
 void sdk_auth::logout(const EOS_Auth_LogoutOptions* options, void* client_data,
@@ -191,14 +227,20 @@ void sdk_auth::logout(const EOS_Auth_LogoutOptions* options, void* client_data,
     if (delegate == 0) {
         return;
     }
+    const bool valid_options =
+        options != 0 && options->ApiVersion > 0 && options->ApiVersion <= EOS_AUTH_LOGOUT_API_LATEST;
     EOS_EpicAccountId user = (options != 0) ? options->LocalUserId : 0;
-    const bool matches_self = is_logged_in() && user == local_account();
+    const bool matches_self = valid_options && is_logged_in() && user == local_account();
 
     std::unique_ptr<frame_result> result(new frame_result());
     EOS_Auth_LogoutCallbackInfo* info = static_cast<EOS_Auth_LogoutCallbackInfo*>(
         result->create_callback(cb_logout, sizeof(EOS_Auth_LogoutCallbackInfo),
                                 reinterpret_cast<completion_delegate>(delegate)));
-    info->ResultCode = matches_self ? EOS_EResult::EOS_Success : EOS_EResult::EOS_InvalidUser;
+    if (!valid_options) {
+        info->ResultCode = EOS_EResult::EOS_InvalidParameters;
+    } else {
+        info->ResultCode = matches_self ? EOS_EResult::EOS_Success : EOS_EResult::EOS_InvalidUser;
+    }
     info->ClientData = client_data;
     info->LocalUserId = user;
     result->set_done(true);
@@ -238,13 +280,15 @@ EOS_EResult sdk_auth::selected_account_id(EOS_EpicAccountId local_user_id,
     if (out == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    if (!is_logged_in()) {
-        *out = 0;
-        return EOS_EResult::EOS_InvalidAuth;
-    }
-    if (local_user_id != local_account()) {
+    // An account we have never seen is InvalidUser; a known account that is simply not logged in
+    // right now is InvalidAuth. These are distinct cases in the public contract.
+    if (known_accounts_.find(local_user_id) == known_accounts_.end()) {
         *out = 0;
         return EOS_EResult::EOS_InvalidUser;
+    }
+    if (!is_logged_in() || local_user_id != local_account()) {
+        *out = 0;
+        return EOS_EResult::EOS_InvalidAuth;
     }
     // The emulator never merges accounts, so the selected account is the local account.
     *out = local_account();
@@ -258,18 +302,18 @@ EOS_EResult sdk_auth::copy_user_auth_token(EOS_EpicAccountId local_user_id,
     }
     *out = 0;
     if (!is_logged_in() || local_user_id != local_account()) {
-        return EOS_EResult::EOS_InvalidUser;
+        return EOS_EResult::EOS_NotFound;
     }
 
-    // The token is self-issued: we have no backend to mint a real signed token against, so the
-    // access and refresh tokens are deterministic placeholders for the local account.
+    // The token is self-issued and HS256-signed; see make_signed_jwt. It stands in for the account
+    // without being backed by Epic's servers.
     std::unique_ptr<auth_token_holder> holder(new auth_token_holder());
     holder->app = settings_.product_id();
     holder->client_id = settings_.client_id();
-    holder->access_token = make_unsigned_jwt(settings_.epic_account_id());
-    holder->expires_at = "";
-    holder->refresh_token = make_unsigned_jwt(settings_.epic_account_id() + ".refresh");
-    holder->refresh_expires_at = "";
+    holder->access_token = make_signed_jwt(settings_.epic_account_id());
+    holder->expires_at = token_expiry_placeholder;
+    holder->refresh_token = make_signed_jwt(settings_.epic_account_id() + ".refresh");
+    holder->refresh_expires_at = token_expiry_placeholder;
 
     EOS_Auth_Token& token = holder->token;
     token.ApiVersion = EOS_AUTH_TOKEN_API_LATEST;
@@ -277,17 +321,18 @@ EOS_EResult sdk_auth::copy_user_auth_token(EOS_EpicAccountId local_user_id,
     token.ClientId = holder->client_id.c_str();
     token.AccountId = local_account();
     token.AccessToken = holder->access_token.c_str();
-    token.ExpiresIn = 3600.0;
+    token.ExpiresIn = token_lifetime_seconds;
     token.ExpiresAt = holder->expires_at.c_str();
     token.AuthType = EOS_EAuthTokenType::EOS_ATT_User;
     token.RefreshToken = holder->refresh_token.c_str();
-    token.RefreshExpiresIn = 3600.0;
+    token.RefreshExpiresIn = token_lifetime_seconds;
     token.RefreshExpiresAt = holder->refresh_expires_at.c_str();
 
     EOS_Auth_Token* handle = &holder->token;
     {
         std::lock_guard<std::mutex> lock(g_token_mutex);
-        g_auth_tokens[handle] = holder.release();
+        auth_token_store().push_back(std::move(holder));
+        live_auth_tokens().insert(handle);
     }
     *out = handle;
     return EOS_EResult::EOS_Success;
@@ -299,11 +344,11 @@ EOS_EResult sdk_auth::copy_id_token(EOS_EpicAccountId account_id, EOS_Auth_IdTok
     }
     *out = 0;
     if (!is_logged_in() || account_id != local_account()) {
-        return EOS_EResult::EOS_InvalidUser;
+        return EOS_EResult::EOS_NotFound;
     }
 
     std::unique_ptr<id_token_holder> holder(new id_token_holder());
-    holder->json_web_token = make_unsigned_jwt(settings_.epic_account_id());
+    holder->json_web_token = make_signed_jwt(settings_.epic_account_id());
     holder->token.ApiVersion = EOS_AUTH_IDTOKEN_API_LATEST;
     holder->token.AccountId = local_account();
     holder->token.JsonWebToken = holder->json_web_token.c_str();
@@ -311,7 +356,8 @@ EOS_EResult sdk_auth::copy_id_token(EOS_EpicAccountId account_id, EOS_Auth_IdTok
     EOS_Auth_IdToken* handle = &holder->token;
     {
         std::lock_guard<std::mutex> lock(g_token_mutex);
-        g_id_tokens[handle] = holder.release();
+        id_token_store().push_back(std::move(holder));
+        live_id_tokens().insert(handle);
     }
     *out = handle;
     return EOS_EResult::EOS_Success;
@@ -390,34 +436,19 @@ void release_auth_token(EOS_Auth_Token* token) {
     if (token == 0) {
         return;
     }
-    auth_token_holder* holder = 0;
-    {
-        std::lock_guard<std::mutex> lock(g_token_mutex);
-        std::map<EOS_Auth_Token*, auth_token_holder*>::iterator it = g_auth_tokens.find(token);
-        if (it == g_auth_tokens.end()) {
-            return;
-        }
-        holder = it->second;
-        g_auth_tokens.erase(it);
-    }
-    delete holder;
+    // A released token is dropped from the live set; its holder stays retained in the store so its
+    // address is never reused. Releasing a null, foreign, or already-released pointer changes
+    // nothing.
+    std::lock_guard<std::mutex> lock(g_token_mutex);
+    live_auth_tokens().erase(token);
 }
 
 void release_id_token(EOS_Auth_IdToken* token) {
     if (token == 0) {
         return;
     }
-    id_token_holder* holder = 0;
-    {
-        std::lock_guard<std::mutex> lock(g_token_mutex);
-        std::map<EOS_Auth_IdToken*, id_token_holder*>::iterator it = g_id_tokens.find(token);
-        if (it == g_id_tokens.end()) {
-            return;
-        }
-        holder = it->second;
-        g_id_tokens.erase(it);
-    }
-    delete holder;
+    std::lock_guard<std::mutex> lock(g_token_mutex);
+    live_id_tokens().erase(token);
 }
 
 } // namespace eosr
