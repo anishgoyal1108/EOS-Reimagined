@@ -32,8 +32,17 @@ public:
     const std::string& product_version() const { return product_version_; }
 
 private:
+    // EOS_Shutdown is terminal: once torn down the SDK cannot be reinitialized, and the three
+    // states let shutdown tell "never initialized" (EOS_NotConfigured) apart from "already shut
+    // down" (EOS_UnexpectedError), as the flat contract requires.
+    enum client_state {
+        client_never_initialized,
+        client_initialized,
+        client_shutdown
+    };
+
     mutable std::mutex mutex_;
-    bool initialized_;
+    client_state state_;
 
     EOS_AllocateMemoryFunc allocate_;
     EOS_ReallocateMemoryFunc reallocate_;
