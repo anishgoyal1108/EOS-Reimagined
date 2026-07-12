@@ -10,6 +10,7 @@ namespace eosr {
 sdk_platform::sdk_platform()
     : connect_(settings_, cb_manager_, network_),
       auth_(settings_, cb_manager_),
+      p2p_(settings_, cb_manager_, network_),
       created_(false) {
     for (int i = 0; i < if_count; i++) {
         interfaces_[i].id = static_cast<interface_id>(i);
@@ -32,6 +33,7 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
     cb_manager_.set_max_tick_budget(std::chrono::milliseconds(settings_.tick_budget_ms()));
     connect_.emu_init();
     auth_.emu_init();
+    p2p_.emu_init();
     created_ = true;
     log_info("platform created for product '" + settings_.product_id() + "'");
     return true;
@@ -46,6 +48,7 @@ void sdk_platform::release() {
     // or fires through a destroyed owner.
     connect_.emu_deinit();
     auth_.emu_deinit();
+    p2p_.emu_deinit();
     network_.stop();
     cb_manager_.clear();
     platform::net_shutdown();
@@ -74,6 +77,9 @@ void* sdk_platform::interface_handle(interface_id id) {
     }
     if (id == if_auth) {
         return &auth_;
+    }
+    if (id == if_p2p) {
+        return &p2p_;
     }
     return &interfaces_[id];
 }
