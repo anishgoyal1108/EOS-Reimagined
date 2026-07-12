@@ -37,10 +37,14 @@ public:
     void remove_notification(i_run_callback* owner, EOS_NotificationId id);
     void remove_all_notifications(i_run_callback* owner);
 
-    // Every live notification for `owner` whose payload matches `type_id`. The returned
-    // pointers are owned by the manager and remain valid until the next remove for this
-    // owner; callers fire them immediately and must not cache them across ticks.
-    std::vector<frame_result*> get_notifications(i_run_callback* owner, callback_type_id type_id);
+    // The ids of every live notification for `owner` whose payload matches `type_id`. Ids are
+    // stable keys, so a caller can iterate them and fire the notifications one at a time even if
+    // a fired callback removes another notification mid-iteration.
+    std::vector<EOS_NotificationId> notification_ids(i_run_callback* owner, callback_type_id type_id);
+
+    // The notification `owner` registered under `id`, or null if it was never registered or has
+    // since been removed. The pointer is owned by the manager; fire it immediately, do not cache.
+    frame_result* find_notification(i_run_callback* owner, EOS_NotificationId id);
 
     void set_max_tick_budget(std::chrono::milliseconds budget);
 

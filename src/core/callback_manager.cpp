@@ -66,10 +66,10 @@ void callback_manager::remove_all_notifications(i_run_callback* owner) {
     notifications_.erase(owner);
 }
 
-std::vector<frame_result*> callback_manager::get_notifications(i_run_callback* owner,
-                                                               callback_type_id type_id) {
+std::vector<EOS_NotificationId> callback_manager::notification_ids(i_run_callback* owner,
+                                                                   callback_type_id type_id) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    std::vector<frame_result*> out;
+    std::vector<EOS_NotificationId> out;
     std::map<i_run_callback*, std::map<EOS_NotificationId, std::unique_ptr<frame_result>>>::iterator it =
         notifications_.find(owner);
     if (it == notifications_.end()) {
@@ -78,10 +78,24 @@ std::vector<frame_result*> callback_manager::get_notifications(i_run_callback* o
     std::map<EOS_NotificationId, std::unique_ptr<frame_result>>::iterator note = it->second.begin();
     for (; note != it->second.end(); ++note) {
         if (note->second->type_id() == type_id) {
-            out.push_back(note->second.get());
+            out.push_back(note->first);
         }
     }
     return out;
+}
+
+frame_result* callback_manager::find_notification(i_run_callback* owner, EOS_NotificationId id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    std::map<i_run_callback*, std::map<EOS_NotificationId, std::unique_ptr<frame_result>>>::iterator it =
+        notifications_.find(owner);
+    if (it == notifications_.end()) {
+        return 0;
+    }
+    std::map<EOS_NotificationId, std::unique_ptr<frame_result>>::iterator note = it->second.find(id);
+    if (note == it->second.end()) {
+        return 0;
+    }
+    return note->second.get();
 }
 
 void callback_manager::set_max_tick_budget(std::chrono::milliseconds budget) {

@@ -59,6 +59,10 @@ public:
     EOS_EResult get_product_user_id_mapping(const EOS_Connect_GetProductUserIdMappingOptions* options,
                                             char* out_buffer, i32* in_out_buffer_length) const;
 
+    // The number of remote peers currently in the roster. Peers are learned from inbound Connect
+    // messages; this lets callers (and tests) observe the roster the network path builds.
+    std::size_t known_peer_count() const;
+
     EOS_NotificationId add_notify_login_status_changed(
         void* client_data, EOS_Connect_OnLoginStatusChangedCallback delegate);
     void remove_notify_login_status_changed(EOS_NotificationId id);

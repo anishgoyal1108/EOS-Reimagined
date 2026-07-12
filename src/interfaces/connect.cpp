@@ -1,6 +1,5 @@
 #include "interfaces/connect.h"
 
-#include <cstring>
 #include <memory>
 
 #include "common/ids.h"
@@ -32,19 +31,30 @@ struct common_completion_prefix {
     void* client_data;
 };
 
-// Copy a string into an EOS out-parameter buffer following the usual size contract.
-EOS_EResult copy_to_buffer(const std::string& value, char* out_buffer, i32* in_out_length) {
-    if (out_buffer == 0 || in_out_length == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+// Validate the login request before we mutate any state. We do not authenticate the token, but
+// we do reject malformed input: unsupported option/credential versions, a missing token, or a
+// credential type outside the known range.
+bool login_options_are_valid(const EOS_Connect_LoginOptions* options) {
+    if (options == 0 || options->Credentials == 0) {
+        return false;
     }
-    const i32 needed = static_cast<i32>(value.size()) + 1;
-    if (*in_out_length < needed) {
-        *in_out_length = needed;
-        return EOS_EResult::EOS_LimitExceeded;
+    if (options->ApiVersion <= 0 || options->ApiVersion > EOS_CONNECT_LOGIN_API_LATEST) {
+        return false;
     }
-    std::memcpy(out_buffer, value.c_str(), static_cast<std::size_t>(needed));
-    *in_out_length = needed;
-    return EOS_EResult::EOS_Success;
+    const EOS_Connect_Credentials* credentials = options->Credentials;
+    if (credentials->ApiVersion <= 0 || credentials->ApiVersion > EOS_CONNECT_CREDENTIALS_API_LATEST) {
+        return false;
+    }
+    if (credentials->Token == 0 || credentials->Token[0] == '\0') {
+        return false;
+    }
+    const i32 type = static_cast<i32>(credentials->Type);
+    const i32 lowest = static_cast<i32>(EOS_EExternalCredentialType::EOS_ECT_EPIC);
+    const i32 highest = static_cast<i32>(EOS_EExternalCredentialType::EOS_ECT_VIVEPORT_USER_TOKEN);
+    if (type < lowest || type > highest) {
+        return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -105,7 +115,7 @@ void sdk_connect::login(const EOS_Connect_LoginOptions* options, void* client_da
     if (delegate == 0) {
         return;
     }
-    if (options == 0 || options->Credentials == 0) {
+    if (!login_options_are_valid(options)) {
         deliver_login_result(EOS_EResult::EOS_InvalidParameters, 0, client_data, delegate);
         return;
     }
@@ -205,17 +215,18 @@ void sdk_connect::query_product_user_id_mappings(
 EOS_EResult sdk_connect::get_product_user_id_mapping(
     const EOS_Connect_GetProductUserIdMappingOptions* options, char* out_buffer,
     i32* in_out_buffer_length) const {
-    if (options == 0 || options->TargetProductUserId == 0) {
+    if (options == 0 || options->TargetProductUserId == 0 || out_buffer == 0 ||
+        in_out_buffer_length == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    // A peer's mapped identity is its display name learned from its Connect announcement. An
-    // unknown peer has no mapping yet.
-    const std::string target = options->TargetProductUserId->id_str;
-    std::map<std::string, std::string>::const_iterator it = peers_.find(target);
-    if (it == peers_.end() || it->second.empty()) {
-        return EOS_EResult::EOS_NotFound;
-    }
-    return copy_to_buffer(it->second, out_buffer, in_out_buffer_length);
+    // This returns a peer's external account id for the requested account type. We do not yet
+    // learn peers' external accounts (that arrives with the identity handshake), so no mapping
+    // is cached and the correct answer is NotFound rather than a stand-in like the display name.
+    return EOS_EResult::EOS_NotFound;
+}
+
+std::size_t sdk_connect::known_peer_count() const {
+    return peers_.size();
 }
 
 EOS_NotificationId sdk_connect::add_notify_login_status_changed(
@@ -281,15 +292,21 @@ bool sdk_connect::cb_run_frame() {
     std::vector<status_transition> changes;
     changes.swap(pending_status_changes_);
     for (std::size_t i = 0; i < changes.size(); i++) {
-        std::vector<frame_result*> notes =
-            callbacks_.get_notifications(this, cb_login_status_changed);
-        for (std::size_t n = 0; n < notes.size(); n++) {
+        // Re-look-up each notification by id right before firing it: a callback fired here may
+        // remove another notification, so a snapshot of raw pointers would dangle.
+        std::vector<EOS_NotificationId> ids =
+            callbacks_.notification_ids(this, cb_login_status_changed);
+        for (std::size_t n = 0; n < ids.size(); n++) {
+            frame_result* note = callbacks_.find_notification(this, ids[n]);
+            if (note == 0) {
+                continue;
+            }
             EOS_Connect_LoginStatusChangedCallbackInfo* info =
-                notes[n]->get_callback<EOS_Connect_LoginStatusChangedCallbackInfo>();
+                note->get_callback<EOS_Connect_LoginStatusChangedCallbackInfo>();
             info->LocalUserId = changes[i].user;
             info->PreviousStatus = changes[i].previous;
             info->CurrentStatus = changes[i].current;
-            notes[n]->fire();
+            note->fire();
         }
     }
     return false;
@@ -313,39 +330,23 @@ bool sdk_connect::on_network_message(const net_envelope& message) {
         return true;
     }
 
-    if (message.type_tag == static_cast<u16>(message_type::connect_request)) {
-        // A peer is announcing itself and asking for ours; record it and reply with our infos.
-        connect_infos infos;
-        byte_reader reader(message.payload.data(), message.payload.size());
-        if (deserialize(reader, infos) && !infos.product_user_id.empty()) {
-            peers_[infos.product_user_id] = infos.display_name;
-        }
-        if (is_logged_in()) {
-            net_envelope reply;
-            reply.type_tag = static_cast<u16>(message_type::connect_response);
-            reply.source_id = settings_.product_user_id();
-            reply.dest_id = message.source_id;
-            connect_infos self;
-            self.product_user_id = settings_.product_user_id();
-            self.display_name = settings_.username();
-            byte_writer writer;
-            serialize(writer, self);
-            reply.payload = writer.data();
-            network_.send_to_self(reply);
-        }
-        return true;
+    // Both a peer's request (announcing itself, wanting ours) and its response carry the peer's
+    // Connect infos, so we record the peer from either. Replying to a request and advertising
+    // ourselves need a real send-to-peer path over the TCP mesh, which lands with the networked
+    // discovery milestone; until then the roster is populated by whatever arrives.
+    const bool is_connect =
+        message.type_tag == static_cast<u16>(message_type::connect_request) ||
+        message.type_tag == static_cast<u16>(message_type::connect_response);
+    if (!is_connect) {
+        return false;
     }
 
-    if (message.type_tag == static_cast<u16>(message_type::connect_response)) {
-        connect_infos infos;
-        byte_reader reader(message.payload.data(), message.payload.size());
-        if (deserialize(reader, infos) && !infos.product_user_id.empty()) {
-            peers_[infos.product_user_id] = infos.display_name;
-        }
-        return true;
+    connect_infos infos;
+    byte_reader reader(message.payload.data(), message.payload.size());
+    if (deserialize(reader, infos) && !infos.product_user_id.empty()) {
+        peers_[infos.product_user_id] = infos.display_name;
     }
-
-    return false;
+    return true;
 }
 
 } // namespace eosr

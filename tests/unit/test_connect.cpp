@@ -71,6 +71,23 @@ void EOS_CALL on_query(const EOS_Connect_QueryProductUserIdMappingsCallbackInfo*
     g_query_result = info->ResultCode;
 }
 
+// For the removal-during-firing regression: the first notification removes the second.
+sdk_connect* g_remover_connect = 0;
+EOS_NotificationId g_remover_target = 0;
+int g_remover_fired = 0;
+int g_victim_fired = 0;
+
+void EOS_CALL on_status_remover(const EOS_Connect_LoginStatusChangedCallbackInfo*) {
+    g_remover_fired++;
+    if (g_remover_connect != 0) {
+        g_remover_connect->remove_notify_login_status_changed(g_remover_target);
+    }
+}
+
+void EOS_CALL on_status_victim(const EOS_Connect_LoginStatusChangedCallbackInfo*) {
+    g_victim_fired++;
+}
+
 EOS_Connect_LoginOptions login_options(EOS_Connect_Credentials& credentials) {
     credentials.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
     credentials.Token = "token";
@@ -211,6 +228,25 @@ TEST_CASE("a removed login-status notification no longer fires") {
     CHECK(g_status_count == 0);
 }
 
+TEST_CASE("a notification that removes another while firing does not use freed memory") {
+    connect_fixture fx;
+    g_remover_connect = &fx.connect;
+    g_remover_fired = 0;
+    g_victim_fired = 0;
+
+    // The lower id fires first; register the remover first so it runs before its victim, and
+    // have it remove the victim mid-batch. Before the fix this dangled and freed the victim.
+    fx.connect.add_notify_login_status_changed(0, on_status_remover);
+    g_remover_target = fx.connect.add_notify_login_status_changed(0, on_status_victim);
+
+    fx.do_login(0);
+    fx.callbacks.tick();
+
+    CHECK(g_remover_fired == 1);
+    CHECK(g_victim_fired == 0); // removed before its turn, never fired, never a use-after-free
+    g_remover_connect = 0;
+}
+
 TEST_CASE("query product user id mappings completes with success") {
     connect_fixture fx;
     fx.do_login(0);
@@ -227,10 +263,11 @@ TEST_CASE("query product user id mappings completes with success") {
     CHECK(g_query_result == EOS_EResult::EOS_Success);
 }
 
-TEST_CASE("a peer announcement adds the peer to the roster and resolves its mapping") {
+TEST_CASE("a peer announcement adds the peer to the roster") {
     connect_fixture fx;
     fx.do_login(0);
     fx.callbacks.tick();
+    CHECK(fx.connect.known_peer_count() == 0);
 
     // Craft an inbound connect_response from a peer and dispatch it directly.
     connect_infos peer;
@@ -243,7 +280,10 @@ TEST_CASE("a peer announcement adds the peer to the roster and resolves its mapp
     envelope.source_id = peer.product_user_id;
     envelope.payload = writer.data();
     CHECK(fx.connect.on_network_message(envelope));
+    CHECK(fx.connect.known_peer_count() == 1);
 
+    // We do not yet learn peers' external accounts, so the mapping is reported as not found
+    // rather than standing in the display name.
     EOS_ProductUserId peer_id = id_registry::instance().get_product_user_id(peer.product_user_id);
     EOS_Connect_GetProductUserIdMappingOptions options = {};
     options.ApiVersion = EOS_CONNECT_GETPRODUCTUSERIDMAPPING_API_LATEST;
@@ -253,8 +293,7 @@ TEST_CASE("a peer announcement adds the peer to the roster and resolves its mapp
 
     char buffer[64];
     int32_t length = static_cast<int32_t>(sizeof(buffer));
-    CHECK(fx.connect.get_product_user_id_mapping(&options, buffer, &length) == EOS_EResult::EOS_Success);
-    CHECK(std::string(buffer) == "RemotePlayer");
+    CHECK(fx.connect.get_product_user_id_mapping(&options, buffer, &length) == EOS_EResult::EOS_NotFound);
 }
 
 TEST_CASE("the roster ignores our own looped-back announcement") {
@@ -263,7 +302,7 @@ TEST_CASE("the roster ignores our own looped-back announcement") {
     fx.do_login(0);
     fx.callbacks.tick();
 
-    // An envelope whose source is our own ProductUserId must be dropped.
+    // An envelope whose source is our own ProductUserId must be dropped, adding no peer.
     connect_infos self;
     self.product_user_id = fx.settings.product_user_id();
     self.display_name = "SelfPlayer";
@@ -274,18 +313,7 @@ TEST_CASE("the roster ignores our own looped-back announcement") {
     envelope.source_id = fx.settings.product_user_id();
     envelope.payload = writer.data();
     CHECK(fx.connect.on_network_message(envelope));
-
-    // The self message left no peer behind, so a mapping query for ourselves finds nothing.
-    EOS_ProductUserId self_id =
-        id_registry::instance().get_product_user_id(fx.settings.product_user_id());
-    EOS_Connect_GetProductUserIdMappingOptions options = {};
-    options.ApiVersion = EOS_CONNECT_GETPRODUCTUSERIDMAPPING_API_LATEST;
-    options.LocalUserId = self_id;
-    options.AccountIdType = EOS_EExternalAccountType::EOS_EAT_EPIC;
-    options.TargetProductUserId = self_id;
-    char buffer[64];
-    int32_t length = static_cast<int32_t>(sizeof(buffer));
-    CHECK(fx.connect.get_product_user_id_mapping(&options, buffer, &length) == EOS_EResult::EOS_NotFound);
+    CHECK(fx.connect.known_peer_count() == 0);
 }
 
 TEST_CASE("login is idempotent for the same local user") {
@@ -296,4 +324,54 @@ TEST_CASE("login is idempotent for the same local user") {
     fx.callbacks.tick();
     // A second login of the same derived user does not create a duplicate entry.
     CHECK(fx.connect.logged_in_users_count() == 1);
+}
+
+TEST_CASE("login rejects malformed credentials without logging in") {
+    // Each case starts from a valid request and breaks exactly one field, expecting the login
+    // callback to report InvalidParameters and leave no local user behind.
+    auto expect_rejected = [](EOS_Connect_LoginOptions options, EOS_Connect_Credentials* creds) {
+        connect_fixture fx;
+        options.Credentials = creds;
+        fx.connect.login(&options, 0, on_login);
+        fx.callbacks.tick();
+        CHECK(g_login.fired);
+        CHECK(g_login.result == EOS_EResult::EOS_InvalidParameters);
+        CHECK(fx.connect.logged_in_users_count() == 0);
+    };
+
+    SUBCASE("null credentials") {
+        EOS_Connect_LoginOptions options = {};
+        options.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
+        expect_rejected(options, 0);
+    }
+    SUBCASE("unsupported login option version") {
+        EOS_Connect_Credentials creds = {};
+        EOS_Connect_LoginOptions options = login_options(creds);
+        options.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST + 1;
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("unsupported credentials version") {
+        EOS_Connect_Credentials creds = {};
+        EOS_Connect_LoginOptions options = login_options(creds);
+        creds.ApiVersion = 0;
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("null token") {
+        EOS_Connect_Credentials creds = {};
+        EOS_Connect_LoginOptions options = login_options(creds);
+        creds.Token = 0;
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("empty token") {
+        EOS_Connect_Credentials creds = {};
+        EOS_Connect_LoginOptions options = login_options(creds);
+        creds.Token = "";
+        expect_rejected(options, &creds);
+    }
+    SUBCASE("credential type out of range") {
+        EOS_Connect_Credentials creds = {};
+        EOS_Connect_LoginOptions options = login_options(creds);
+        creds.Type = static_cast<EOS_EExternalCredentialType>(9999);
+        expect_rejected(options, &creds);
+    }
 }
