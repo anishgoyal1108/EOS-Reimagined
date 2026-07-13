@@ -35,7 +35,14 @@ enum class message_type : u16 {
 
     session_infos = 30,
     session_search = 31,
-    session_search_response = 32
+    session_search_response = 32,
+
+    // Discovery and peer lifecycle. net_advertise travels over UDP and is consumed by the
+    // router itself; the peer_connected / peer_disconnected envelopes are synthesized by the
+    // router and dispatched to the interfaces so they can track the roster.
+    net_advertise = 40,
+    peer_connected = 41,
+    peer_disconnected = 42
 };
 
 // The top-level frame that carries one sub-message between peers. `payload` holds the
@@ -48,6 +55,14 @@ struct net_envelope {
     std::string game_id;
     i64 timestamp = 0; // milliseconds since the Unix epoch
     std::vector<u8> payload;
+};
+
+// What an instance broadcasts so peers can find it: who it is, which game it is running, and
+// the TCP port its mesh listener is accepting on.
+struct net_advertise {
+    std::string product_user_id;
+    std::string game_id;
+    u16 tcp_port = 0;
 };
 
 // The emu-info handshake peers exchange on connect so each learns the other's app and name.

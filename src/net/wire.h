@@ -15,6 +15,9 @@ void serialize(byte_writer& writer, const net_envelope& msg);
 bool deserialize(byte_reader& reader, net_envelope& msg);
 
 // Sub-messages.
+void serialize(byte_writer& writer, const net_advertise& msg);
+bool deserialize(byte_reader& reader, net_advertise& msg);
+
 void serialize(byte_writer& writer, const emu_infos& msg);
 bool deserialize(byte_reader& reader, emu_infos& msg);
 

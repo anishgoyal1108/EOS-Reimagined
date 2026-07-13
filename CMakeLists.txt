@@ -43,11 +43,18 @@ target_compile_definitions(eosr_core PUBLIC EOS_BUILDING_SDK=1)
 
 # All OS-specific code lives behind src/platform/; select the right implementation here.
 if(WIN32)
-    target_sources(eosr_core PRIVATE src/platform/socket_win32.cpp)
+    target_sources(eosr_core PRIVATE
+        src/platform/socket_win32.cpp
+        src/platform/net_iface_win32.cpp
+    )
     target_compile_definitions(eosr_core PRIVATE _WIN32_WINNT=0x0600)
-    target_link_libraries(eosr_core PUBLIC ws2_32)
+    # iphlpapi provides the adapter enumeration discovery uses to find its broadcast addresses.
+    target_link_libraries(eosr_core PUBLIC ws2_32 iphlpapi)
 else()
-    target_sources(eosr_core PRIVATE src/platform/socket_linux.cpp)
+    target_sources(eosr_core PRIVATE
+        src/platform/socket_linux.cpp
+        src/platform/net_iface_linux.cpp
+    )
 endif()
 
 eosr_apply_warnings(eosr_core)
