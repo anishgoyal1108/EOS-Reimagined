@@ -19,8 +19,9 @@ const i64 attribute_string = 3;
 const u64 max_players_in_list = 1000;   // EOS_SESSIONS_MAXREGISTEREDPLAYERS
 const u64 max_attributes_in_list = 64;  // EOS_SESSIONMODIFICATION_MAX_SESSION_ATTRIBUTES
 const u64 max_search_parameters = 64;   // one condition per attribute is already generous
-const u64 max_search_results = 200;     // EOS_SESSIONS_MAX_SEARCH_RESULTS
+const u64 max_search_results = 200;     // EOS_SESSIONS/LOBBY_MAX_SEARCH_RESULTS
 const u64 max_data_records = 32;        // EOS_PRESENCE_DATA_MAX_KEYS
+const u64 max_lobby_members = 64;       // EOS_LOBBY_MAX_LOBBY_MEMBERS
 
 // Read a list length that is safe to reserve: it must fit both the bytes left (every element costs
 // at least one) and the ABI cap for this kind of list.
@@ -390,6 +391,200 @@ void serialize(byte_writer& writer, const presence_request& msg) {
 
 bool deserialize(byte_reader& reader, presence_request& msg) {
     return reader.get_string(msg.target_epic_id);
+}
+
+namespace {
+
+void write_attributes(byte_writer& writer, const std::vector<session_attribute>& attrs) {
+    writer.put_var(static_cast<u64>(attrs.size()));
+    for (std::size_t i = 0; i < attrs.size(); i++) {
+        serialize(writer, attrs[i]);
+    }
+}
+
+bool read_attributes(byte_reader& reader, std::vector<session_attribute>& attrs) {
+    u64 count = 0;
+    if (!read_list_count(reader, count, max_attributes_in_list)) {
+        return false;
+    }
+    attrs.clear();
+    attrs.reserve(static_cast<std::size_t>(count));
+    for (u64 i = 0; i < count; i++) {
+        session_attribute attribute;
+        if (!deserialize(reader, attribute)) {
+            return false;
+        }
+        attrs.push_back(attribute);
+    }
+    return true;
+}
+
+void write_member(byte_writer& writer, const lobby_member& member) {
+    writer.put_string(member.user_id);
+    writer.put_svar(member.platform);
+    write_attributes(writer, member.attributes);
+}
+
+bool read_member(byte_reader& reader, lobby_member& member) {
+    i64 platform = 0;
+    if (!reader.get_string(member.user_id) || !reader.get_svar(platform)) {
+        return false;
+    }
+    member.platform = static_cast<i32>(platform);
+    return read_attributes(reader, member.attributes);
+}
+
+} // namespace
+
+void serialize(byte_writer& writer, const lobby_infos& msg) {
+    writer.put_string(msg.lobby_id);
+    writer.put_string(msg.owner_id);
+    writer.put_string(msg.bucket_id);
+    writer.put_svar(msg.permission_level);
+    writer.put_u32(msg.max_members);
+    writer.put_u32(msg.available_slots);
+    writer.put_bool(msg.allow_invites);
+    writer.put_bool(msg.allow_host_migration);
+    writer.put_bool(msg.rtc_enabled);
+    write_attributes(writer, msg.attributes);
+    writer.put_var(static_cast<u64>(msg.members.size()));
+    for (std::size_t i = 0; i < msg.members.size(); i++) {
+        write_member(writer, msg.members[i]);
+    }
+}
+
+bool deserialize(byte_reader& reader, lobby_infos& msg) {
+    i64 permission_level = 0;
+    if (!reader.get_string(msg.lobby_id) || !reader.get_string(msg.owner_id) ||
+        !reader.get_string(msg.bucket_id) || !reader.get_svar(permission_level) ||
+        !reader.get_u32(msg.max_members) || !reader.get_u32(msg.available_slots) ||
+        !reader.get_bool(msg.allow_invites) || !reader.get_bool(msg.allow_host_migration) ||
+        !reader.get_bool(msg.rtc_enabled)) {
+        return false;
+    }
+    msg.permission_level = static_cast<i32>(permission_level);
+    if (!read_attributes(reader, msg.attributes)) {
+        return false;
+    }
+    u64 count = 0;
+    if (!read_list_count(reader, count, max_lobby_members)) {
+        return false;
+    }
+    msg.members.clear();
+    msg.members.reserve(static_cast<std::size_t>(count));
+    for (u64 i = 0; i < count; i++) {
+        lobby_member member;
+        if (!read_member(reader, member)) {
+            return false;
+        }
+        msg.members.push_back(member);
+    }
+    return true;
+}
+
+void serialize(byte_writer& writer, const lobby_search& msg) {
+    writer.put_string(msg.search_id);
+    writer.put_string(msg.lobby_id);
+    writer.put_string(msg.target_user_id);
+    writer.put_u32(msg.max_results);
+    writer.put_var(static_cast<u64>(msg.parameters.size()));
+    for (std::size_t i = 0; i < msg.parameters.size(); i++) {
+        serialize(writer, msg.parameters[i].attribute);
+        writer.put_svar(msg.parameters[i].comparison_op);
+    }
+}
+
+bool deserialize(byte_reader& reader, lobby_search& msg) {
+    if (!reader.get_string(msg.search_id) || !reader.get_string(msg.lobby_id) ||
+        !reader.get_string(msg.target_user_id) || !reader.get_u32(msg.max_results)) {
+        return false;
+    }
+    u64 count = 0;
+    if (!read_list_count(reader, count, max_search_parameters)) {
+        return false;
+    }
+    msg.parameters.clear();
+    msg.parameters.reserve(static_cast<std::size_t>(count));
+    for (u64 i = 0; i < count; i++) {
+        search_parameter parameter;
+        i64 comparison_op = 0;
+        if (!deserialize(reader, parameter.attribute) || !reader.get_svar(comparison_op)) {
+            return false;
+        }
+        parameter.comparison_op = static_cast<i32>(comparison_op);
+        msg.parameters.push_back(parameter);
+    }
+    return true;
+}
+
+void serialize(byte_writer& writer, const lobby_search_response& msg) {
+    writer.put_string(msg.search_id);
+    writer.put_var(static_cast<u64>(msg.lobbies.size()));
+    for (std::size_t i = 0; i < msg.lobbies.size(); i++) {
+        serialize(writer, msg.lobbies[i]);
+    }
+}
+
+bool deserialize(byte_reader& reader, lobby_search_response& msg) {
+    if (!reader.get_string(msg.search_id)) {
+        return false;
+    }
+    u64 count = 0;
+    if (!read_list_count(reader, count, max_search_results)) {
+        return false;
+    }
+    msg.lobbies.clear();
+    msg.lobbies.reserve(static_cast<std::size_t>(count));
+    for (u64 i = 0; i < count; i++) {
+        lobby_infos lobby;
+        if (!deserialize(reader, lobby)) {
+            return false;
+        }
+        msg.lobbies.push_back(lobby);
+    }
+    return true;
+}
+
+void serialize(byte_writer& writer, const lobby_join_request& msg) {
+    writer.put_string(msg.lobby_id);
+    write_member(writer, msg.member);
+}
+
+bool deserialize(byte_reader& reader, lobby_join_request& msg) {
+    return reader.get_string(msg.lobby_id) && read_member(reader, msg.member);
+}
+
+void serialize(byte_writer& writer, const lobby_join_response& msg) {
+    writer.put_string(msg.lobby_id);
+    writer.put_string(msg.player_id);
+    writer.put_svar(msg.reason);
+}
+
+bool deserialize(byte_reader& reader, lobby_join_response& msg) {
+    i64 reason = 0;
+    if (!reader.get_string(msg.lobby_id) || !reader.get_string(msg.player_id) ||
+        !reader.get_svar(reason)) {
+        return false;
+    }
+    msg.reason = static_cast<i32>(reason);
+    return true;
+}
+
+void serialize(byte_writer& writer, const lobby_member_update& msg) {
+    writer.put_string(msg.lobby_id);
+    write_member(writer, msg.member);
+}
+
+bool deserialize(byte_reader& reader, lobby_member_update& msg) {
+    return reader.get_string(msg.lobby_id) && read_member(reader, msg.member);
+}
+
+void serialize(byte_writer& writer, const lobby_destroy& msg) {
+    writer.put_string(msg.lobby_id);
+}
+
+bool deserialize(byte_reader& reader, lobby_destroy& msg) {
+    return reader.get_string(msg.lobby_id);
 }
 
 std::vector<u8> frame_message(const std::vector<u8>& body) {

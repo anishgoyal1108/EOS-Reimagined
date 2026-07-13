@@ -536,3 +536,78 @@ TEST_CASE("a presence request carries just the target") {
     REQUIRE(deserialize(reader, b));
     CHECK(b.target_epic_id == a.target_epic_id);
 }
+
+TEST_CASE("a lobby with members and attributes round-trips") {
+    lobby_infos a;
+    a.lobby_id = "lobby-7";
+    a.owner_id = std::string(32, '1');
+    a.bucket_id = "Region:Coop";
+    a.permission_level = 1;
+    a.max_members = 8;
+    a.available_slots = 6;
+    a.allow_invites = true;
+    a.allow_host_migration = false;
+    a.rtc_enabled = true;
+    session_attribute map;
+    map.key = "map";
+    map.value_type = 3;
+    map.as_string = "crab-island";
+    map.advertisement = 0; // public visibility
+    a.attributes.push_back(map);
+
+    lobby_member owner;
+    owner.user_id = std::string(32, '1');
+    owner.platform = 1;
+    session_attribute skin;
+    skin.key = "skin";
+    skin.value_type = 1;
+    skin.as_int64 = 42;
+    owner.attributes.push_back(skin);
+    lobby_member guest;
+    guest.user_id = std::string(32, '2');
+    a.members.push_back(owner);
+    a.members.push_back(guest);
+
+    byte_writer writer;
+    serialize(writer, a);
+    byte_reader reader(writer.data().data(), writer.data().size());
+    lobby_infos b;
+    REQUIRE(deserialize(reader, b));
+    CHECK(b.lobby_id == "lobby-7");
+    CHECK(b.owner_id == a.owner_id);
+    CHECK(b.permission_level == 1);
+    CHECK(b.max_members == 8);
+    CHECK(b.rtc_enabled);
+    REQUIRE(b.attributes.size() == 1);
+    CHECK(b.attributes[0].as_string == "crab-island");
+    REQUIRE(b.members.size() == 2);
+    CHECK(b.members[0].user_id == a.owner_id);
+    REQUIRE(b.members[0].attributes.size() == 1);
+    CHECK(b.members[0].attributes[0].key == "skin");
+    CHECK(b.members[0].attributes[0].as_int64 == 42);
+    CHECK(b.members[1].user_id == guest.user_id);
+    CHECK(b.members[1].attributes.empty());
+}
+
+TEST_CASE("a lobby with an absurd member count is rejected") {
+    byte_writer w;
+    w.put_string("L1");
+    w.put_string("owner");
+    w.put_string("bucket");
+    w.put_svar(0);
+    w.put_u32(8);          // max_members
+    w.put_u32(8);          // available_slots
+    w.put_bool(true);
+    w.put_bool(false);
+    w.put_bool(false);
+    w.put_var(0);          // attributes: none
+    w.put_var(static_cast<u64>(100000)); // member count past the 64 cap
+    for (int i = 0; i < 100000; i++) {
+        w.put_string("m");
+        w.put_svar(0);
+        w.put_var(0);
+    }
+    byte_reader r(w.data().data(), w.size());
+    lobby_infos decoded;
+    CHECK_FALSE(deserialize(r, decoded));
+}

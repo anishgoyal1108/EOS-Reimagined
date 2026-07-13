@@ -57,6 +57,27 @@ bool deserialize(byte_reader& reader, presence_info& msg);
 void serialize(byte_writer& writer, const presence_request& msg);
 bool deserialize(byte_reader& reader, presence_request& msg);
 
+void serialize(byte_writer& writer, const lobby_infos& msg);
+bool deserialize(byte_reader& reader, lobby_infos& msg);
+
+void serialize(byte_writer& writer, const lobby_search& msg);
+bool deserialize(byte_reader& reader, lobby_search& msg);
+
+void serialize(byte_writer& writer, const lobby_search_response& msg);
+bool deserialize(byte_reader& reader, lobby_search_response& msg);
+
+void serialize(byte_writer& writer, const lobby_join_request& msg);
+bool deserialize(byte_reader& reader, lobby_join_request& msg);
+
+void serialize(byte_writer& writer, const lobby_join_response& msg);
+bool deserialize(byte_reader& reader, lobby_join_response& msg);
+
+void serialize(byte_writer& writer, const lobby_member_update& msg);
+bool deserialize(byte_reader& reader, lobby_member_update& msg);
+
+void serialize(byte_writer& writer, const lobby_destroy& msg);
+bool deserialize(byte_reader& reader, lobby_destroy& msg);
+
 // One message on a TCP stream is [u32 big-endian length][body]; UDP datagrams are unframed.
 std::vector<u8> frame_message(const std::vector<u8>& body);
 

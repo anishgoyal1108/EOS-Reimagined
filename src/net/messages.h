@@ -45,6 +45,15 @@ enum class message_type : u16 {
     presence_request = 50,
     presence_info = 51,
 
+    lobby_search = 60,
+    lobby_search_response = 61,
+    lobby_join_request = 62,
+    lobby_join_response = 63,
+    lobby_infos = 64,
+    lobby_leave = 65,
+    lobby_member_update = 66,
+    lobby_destroy = 67,
+
     // Discovery and peer lifecycle. net_advertise travels over UDP and is consumed by the
     // router itself; the peer_connected / peer_disconnected envelopes are synthesized by the
     // router and dispatched to the interfaces so they can track the roster.
@@ -203,6 +212,71 @@ struct presence_info {
 // A peer asking whoever is behind an Epic account id to send its presence back.
 struct presence_request {
     std::string target_epic_id;
+};
+
+// One member of a lobby: who they are, the platform they are on, and the attributes they published
+// about themselves. A lobby attribute reuses session_attribute -- the same key/typed-value shape --
+// with its `advertisement` field carrying the lobby's EOS_ELobbyAttributeVisibility.
+struct lobby_member {
+    std::string user_id;
+    i32 platform = 0;
+    std::vector<session_attribute> attributes;
+};
+
+// A lobby a host is advertising: the Sessions shape, plus members that carry their own attributes
+// and an owner with authority over the roster. The owner is the source of truth and broadcasts the
+// whole thing on any change.
+struct lobby_infos {
+    std::string lobby_id;
+    std::string owner_id; // the host's ProductUserId
+    std::string bucket_id;
+    i32 permission_level = 0; // EOS_ELobbyPermissionLevel
+    u32 max_members = 0;
+    u32 available_slots = 0;
+    bool allow_invites = true;
+    bool allow_host_migration = false;
+    bool rtc_enabled = false;
+    std::vector<session_attribute> attributes;
+    std::vector<lobby_member> members;
+};
+
+// A searcher asking every peer for lobbies it would want to join.
+struct lobby_search {
+    std::string search_id;
+    std::string lobby_id;       // exact-id search; empty means no id filter
+    std::string target_user_id; // find a particular player's lobby; empty means no user filter
+    u32 max_results = 0;
+    std::vector<search_parameter> parameters;
+};
+
+// A peer's whole answer to one lobby search: every lobby it hosts that matched, in one reply.
+struct lobby_search_response {
+    std::string search_id;
+    std::vector<lobby_infos> lobbies;
+};
+
+// A player asking a host to let it into a lobby, carrying the attributes it wants to join with.
+struct lobby_join_request {
+    std::string lobby_id;
+    lobby_member member;
+};
+
+// The host's verdict on a join, sent to the joiner. `reason` is an EOS_EResult.
+struct lobby_join_response {
+    std::string lobby_id;
+    std::string player_id;
+    i32 reason = 0;
+};
+
+// A member telling the host it is leaving, or updating its own member attributes.
+struct lobby_member_update {
+    std::string lobby_id;
+    lobby_member member;
+};
+
+// The host telling its members the lobby is gone.
+struct lobby_destroy {
+    std::string lobby_id;
 };
 
 } // namespace eosr

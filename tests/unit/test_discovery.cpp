@@ -16,6 +16,7 @@
 #include "core/settings.h"
 #include "interfaces/connect.h"
 #include "interfaces/p2p.h"
+#include "interfaces/lobby.h"
 #include "interfaces/presence.h"
 #include "interfaces/sessions.h"
 #include "net/message_router.h"
@@ -1187,5 +1188,225 @@ TEST_CASE("a frame tagged for a different game is not delivered") {
 
     alice.stop();
     bob.stop();
+    platform::net_shutdown();
+}
+
+// Lobby matchmaking over the real mesh: one instance opens a lobby, another finds it and joins,
+// the member list propagates to both, and the owner can kick.
+namespace {
+
+bool g_l_created = false;
+std::string g_l_id;
+void EOS_CALL on_l_create(const EOS_Lobby_CreateLobbyCallbackInfo* info) {
+    g_l_created = info->ResultCode == EOS_EResult::EOS_Success;
+    g_l_id = (info->LobbyId != 0) ? info->LobbyId : "";
+}
+bool g_l_found = false;
+void EOS_CALL on_l_find(const EOS_LobbySearch_FindCallbackInfo* info) {
+    g_l_found = info->ResultCode == EOS_EResult::EOS_Success;
+}
+bool g_l_joined = false;
+EOS_EResult g_l_join_result = EOS_EResult::EOS_UnexpectedError;
+void EOS_CALL on_l_join(const EOS_Lobby_JoinLobbyCallbackInfo* info) {
+    g_l_joined = true;
+    g_l_join_result = info->ResultCode;
+}
+void EOS_CALL on_l_kick(const EOS_Lobby_KickMemberCallbackInfo*) {}
+
+u32 lobby_member_count(sdk_lobby& lobby, const std::string& id, EOS_ProductUserId who) {
+    EOS_Lobby_CopyLobbyDetailsHandleOptions copy = {};
+    copy.ApiVersion = EOS_LOBBY_COPYLOBBYDETAILSHANDLE_API_LATEST;
+    copy.LobbyId = id.c_str();
+    copy.LocalUserId = who;
+    EOS_HLobbyDetails details = 0;
+    if (lobby.copy_lobby_details_handle(&copy, &details) != EOS_EResult::EOS_Success) {
+        return 0;
+    }
+    EOS_LobbyDetails_GetMemberCountOptions count = {};
+    count.ApiVersion = EOS_LOBBYDETAILS_GETMEMBERCOUNT_API_LATEST;
+    const u32 n = lobby.details_member_count(details, &count);
+    lobby.details_release(details);
+    return n;
+}
+
+EOS_ProductUserId lobby_owner(sdk_lobby& lobby, const std::string& id, EOS_ProductUserId who) {
+    EOS_Lobby_CopyLobbyDetailsHandleOptions copy = {};
+    copy.ApiVersion = EOS_LOBBY_COPYLOBBYDETAILSHANDLE_API_LATEST;
+    copy.LobbyId = id.c_str();
+    copy.LocalUserId = who;
+    EOS_HLobbyDetails details = 0;
+    if (lobby.copy_lobby_details_handle(&copy, &details) != EOS_EResult::EOS_Success) {
+        return 0;
+    }
+    EOS_LobbyDetails_GetLobbyOwnerOptions owner = {};
+    owner.ApiVersion = EOS_LOBBYDETAILS_GETLOBBYOWNER_API_LATEST;
+    EOS_ProductUserId result = lobby.details_get_lobby_owner(details, &owner);
+    lobby.details_release(details);
+    return result;
+}
+
+} // namespace
+
+TEST_CASE("one instance opens a lobby and another finds it and joins") {
+    REQUIRE(platform::net_init());
+    g_l_created = false;
+    g_l_found = false;
+    g_l_joined = false;
+
+    sdk_settings host_settings;
+    sdk_settings guest_settings;
+    EOS_Platform_Options options = {};
+    options.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    options.ProductId = "lobby-coop";
+    host_settings.apply_platform_options(&options);
+    guest_settings.apply_platform_options(&options);
+
+    callback_manager host_cb;
+    callback_manager guest_cb;
+    message_router host_net;
+    message_router guest_net;
+    sdk_connect host_connect(host_settings, host_cb, host_net);
+    sdk_connect guest_connect(guest_settings, guest_cb, guest_net);
+    sdk_lobby host(host_settings, host_cb, host_net, host_connect);
+    sdk_lobby guest(guest_settings, guest_cb, guest_net, guest_connect);
+    host_connect.emu_init();
+    guest_connect.emu_init();
+    host.emu_init();
+    guest.emu_init();
+
+    REQUIRE(start_router(host_net, host_settings.product_user_id(), host_settings.product_id(), 45830));
+    REQUIRE(start_router(guest_net, guest_settings.product_user_id(), guest_settings.product_id(), 45830));
+
+    EOS_Connect_Credentials credentials = {};
+    credentials.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
+    credentials.Token = "device";
+    credentials.Type = EOS_EExternalCredentialType::EOS_ECT_DEVICEID_ACCESS_TOKEN;
+    EOS_Connect_LoginOptions login = {};
+    login.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
+    login.Credentials = &credentials;
+    host_connect.login(&login, 0, ignore_login);
+    guest_connect.login(&login, 0, ignore_login);
+    host_cb.tick();
+    guest_cb.tick();
+    pump(host_net, guest_net, [&]() {
+        return host_connect.known_peer_count() > 0 && guest_connect.known_peer_count() > 0;
+    });
+    REQUIRE(host_connect.known_peer_count() == 1);
+
+    EOS_ProductUserId host_id =
+        id_registry::instance().get_product_user_id(host_settings.product_user_id());
+    EOS_ProductUserId guest_id =
+        id_registry::instance().get_product_user_id(guest_settings.product_user_id());
+
+    // The host opens a lobby.
+    EOS_Lobby_CreateLobbyOptions create = {};
+    create.ApiVersion = EOS_LOBBY_CREATELOBBY_API_LATEST;
+    create.LocalUserId = host_id;
+    create.MaxLobbyMembers = 4;
+    create.PermissionLevel = EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED;
+    create.BucketId = "Coop";
+    create.bAllowInvites = EOS_TRUE;
+    host.create_lobby(&create, 0, on_l_create);
+    host_cb.tick();
+    REQUIRE(g_l_created);
+    const std::string lobby_id = g_l_id;
+
+    // The guest searches for it and joins.
+    EOS_Lobby_CreateLobbySearchOptions search_options = {};
+    search_options.ApiVersion = EOS_LOBBY_CREATELOBBYSEARCH_API_LATEST;
+    search_options.MaxResults = 10;
+    EOS_HLobbySearch search = 0;
+    REQUIRE(guest.create_lobby_search(&search_options, &search) == EOS_EResult::EOS_Success);
+    EOS_Lobby_AttributeData bucket = {};
+    bucket.ApiVersion = EOS_LOBBY_ATTRIBUTEDATA_API_LATEST;
+    bucket.Key = EOS_LOBBY_SEARCH_BUCKET_ID;
+    bucket.ValueType = EOS_EAttributeType::EOS_AT_STRING;
+    bucket.Value.AsUtf8 = "Coop";
+    EOS_LobbySearch_SetParameterOptions parameter = {};
+    parameter.ApiVersion = EOS_LOBBYSEARCH_SETPARAMETER_API_LATEST;
+    parameter.Parameter = &bucket;
+    parameter.ComparisonOp = EOS_EComparisonOp::EOS_CO_EQUAL;
+    REQUIRE(guest.search_set_parameter(search, &parameter) == EOS_EResult::EOS_Success);
+    EOS_LobbySearch_FindOptions find = {};
+    find.ApiVersion = EOS_LOBBYSEARCH_FIND_API_LATEST;
+    find.LocalUserId = guest_id;
+    guest.search_find(search, &find, 0, on_l_find);
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return g_l_found;
+    });
+    REQUIRE(guest.search_result_count(search) == 1);
+
+    EOS_LobbySearch_CopySearchResultByIndexOptions pick = {};
+    pick.ApiVersion = EOS_LOBBYSEARCH_COPYSEARCHRESULTBYINDEX_API_LATEST;
+    pick.LobbyIndex = 0;
+    EOS_HLobbyDetails result_details = 0;
+    REQUIRE(guest.search_copy_result(search, &pick, &result_details) == EOS_EResult::EOS_Success);
+
+    // Join by id: we do not know who hosts the id until the host answers, so the join must learn the
+    // owner from the reply and settle on it -- not sit until the 5s deadline and report TimedOut.
+    EOS_Lobby_JoinLobbyByIdOptions join = {};
+    join.ApiVersion = EOS_LOBBY_JOINLOBBYBYID_API_LATEST;
+    join.LobbyId = lobby_id.c_str();
+    join.LocalUserId = guest_id;
+    guest.join_lobby_by_id(&join, 0, reinterpret_cast<EOS_Lobby_OnJoinLobbyByIdCallback>(on_l_join));
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return g_l_joined;
+    });
+    REQUIRE(g_l_join_result == EOS_EResult::EOS_Success);
+
+    // Both sides now see two members.
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return lobby_member_count(host, lobby_id, host_id) == 2 &&
+               lobby_member_count(guest, lobby_id, guest_id) == 2;
+    });
+    CHECK(lobby_member_count(host, lobby_id, host_id) == 2);
+    CHECK(lobby_member_count(guest, lobby_id, guest_id) == 2);
+
+    // The host promotes the guest. Ownership moves on both sides, and the guest becomes the one who
+    // runs the lobby from now on.
+    EOS_Lobby_PromoteMemberOptions promote = {};
+    promote.ApiVersion = EOS_LOBBY_PROMOTEMEMBER_API_LATEST;
+    promote.LobbyId = lobby_id.c_str();
+    promote.LocalUserId = host_id;
+    promote.TargetUserId = guest_id;
+    host.promote_member(&promote, 0, reinterpret_cast<EOS_Lobby_OnPromoteMemberCallback>(on_l_kick));
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return lobby_owner(guest, lobby_id, guest_id) == guest_id &&
+               lobby_owner(host, lobby_id, host_id) == guest_id;
+    });
+    CHECK(lobby_owner(guest, lobby_id, guest_id) == guest_id);
+    CHECK(lobby_owner(host, lobby_id, host_id) == guest_id);
+
+    // The guest, now the owner, kicks the former host, whose copy of the lobby goes away.
+    EOS_Lobby_KickMemberOptions kick = {};
+    kick.ApiVersion = EOS_LOBBY_KICKMEMBER_API_LATEST;
+    kick.LobbyId = lobby_id.c_str();
+    kick.LocalUserId = guest_id;
+    kick.TargetUserId = host_id;
+    guest.kick_member(&kick, 0, on_l_kick);
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return lobby_member_count(host, lobby_id, host_id) == 0;
+    });
+    CHECK(lobby_member_count(guest, lobby_id, guest_id) == 1); // just the new owner
+    CHECK(lobby_member_count(host, lobby_id, host_id) == 0);   // kicked out
+
+    guest.details_release(result_details);
+    guest.search_release(search);
+    host.emu_deinit();
+    guest.emu_deinit();
+    host_connect.emu_deinit();
+    guest_connect.emu_deinit();
+    host_net.stop();
+    guest_net.stop();
     platform::net_shutdown();
 }

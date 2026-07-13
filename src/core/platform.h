@@ -7,6 +7,7 @@
 #include "core/settings.h"
 #include "interfaces/auth.h"
 #include "interfaces/connect.h"
+#include "interfaces/lobby.h"
 #include "interfaces/p2p.h"
 #include "interfaces/presence.h"
 #include "interfaces/sessions.h"
@@ -89,6 +90,7 @@ public:
     sdk_p2p& p2p() { return p2p_; }
     sdk_sessions& sessions() { return sessions_; }
     sdk_presence& presence() { return presence_; }
+    sdk_lobby& lobby() { return lobby_; }
 
 private:
     sdk_settings settings_;
@@ -101,6 +103,7 @@ private:
     sdk_p2p p2p_;
     sdk_sessions sessions_;
     sdk_presence presence_;
+    sdk_lobby lobby_;
     stub_interface interfaces_[if_count];
     bool created_;
 };
