@@ -445,6 +445,7 @@ void serialize(byte_writer& writer, const lobby_infos& msg) {
     writer.put_u32(msg.available_slots);
     writer.put_bool(msg.allow_invites);
     writer.put_bool(msg.allow_host_migration);
+    writer.put_bool(msg.allow_join_by_id);
     writer.put_bool(msg.rtc_enabled);
     write_attributes(writer, msg.attributes);
     writer.put_var(static_cast<u64>(msg.members.size()));
@@ -459,7 +460,7 @@ bool deserialize(byte_reader& reader, lobby_infos& msg) {
         !reader.get_string(msg.bucket_id) || !reader.get_svar(permission_level) ||
         !reader.get_u32(msg.max_members) || !reader.get_u32(msg.available_slots) ||
         !reader.get_bool(msg.allow_invites) || !reader.get_bool(msg.allow_host_migration) ||
-        !reader.get_bool(msg.rtc_enabled)) {
+        !reader.get_bool(msg.allow_join_by_id) || !reader.get_bool(msg.rtc_enabled)) {
         return false;
     }
     msg.permission_level = static_cast<i32>(permission_level);
@@ -547,11 +548,13 @@ bool deserialize(byte_reader& reader, lobby_search_response& msg) {
 
 void serialize(byte_writer& writer, const lobby_join_request& msg) {
     writer.put_string(msg.lobby_id);
+    writer.put_bool(msg.by_id);
     write_member(writer, msg.member);
 }
 
 bool deserialize(byte_reader& reader, lobby_join_request& msg) {
-    return reader.get_string(msg.lobby_id) && read_member(reader, msg.member);
+    return reader.get_string(msg.lobby_id) && reader.get_bool(msg.by_id) &&
+           read_member(reader, msg.member);
 }
 
 void serialize(byte_writer& writer, const lobby_join_response& msg) {
@@ -581,10 +584,16 @@ bool deserialize(byte_reader& reader, lobby_member_update& msg) {
 
 void serialize(byte_writer& writer, const lobby_destroy& msg) {
     writer.put_string(msg.lobby_id);
+    writer.put_svar(msg.reason);
 }
 
 bool deserialize(byte_reader& reader, lobby_destroy& msg) {
-    return reader.get_string(msg.lobby_id);
+    i64 reason = 0;
+    if (!reader.get_string(msg.lobby_id) || !reader.get_svar(reason)) {
+        return false;
+    }
+    msg.reason = static_cast<i32>(reason);
+    return true;
 }
 
 std::vector<u8> frame_message(const std::vector<u8>& body) {

@@ -198,6 +198,9 @@ private:
     void broadcast_to_members(const lobby& entry, message_type type, const byte_writer& payload,
                               const std::string& except);
     void broadcast_lobby(const lobby& entry);
+    // Leave a lobby we host: hand it to a surviving member if migration is on, else tell the members
+    // it is closing. Does not erase our own copy; the caller does.
+    void close_hosted_lobby(lobby& entry);
     bool lobby_matches(const lobby_infos& infos, const lobby_search& query) const;
     u32 open_slots_of(const lobby_infos& infos) const;
     EOS_EResult emit_attribute(const session_attribute& from, EOS_Lobby_Attribute** out);

@@ -1306,6 +1306,7 @@ TEST_CASE("one instance opens a lobby and another finds it and joins") {
     create.PermissionLevel = EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED;
     create.BucketId = "Coop";
     create.bAllowInvites = EOS_TRUE;
+    create.bEnableJoinById = EOS_TRUE; // the guest joins this lobby by id
     host.create_lobby(&create, 0, on_l_create);
     host_cb.tick();
     REQUIRE(g_l_created);
@@ -1408,5 +1409,92 @@ TEST_CASE("one instance opens a lobby and another finds it and joins") {
     guest_connect.emu_deinit();
     host_net.stop();
     guest_net.stop();
+    platform::net_shutdown();
+}
+
+// Review regression: only hosts answer lobby searches, so every returned lobby must be owned by
+// the connection that supplied it. Merely being an awaited peer must not let a responder redirect a
+// subsequent JoinLobby to an unrelated peer by naming that peer as LobbyOwnerUserId.
+TEST_CASE("an awaited lobby search peer cannot return a lobby owned by somebody else") {
+    REQUIRE(platform::net_init());
+
+    sdk_settings search_settings;
+    EOS_Platform_Options options = {};
+    options.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    options.ProductId = "lobby-search-owner";
+    search_settings.apply_platform_options(&options);
+
+    callback_manager callbacks;
+    message_router search_router;
+    message_router responder_router;
+    sdk_connect connect(search_settings, callbacks, search_router);
+    sdk_lobby lobby(search_settings, callbacks, search_router, connect);
+    connect.emu_init();
+    lobby.emu_init();
+
+    const std::string responder_id(32, 'e');
+    const std::string unrelated_owner(32, 'f');
+    REQUIRE(start_router(search_router, search_settings.product_user_id(),
+                         search_settings.product_id(), 45840));
+    REQUIRE(start_router(responder_router, responder_id, search_settings.product_id(), 45840));
+    pump(search_router, responder_router, [&]() {
+        return !search_router.peer_ids().empty() && !responder_router.peer_ids().empty();
+    });
+    REQUIRE(search_router.peer_ids().size() == 1);
+
+    EOS_Lobby_CreateLobbySearchOptions create = {};
+    create.ApiVersion = EOS_LOBBY_CREATELOBBYSEARCH_API_LATEST;
+    create.MaxResults = 10;
+    EOS_HLobbySearch search = 0;
+    REQUIRE(lobby.create_lobby_search(&create, &search) == EOS_EResult::EOS_Success);
+    EOS_Lobby_AttributeData bucket = {};
+    bucket.ApiVersion = EOS_LOBBY_ATTRIBUTEDATA_API_LATEST;
+    bucket.Key = EOS_LOBBY_SEARCH_BUCKET_ID;
+    bucket.ValueType = EOS_EAttributeType::EOS_AT_STRING;
+    bucket.Value.AsUtf8 = "Coop";
+    EOS_LobbySearch_SetParameterOptions parameter = {};
+    parameter.ApiVersion = EOS_LOBBYSEARCH_SETPARAMETER_API_LATEST;
+    parameter.Parameter = &bucket;
+    parameter.ComparisonOp = EOS_EComparisonOp::EOS_CO_EQUAL;
+    REQUIRE(lobby.search_set_parameter(search, &parameter) == EOS_EResult::EOS_Success);
+
+    EOS_LobbySearch_FindOptions find = {};
+    find.ApiVersion = EOS_LOBBYSEARCH_FIND_API_LATEST;
+    find.LocalUserId = id_registry::instance().get_product_user_id(
+        search_settings.product_user_id());
+    g_l_found = false;
+    lobby.search_find(search, &find, 0, on_l_find);
+
+    lobby_search_response planted;
+    planted.search_id = "1";
+    lobby_infos result;
+    result.lobby_id = std::string(32, '4');
+    result.owner_id = unrelated_owner;
+    result.bucket_id = "Coop";
+    result.permission_level =
+        static_cast<i32>(EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED);
+    result.max_members = 4;
+    lobby_member claimed_owner;
+    claimed_owner.user_id = unrelated_owner;
+    result.members.push_back(claimed_owner);
+    planted.lobbies.push_back(result);
+    byte_writer writer;
+    serialize(writer, planted);
+    net_envelope envelope;
+    envelope.type_tag = static_cast<u16>(message_type::lobby_search_response);
+    envelope.source_id = responder_id;
+    envelope.game_id = search_settings.product_id();
+    envelope.payload = writer.data();
+    lobby.on_network_message(envelope);
+    callbacks.tick();
+
+    REQUIRE(g_l_found);
+    CHECK(lobby.search_result_count(search) == 0);
+
+    lobby.search_release(search);
+    lobby.emu_deinit();
+    connect.emu_deinit();
+    search_router.stop();
+    responder_router.stop();
     platform::net_shutdown();
 }

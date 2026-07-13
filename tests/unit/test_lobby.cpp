@@ -36,6 +36,26 @@ void EOS_CALL on_find(const EOS_LobbySearch_FindCallbackInfo* info) {
     g_find_result = info->ResultCode;
 }
 
+int g_member_update_count;
+std::string g_member_update_lobby;
+EOS_ProductUserId g_member_update_target;
+void EOS_CALL on_member_update(const EOS_Lobby_LobbyMemberUpdateReceivedCallbackInfo* info) {
+    g_member_update_count++;
+    g_member_update_lobby = (info->LobbyId != 0) ? info->LobbyId : "";
+    g_member_update_target = info->TargetUserId;
+}
+
+int g_member_status_count;
+std::string g_member_status_lobby;
+EOS_ProductUserId g_member_status_target;
+EOS_ELobbyMemberStatus g_member_status;
+void EOS_CALL on_member_status(const EOS_Lobby_LobbyMemberStatusReceivedCallbackInfo* info) {
+    g_member_status_count++;
+    g_member_status_lobby = (info->LobbyId != 0) ? info->LobbyId : "";
+    g_member_status_target = info->TargetUserId;
+    g_member_status = info->CurrentStatus;
+}
+
 struct lobby_fixture {
     sdk_settings settings;
     callback_manager callbacks;
@@ -49,6 +69,13 @@ struct lobby_fixture {
         g_simple_result = EOS_EResult::EOS_UnexpectedError;
         g_find_result = EOS_EResult::EOS_UnexpectedError;
         g_lobby_id.clear();
+        g_member_update_count = 0;
+        g_member_update_lobby.clear();
+        g_member_update_target = 0;
+        g_member_status_count = 0;
+        g_member_status_lobby.clear();
+        g_member_status_target = 0;
+        g_member_status = EOS_ELobbyMemberStatus::EOS_LMS_CLOSED;
     }
     ~lobby_fixture() { lobby.emu_deinit(); }
 
@@ -87,6 +114,65 @@ EOS_Lobby_AttributeData string_attr(const char* key, const char* value) {
     data.ValueType = EOS_EAttributeType::EOS_AT_STRING;
     data.Value.AsUtf8 = value;
     return data;
+}
+
+lobby_infos seed_joined_lobby(lobby_fixture& fx, const std::string& lobby_id,
+                              const std::string& owner_id) {
+    EOS_Lobby_JoinLobbyByIdOptions join = {};
+    join.ApiVersion = EOS_LOBBY_JOINLOBBYBYID_API_LATEST;
+    join.LobbyId = lobby_id.c_str();
+    join.LocalUserId = fx.me();
+    fx.lobby.join_lobby_by_id(&join, 0,
+                              reinterpret_cast<EOS_Lobby_OnJoinLobbyByIdCallback>(on_create));
+
+    lobby_join_response verdict;
+    verdict.lobby_id = lobby_id;
+    verdict.player_id = fx.settings.product_user_id();
+    verdict.reason = static_cast<i32>(EOS_EResult::EOS_Success);
+    byte_writer verdict_writer;
+    serialize(verdict_writer, verdict);
+    net_envelope verdict_envelope;
+    verdict_envelope.type_tag = static_cast<u16>(message_type::lobby_join_response);
+    verdict_envelope.source_id = owner_id;
+    verdict_envelope.game_id = fx.settings.product_id();
+    verdict_envelope.payload = verdict_writer.data();
+    fx.lobby.on_network_message(verdict_envelope);
+
+    lobby_infos infos;
+    infos.lobby_id = lobby_id;
+    infos.owner_id = owner_id;
+    infos.max_members = 4;
+    infos.allow_host_migration = true;
+    lobby_member owner;
+    owner.user_id = owner_id;
+    lobby_member self;
+    self.user_id = fx.settings.product_user_id();
+    infos.members.push_back(owner);
+    infos.members.push_back(self);
+    infos.available_slots = 2;
+
+    byte_writer infos_writer;
+    serialize(infos_writer, infos);
+    net_envelope infos_envelope;
+    infos_envelope.type_tag = static_cast<u16>(message_type::lobby_infos);
+    infos_envelope.source_id = owner_id;
+    infos_envelope.game_id = fx.settings.product_id();
+    infos_envelope.payload = infos_writer.data();
+    fx.lobby.on_network_message(infos_envelope);
+    fx.callbacks.tick();
+    return infos;
+}
+
+void inject_lobby_infos(lobby_fixture& fx, const lobby_infos& infos,
+                        const std::string& source_id) {
+    byte_writer writer;
+    serialize(writer, infos);
+    net_envelope envelope;
+    envelope.type_tag = static_cast<u16>(message_type::lobby_infos);
+    envelope.source_id = source_id;
+    envelope.game_id = fx.settings.product_id();
+    envelope.payload = writer.data();
+    fx.lobby.on_network_message(envelope);
 }
 
 } // namespace
@@ -397,5 +483,180 @@ TEST_CASE("a non-owner cannot seize a lobby we are in") {
     owner.ApiVersion = EOS_LOBBYDETAILS_GETLOBBYOWNER_API_LATEST;
     CHECK(fx.lobby.details_get_lobby_owner(details, &owner) ==
           id_registry::instance().get_product_user_id(real_owner));
+    fx.lobby.details_release(details);
+}
+
+// Review regression: enabling host migration promises that the lobby remains open when its owner
+// leaves. With one surviving member there is no election ambiguity: that member must inherit it.
+TEST_CASE("an owner disconnect migrates a migration-enabled lobby to its surviving member") {
+    lobby_fixture fx;
+    const std::string lobby_id(32, '7');
+    const std::string owner_id(32, '8');
+    seed_joined_lobby(fx, lobby_id, owner_id);
+
+    net_envelope disconnected;
+    disconnected.type_tag = static_cast<u16>(message_type::peer_disconnected);
+    disconnected.source_id = owner_id;
+    fx.lobby.on_network_message(disconnected);
+
+    EOS_Lobby_CopyLobbyDetailsHandleOptions copy = {};
+    copy.ApiVersion = EOS_LOBBY_COPYLOBBYDETAILSHANDLE_API_LATEST;
+    copy.LobbyId = lobby_id.c_str();
+    copy.LocalUserId = fx.me();
+    EOS_HLobbyDetails details = 0;
+    const EOS_EResult result = fx.lobby.copy_lobby_details_handle(&copy, &details);
+    CHECK(result == EOS_EResult::EOS_Success);
+    if (result == EOS_EResult::EOS_Success) {
+        EOS_LobbyDetails_GetLobbyOwnerOptions owner = {};
+        owner.ApiVersion = EOS_LOBBYDETAILS_GETLOBBYOWNER_API_LATEST;
+        CHECK(fx.lobby.details_get_lobby_owner(details, &owner) == fx.me());
+        fx.lobby.details_release(details);
+    }
+}
+
+// Review regression: this notification is specifically for member data changes. A host broadcast
+// carrying a changed member attribute must identify that member, not only raise LobbyUpdateReceived.
+TEST_CASE("a replicated member attribute change fires the member-update notification") {
+    lobby_fixture fx;
+    const std::string lobby_id(32, '9');
+    const std::string owner_id(32, 'a');
+    lobby_infos infos = seed_joined_lobby(fx, lobby_id, owner_id);
+
+    const EOS_NotificationId note =
+        fx.lobby.add_notify_lobby_member_update_received(0, on_member_update);
+    REQUIRE(note != EOS_INVALID_NOTIFICATIONID);
+
+    session_attribute changed;
+    changed.key = "ready";
+    changed.value_type = static_cast<i32>(EOS_EAttributeType::EOS_AT_BOOLEAN);
+    changed.as_bool = true;
+    infos.members[0].attributes.push_back(changed);
+    inject_lobby_infos(fx, infos, owner_id);
+
+    CHECK(g_member_update_count == 1);
+    CHECK(g_member_update_lobby == lobby_id);
+    CHECK(g_member_update_target == id_registry::instance().get_product_user_id(owner_id));
+    fx.lobby.remove_notify(note);
+}
+
+// Review regression: peers already in a lobby learn roster changes through lobby_infos. They still
+// need the documented JOINED status event for the new member, just as the host receives locally.
+TEST_CASE("a replicated roster addition fires the member-status notification") {
+    lobby_fixture fx;
+    const std::string lobby_id(32, 'b');
+    const std::string owner_id(32, 'c');
+    const std::string newcomer_id(32, 'd');
+    lobby_infos infos = seed_joined_lobby(fx, lobby_id, owner_id);
+
+    const EOS_NotificationId note =
+        fx.lobby.add_notify_lobby_member_status_received(0, on_member_status);
+    REQUIRE(note != EOS_INVALID_NOTIFICATIONID);
+
+    lobby_member newcomer;
+    newcomer.user_id = newcomer_id;
+    infos.members.push_back(newcomer);
+    infos.available_slots = 1;
+    inject_lobby_infos(fx, infos, owner_id);
+
+    CHECK(g_member_status_count == 1);
+    CHECK(g_member_status_lobby == lobby_id);
+    CHECK(g_member_status_target == id_registry::instance().get_product_user_id(newcomer_id));
+    CHECK(g_member_status == EOS_ELobbyMemberStatus::EOS_LMS_JOINED);
+    fx.lobby.remove_notify(note);
+}
+
+// Review regression: kick_member sends this exact lobby_destroy payload to the removed member. The
+// receiver needs a reason on the wire so it can report KICKED instead of conflating it with closure.
+TEST_CASE("a member removed by a kick receives KICKED rather than CLOSED") {
+    lobby_fixture fx;
+    const std::string lobby_id(32, '3');
+    const std::string owner_id(32, '5');
+    seed_joined_lobby(fx, lobby_id, owner_id);
+    const EOS_NotificationId note =
+        fx.lobby.add_notify_lobby_member_status_received(0, on_member_status);
+    REQUIRE(note != EOS_INVALID_NOTIFICATIONID);
+
+    lobby_destroy kicked;
+    kicked.lobby_id = lobby_id;
+    byte_writer writer;
+    serialize(writer, kicked);
+    net_envelope envelope;
+    envelope.type_tag = static_cast<u16>(message_type::lobby_destroy);
+    envelope.source_id = owner_id;
+    envelope.game_id = fx.settings.product_id();
+    envelope.payload = writer.data();
+    fx.lobby.on_network_message(envelope);
+
+    REQUIRE(g_member_status_count == 1);
+    CHECK(g_member_status_target == fx.me());
+    CHECK(g_member_status == EOS_ELobbyMemberStatus::EOS_LMS_KICKED);
+    fx.lobby.remove_notify(note);
+}
+
+// Review regression: the public search contract caps results at 200 and returns
+// IncompatibleVersion for an option layout newer than the implementation understands.
+TEST_CASE("lobby search rejects an excessive result limit and incompatible option version") {
+    lobby_fixture fx;
+    EOS_Lobby_CreateLobbySearchOptions create = {};
+    create.ApiVersion = EOS_LOBBY_CREATELOBBYSEARCH_API_LATEST;
+    create.MaxResults = 10;
+    EOS_HLobbySearch search = 0;
+    REQUIRE(fx.lobby.create_lobby_search(&create, &search) == EOS_EResult::EOS_Success);
+
+    EOS_LobbySearch_SetMaxResultsOptions limit = {};
+    limit.ApiVersion = EOS_LOBBYSEARCH_SETMAXRESULTS_API_LATEST;
+    limit.MaxResults = EOS_LOBBY_MAX_SEARCH_RESULTS + 1;
+    CHECK(fx.lobby.search_set_max_results(search, &limit) == EOS_EResult::EOS_InvalidParameters);
+
+    limit.ApiVersion = EOS_LOBBYSEARCH_SETMAXRESULTS_API_LATEST + 1;
+    limit.MaxResults = 1;
+    CHECK(fx.lobby.search_set_max_results(search, &limit) ==
+          EOS_EResult::EOS_IncompatibleVersion);
+    fx.lobby.search_release(search);
+}
+
+// Review regression: LobbyId, TargetUserId, and parameter searches are three mutually exclusive
+// modes. The API explicitly says Find fails when callers combine them.
+TEST_CASE("lobby search find rejects mutually exclusive criteria used together") {
+    lobby_fixture fx;
+    const std::string lobby_id =
+        fx.host("Coop", 4, EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED);
+
+    EOS_Lobby_CreateLobbySearchOptions create = {};
+    create.ApiVersion = EOS_LOBBY_CREATELOBBYSEARCH_API_LATEST;
+    create.MaxResults = 10;
+    EOS_HLobbySearch search = 0;
+    REQUIRE(fx.lobby.create_lobby_search(&create, &search) == EOS_EResult::EOS_Success);
+
+    EOS_LobbySearch_SetLobbyIdOptions by_id = {};
+    by_id.ApiVersion = EOS_LOBBYSEARCH_SETLOBBYID_API_LATEST;
+    by_id.LobbyId = lobby_id.c_str();
+    REQUIRE(fx.lobby.search_set_lobby_id(search, &by_id) == EOS_EResult::EOS_Success);
+    EOS_LobbySearch_SetTargetUserIdOptions by_user = {};
+    by_user.ApiVersion = EOS_LOBBYSEARCH_SETTARGETUSERID_API_LATEST;
+    by_user.TargetUserId = fx.me();
+    REQUIRE(fx.lobby.search_set_target_user(search, &by_user) == EOS_EResult::EOS_Success);
+
+    EOS_LobbySearch_FindOptions find = {};
+    find.ApiVersion = EOS_LOBBYSEARCH_FIND_API_LATEST;
+    find.LocalUserId = fx.me();
+    fx.lobby.search_find(search, &find, 0, on_find);
+    fx.callbacks.tick();
+    CHECK(g_find_result == EOS_EResult::EOS_InvalidParameters);
+    fx.lobby.search_release(search);
+}
+
+// Review regression: JoinLobbyById is opt-in. A lobby created with the default false flag must
+// report that policy through its details (and the network join path must enforce the same value).
+TEST_CASE("a lobby does not enable join-by-id when creation left it disabled") {
+    lobby_fixture fx;
+    const std::string lobby_id =
+        fx.host("Coop", 4, EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED);
+    EOS_HLobbyDetails details = fx.details_for(lobby_id);
+    EOS_LobbyDetails_Info* info = 0;
+    REQUIRE(fx.lobby.details_copy_info(details, &info) == EOS_EResult::EOS_Success);
+    REQUIRE((info != 0));
+    CHECK(info->bAllowJoinById == EOS_FALSE);
+    release_lobby_details_info(info);
     fx.lobby.details_release(details);
 }

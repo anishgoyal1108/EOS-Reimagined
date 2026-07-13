@@ -235,6 +235,7 @@ struct lobby_infos {
     u32 available_slots = 0;
     bool allow_invites = true;
     bool allow_host_migration = false;
+    bool allow_join_by_id = false;
     bool rtc_enabled = false;
     std::vector<session_attribute> attributes;
     std::vector<lobby_member> members;
@@ -256,8 +257,11 @@ struct lobby_search_response {
 };
 
 // A player asking a host to let it into a lobby, carrying the attributes it wants to join with.
+// `by_id` is set when the request came from JoinLobbyById, which the host only honours if the lobby
+// enabled join-by-id.
 struct lobby_join_request {
     std::string lobby_id;
+    bool by_id = false;
     lobby_member member;
 };
 
@@ -274,9 +278,12 @@ struct lobby_member_update {
     lobby_member member;
 };
 
-// The host telling its members the lobby is gone.
+// The host telling a member the lobby is gone for it. `reason` is an EOS_ELobbyMemberStatus so the
+// member can tell a kick (3, EOS_LMS_KICKED) from the whole lobby closing (5, EOS_LMS_CLOSED); it
+// defaults to a kick because that is the targeted case, and a full teardown sets it explicitly.
 struct lobby_destroy {
     std::string lobby_id;
+    i32 reason = 3;
 };
 
 } // namespace eosr

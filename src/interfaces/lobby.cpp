@@ -184,6 +184,23 @@ void upsert_attribute(std::vector<session_attribute>& attrs, const session_attri
     attrs.push_back(value);
 }
 
+// Who inherits a lobby when its owner leaves: the smallest remaining member id. Every member runs
+// the same rule on the same roster, so they all agree on the heir without a round trip. Empty when
+// no one is left to take it.
+std::string elect_owner(const std::vector<lobby_member>& members, const std::string& leaving) {
+    std::string chosen;
+    for (std::size_t i = 0; i < members.size(); i++) {
+        const std::string& id = members[i].user_id;
+        if (id == leaving) {
+            continue;
+        }
+        if (chosen.empty() || id < chosen) {
+            chosen = id;
+        }
+    }
+    return chosen;
+}
+
 void remove_attribute(std::vector<session_attribute>& attrs, const std::string& key) {
     for (std::size_t i = 0; i < attrs.size();) {
         if (attrs[i].key == key) {
@@ -211,7 +228,7 @@ void fill_details_info(details_info_holder& holder, const lobby_infos& infos) {
     holder.info.BucketId = holder.bucket_id.c_str();
     holder.info.bAllowHostMigration = infos.allow_host_migration ? EOS_TRUE : EOS_FALSE;
     holder.info.bRTCRoomEnabled = infos.rtc_enabled ? EOS_TRUE : EOS_FALSE;
-    holder.info.bAllowJoinById = EOS_TRUE;
+    holder.info.bAllowJoinById = infos.allow_join_by_id ? EOS_TRUE : EOS_FALSE;
     holder.info.bRejoinAfterKickRequiresInvite = EOS_FALSE;
     holder.info.bPresenceEnabled = EOS_FALSE;
     holder.info.AllowedPlatformIds = 0;
@@ -322,6 +339,34 @@ void sdk_lobby::broadcast_lobby(const lobby& entry) {
     byte_writer writer;
     serialize(writer, entry.infos);
     broadcast_to_members(entry, message_type::lobby_infos, writer, std::string());
+}
+
+void sdk_lobby::close_hosted_lobby(lobby& entry) {
+    const std::string heir =
+        entry.infos.allow_host_migration
+            ? elect_owner(entry.infos.members, settings_.product_user_id())
+            : std::string();
+    if (heir.empty()) {
+        // No one to hand it to: the lobby closes for everyone.
+        lobby_destroy notice;
+        notice.lobby_id = entry.infos.lobby_id;
+        notice.reason = static_cast<i32>(EOS_ELobbyMemberStatus::EOS_LMS_CLOSED);
+        byte_writer writer;
+        serialize(writer, notice);
+        broadcast_to_members(entry, message_type::lobby_destroy, writer, std::string());
+        return;
+    }
+    // Migrate: name the heir, drop ourselves, and broadcast the new state as the outgoing owner --
+    // recipients accept it because we are still the owner they know, and the heir becomes the host.
+    entry.infos.owner_id = heir;
+    for (std::size_t i = 0; i < entry.infos.members.size(); i++) {
+        if (entry.infos.members[i].user_id == settings_.product_user_id()) {
+            entry.infos.members.erase(entry.infos.members.begin() + i);
+            break;
+        }
+    }
+    entry.infos.available_slots = open_slots_of(entry.infos);
+    broadcast_lobby(entry);
 }
 
 void sdk_lobby::deliver_id(callback_type_id type, std::size_t info_size,
@@ -454,6 +499,58 @@ void fire_lobby_update(callback_manager& callbacks, i_run_callback* owner,
     }
 }
 
+void fire_member_update(callback_manager& callbacks, i_run_callback* owner,
+                        const std::string& lobby_id, const std::string& target) {
+    std::vector<EOS_NotificationId> ids = callbacks.notification_ids(owner, cb_notify_member_update);
+    for (std::size_t n = 0; n < ids.size(); n++) {
+        frame_result* note = callbacks.find_notification(owner, ids[n]);
+        if (note == 0) {
+            continue;
+        }
+        EOS_Lobby_LobbyMemberUpdateReceivedCallbackInfo* info =
+            note->get_callback<EOS_Lobby_LobbyMemberUpdateReceivedCallbackInfo>();
+        info->LobbyId = lobby_id.c_str();
+        info->TargetUserId = id_registry::instance().get_product_user_id(target);
+        note->fire();
+    }
+}
+
+// Two members carry the same attributes? Compared in order, which is how they are applied, so a
+// spurious extra notification is the worst a reorder could cause.
+bool same_member_attributes(const lobby_member& a, const lobby_member& b) {
+    if (a.attributes.size() != b.attributes.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.attributes.size(); i++) {
+        const session_attribute& x = a.attributes[i];
+        const session_attribute& y = b.attributes[i];
+        if (x.key != y.key || x.value_type != y.value_type) {
+            return false;
+        }
+        bool same = false;
+        switch (x.value_type) {
+            case 0: same = x.as_bool == y.as_bool; break;
+            case 1: same = x.as_int64 == y.as_int64; break;
+            case 2: same = x.as_double == y.as_double; break;
+            default: same = x.as_string == y.as_string; break;
+        }
+        if (!same) {
+            return false;
+        }
+    }
+    return true;
+}
+
+const lobby_member* find_member_const(const std::vector<lobby_member>& members,
+                                      const std::string& user_id) {
+    for (std::size_t i = 0; i < members.size(); i++) {
+        if (members[i].user_id == user_id) {
+            return &members[i];
+        }
+    }
+    return 0;
+}
+
 void fire_member_status(callback_manager& callbacks, i_run_callback* owner,
                         const std::string& lobby_id, const std::string& target,
                         EOS_ELobbyMemberStatus status) {
@@ -511,6 +608,7 @@ void sdk_lobby::create_lobby(const EOS_Lobby_CreateLobbyOptions* options, void* 
     created.infos.max_members = options->MaxLobbyMembers;
     created.infos.allow_invites = (options->bAllowInvites == EOS_TRUE);
     created.infos.allow_host_migration = (options->bDisableHostMigration != EOS_TRUE);
+    created.infos.allow_join_by_id = (options->bEnableJoinById == EOS_TRUE);
     created.infos.rtc_enabled = (options->bEnableRTCRoom == EOS_TRUE);
     lobby_member owner;
     owner.user_id = created.local_user;
@@ -546,10 +644,7 @@ void sdk_lobby::destroy_lobby(const EOS_Lobby_DestroyLobbyOptions* options, void
     // we give our seat back instead.
     byte_writer writer;
     if (entry->local_state == lobby::hosting) {
-        lobby_destroy notice;
-        notice.lobby_id = lobby_id;
-        serialize(writer, notice);
-        broadcast_to_members(*entry, message_type::lobby_destroy, writer, std::string());
+        close_hosted_lobby(*entry);
     } else {
         lobby_member_update leaving;
         leaving.lobby_id = lobby_id;
@@ -584,11 +679,7 @@ void sdk_lobby::leave_lobby(const EOS_Lobby_LeaveLobbyOptions* options, void* cl
     }
     byte_writer writer;
     if (entry->local_state == lobby::hosting) {
-        // The host leaving ends the lobby (host migration is not carried yet).
-        lobby_destroy notice;
-        notice.lobby_id = lobby_id;
-        serialize(writer, notice);
-        broadcast_to_members(*entry, message_type::lobby_destroy, writer, std::string());
+        close_hosted_lobby(*entry);
     } else {
         lobby_member_update leaving;
         leaving.lobby_id = lobby_id;
@@ -875,6 +966,7 @@ void sdk_lobby::join_lobby_by_id(const EOS_Lobby_JoinLobbyByIdOptions* options, 
     // We do not know which peer hosts this id, so we ask them all; only its owner answers.
     lobby_join_request request;
     request.lobby_id = lobby_id;
+    request.by_id = true;
     request.member.user_id = joining.local_user;
     byte_writer writer;
     serialize(writer, request);
@@ -908,6 +1000,9 @@ EOS_EResult sdk_lobby::search_set_lobby_id(void* handle,
     if (object == 0 || options == 0 || options->LobbyId == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
+    if (!version_ok(options->ApiVersion, EOS_LOBBYSEARCH_SETLOBBYID_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
+    }
     object->query.lobby_id = options->LobbyId;
     return EOS_EResult::EOS_Success;
 }
@@ -918,6 +1013,9 @@ EOS_EResult sdk_lobby::search_set_target_user(void* handle,
     if (object == 0 || options == 0 || options->TargetUserId == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
+    if (!version_ok(options->ApiVersion, EOS_LOBBYSEARCH_SETTARGETUSERID_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
+    }
     object->query.target_user_id = options->TargetUserId->id_str;
     return EOS_EResult::EOS_Success;
 }
@@ -927,6 +1025,9 @@ EOS_EResult sdk_lobby::search_set_parameter(void* handle,
     search_object* object = searches_.find(handle);
     if (object == 0 || options == 0 || options->Parameter == 0) {
         return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (!version_ok(options->ApiVersion, EOS_LOBBYSEARCH_SETPARAMETER_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
     }
     search_parameter parameter;
     if (!read_attribute(options->Parameter, parameter.attribute)) {
@@ -950,6 +1051,9 @@ EOS_EResult sdk_lobby::search_remove_parameter(void* handle,
     if (object == 0 || options == 0 || options->Key == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
+    if (!version_ok(options->ApiVersion, EOS_LOBBYSEARCH_REMOVEPARAMETER_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
+    }
     const i32 op = static_cast<i32>(options->ComparisonOp);
     for (std::size_t i = 0; i < object->query.parameters.size(); i++) {
         if (object->query.parameters[i].attribute.key == options->Key &&
@@ -964,7 +1068,13 @@ EOS_EResult sdk_lobby::search_remove_parameter(void* handle,
 EOS_EResult sdk_lobby::search_set_max_results(void* handle,
                                               const EOS_LobbySearch_SetMaxResultsOptions* options) {
     search_object* object = searches_.find(handle);
-    if (object == 0 || options == 0 || options->MaxResults == 0) {
+    if (object == 0 || options == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (!version_ok(options->ApiVersion, EOS_LOBBYSEARCH_SETMAXRESULTS_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
+    }
+    if (options->MaxResults == 0 || options->MaxResults > EOS_LOBBY_MAX_SEARCH_RESULTS) {
         return EOS_EResult::EOS_InvalidParameters;
     }
     object->max_results = options->MaxResults;
@@ -983,9 +1093,13 @@ void sdk_lobby::search_find(void* handle, const EOS_LobbySearch_FindOptions* opt
                        EOS_EResult::EOS_InvalidParameters);
         return;
     }
+    // Exactly one search mode may be set: by lobby id, by target user, or by attribute parameters.
+    // The header says Find fails when they are combined, and equally when none is given.
     const bool by_id = !object->query.lobby_id.empty();
     const bool by_user = !object->query.target_user_id.empty();
-    if (!by_id && !by_user && object->query.parameters.empty()) {
+    const bool by_params = !object->query.parameters.empty();
+    const int modes = (by_id ? 1 : 0) + (by_user ? 1 : 0) + (by_params ? 1 : 0);
+    if (modes != 1) {
         deliver_result(cb_find, sizeof(EOS_LobbySearch_FindCallbackInfo),
                        reinterpret_cast<completion_delegate>(delegate), client_data,
                        EOS_EResult::EOS_InvalidParameters);
@@ -1508,9 +1622,36 @@ bool sdk_lobby::on_network_message(const net_envelope& message) {
             }
             if (entry->local_state != lobby::hosting &&
                 entry->infos.owner_id == message.source_id) {
-                lobbies_.erase(ids[k]);
-                fire_member_status(callbacks_, this, ids[k], message.source_id,
-                                   EOS_ELobbyMemberStatus::EOS_LMS_CLOSED);
+                // The owner is gone. Drop it from the roster, then either hand the lobby to a
+                // surviving member (if migration is on) or let it close. Every member elects the
+                // same heir from the same roster, so they converge without a round trip.
+                for (std::size_t i = 0; i < entry->infos.members.size(); i++) {
+                    if (entry->infos.members[i].user_id == message.source_id) {
+                        entry->infos.members.erase(entry->infos.members.begin() + i);
+                        break;
+                    }
+                }
+                const std::string heir =
+                    entry->infos.allow_host_migration
+                        ? elect_owner(entry->infos.members, message.source_id)
+                        : std::string();
+                if (heir.empty()) {
+                    lobbies_.erase(ids[k]);
+                    fire_member_status(callbacks_, this, ids[k], message.source_id,
+                                       EOS_ELobbyMemberStatus::EOS_LMS_CLOSED);
+                } else {
+                    entry->infos.owner_id = heir;
+                    entry->infos.available_slots = open_slots_of(entry->infos);
+                    if (heir == settings_.product_user_id()) {
+                        entry->local_state = lobby::hosting;
+                        broadcast_lobby(*entry); // the new host solidifies the state
+                    } else {
+                        entry->local_state = lobby::joined;
+                    }
+                    fire_member_status(callbacks_, this, ids[k], heir,
+                                       EOS_ELobbyMemberStatus::EOS_LMS_PROMOTED);
+                    fire_lobby_update(callbacks_, this, ids[k]);
+                }
             } else if (entry->local_state == lobby::hosting &&
                        find_member(entry->infos, message.source_id) != 0) {
                 for (std::size_t i = 0; i < entry->infos.members.size(); i++) {
@@ -1573,6 +1714,11 @@ bool sdk_lobby::on_network_message(const net_envelope& message) {
                 if (object->results.size() >= object->max_results) {
                     break;
                 }
+                // Only a lobby the responder actually hosts may come back on its connection; a
+                // result naming another owner would redirect a later JoinLobby to an unrelated peer.
+                if (answer.lobbies[l].owner_id != message.source_id) {
+                    continue;
+                }
                 if (lobby_matches(answer.lobbies[l], object->query)) {
                     object->results.push_back(answer.lobbies[l]);
                 }
@@ -1595,6 +1741,8 @@ bool sdk_lobby::on_network_message(const net_envelope& message) {
         }
         if (!connect_.is_known_peer(message.source_id)) {
             answer.reason = static_cast<i32>(EOS_EResult::EOS_Lobby_NotOwner);
+        } else if (request.by_id && !entry->infos.allow_join_by_id) {
+            answer.reason = static_cast<i32>(EOS_EResult::EOS_Lobby_NotAllowed);
         } else if (find_member(entry->infos, message.source_id) != 0) {
             answer.reason = static_cast<i32>(EOS_EResult::EOS_Success);
         } else if (entry->infos.members.size() >= entry->infos.max_members) {
@@ -1675,12 +1823,36 @@ bool sdk_lobby::on_network_message(const net_envelope& message) {
         if (message.source_id != entry->infos.owner_id) {
             return true;
         }
+        // Diff the roster the owner sent against what we held, so a member that joined, left, had
+        // its attributes changed, or was promoted raises the specific notification a game listens
+        // for -- not only the generic lobby-changed one.
+        const lobby_infos previous = entry->infos;
         const std::string keep_user = entry->local_user;
         entry->infos = infos;
         entry->local_user = keep_user;
         // A promotion can hand us ownership; from then on we are the one advertising it.
         entry->local_state =
             (infos.owner_id == settings_.product_user_id()) ? lobby::hosting : lobby::joined;
+
+        for (std::size_t i = 0; i < infos.members.size(); i++) {
+            const lobby_member* was = find_member_const(previous.members, infos.members[i].user_id);
+            if (was == 0) {
+                fire_member_status(callbacks_, this, infos.lobby_id, infos.members[i].user_id,
+                                   EOS_ELobbyMemberStatus::EOS_LMS_JOINED);
+            } else if (!same_member_attributes(*was, infos.members[i])) {
+                fire_member_update(callbacks_, this, infos.lobby_id, infos.members[i].user_id);
+            }
+        }
+        for (std::size_t i = 0; i < previous.members.size(); i++) {
+            if (find_member_const(infos.members, previous.members[i].user_id) == 0) {
+                fire_member_status(callbacks_, this, infos.lobby_id, previous.members[i].user_id,
+                                   EOS_ELobbyMemberStatus::EOS_LMS_LEFT);
+            }
+        }
+        if (!infos.owner_id.empty() && infos.owner_id != previous.owner_id) {
+            fire_member_status(callbacks_, this, infos.lobby_id, infos.owner_id,
+                               EOS_ELobbyMemberStatus::EOS_LMS_PROMOTED);
+        }
         fire_lobby_update(callbacks_, this, infos.lobby_id);
         return true;
     }
@@ -1743,8 +1915,10 @@ bool sdk_lobby::on_network_message(const net_envelope& message) {
             return true;
         }
         lobbies_.erase(notice.lobby_id);
+        // The reason on the wire tells us whether this was a kick aimed at us or the whole lobby
+        // closing, so the game hears the one that happened.
         fire_member_status(callbacks_, this, notice.lobby_id, settings_.product_user_id(),
-                           EOS_ELobbyMemberStatus::EOS_LMS_CLOSED);
+                           static_cast<EOS_ELobbyMemberStatus>(notice.reason));
         return true;
     }
 

@@ -277,7 +277,12 @@ EOS_DECLARE_FUNC(void) EOS_Lobby_Attribute_Release(EOS_Lobby_Attribute* LobbyAtt
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Lobby_CopyLobbyDetailsHandle(EOS_HLobby Handle, const EOS_Lobby_CopyLobbyDetailsHandleOptions* Options, EOS_HLobbyDetails* OutLobbyDetailsHandle) {
     eosr::sdk_lobby* lobby = checked_lobby(Handle);
-    return (lobby != 0) ? lobby->copy_lobby_details_handle(Options, OutLobbyDetailsHandle) : EOS_EResult::EOS_InvalidParameters;
+    if (lobby == 0) {
+        // The header promises the out handle is null on any non-success return.
+        if (OutLobbyDetailsHandle != 0) { *OutLobbyDetailsHandle = 0; }
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    return lobby->copy_lobby_details_handle(Options, OutLobbyDetailsHandle);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Lobby_CopyLobbyDetailsHandleByInviteId(EOS_HLobby Handle, const EOS_Lobby_CopyLobbyDetailsHandleByInviteIdOptions* Options, EOS_HLobbyDetails* OutLobbyDetailsHandle) {
@@ -299,7 +304,12 @@ EOS_DECLARE_FUNC(void) EOS_Lobby_CreateLobby(EOS_HLobby Handle, const EOS_Lobby_
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Lobby_CreateLobbySearch(EOS_HLobby Handle, const EOS_Lobby_CreateLobbySearchOptions* Options, EOS_HLobbySearch* OutLobbySearchHandle) {
     eosr::sdk_lobby* lobby = checked_lobby(Handle);
-    return (lobby != 0) ? lobby->create_lobby_search(Options, OutLobbySearchHandle) : EOS_EResult::EOS_InvalidParameters;
+    if (lobby == 0) {
+        // The header promises the out handle is null on any non-success return.
+        if (OutLobbySearchHandle != 0) { *OutLobbySearchHandle = 0; }
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    return lobby->create_lobby_search(Options, OutLobbySearchHandle);
 }
 
 EOS_DECLARE_FUNC(void) EOS_Lobby_DestroyLobby(EOS_HLobby Handle, const EOS_Lobby_DestroyLobbyOptions* Options, void* ClientData, const EOS_Lobby_OnDestroyLobbyCallback CompletionDelegate) {
@@ -460,6 +470,11 @@ EOS_DECLARE_FUNC(void) EOS_Lobby_UpdateLobby(EOS_HLobby Handle, const EOS_Lobby_
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Lobby_UpdateLobbyModification(EOS_HLobby Handle, const EOS_Lobby_UpdateLobbyModificationOptions* Options, EOS_HLobbyModification* OutLobbyModificationHandle) {
     eosr::sdk_lobby* lobby = checked_lobby(Handle);
-    return (lobby != 0) ? lobby->update_lobby_modification(Options, OutLobbyModificationHandle) : EOS_EResult::EOS_InvalidParameters;
+    if (lobby == 0) {
+        // The header promises the out handle is null on any non-success return.
+        if (OutLobbyModificationHandle != 0) { *OutLobbyModificationHandle = 0; }
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    return lobby->update_lobby_modification(Options, OutLobbyModificationHandle);
 }
 

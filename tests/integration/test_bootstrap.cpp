@@ -8,6 +8,7 @@
 #include "eos_logging.h"
 #include "eos_connect.h"
 #include "eos_auth.h"
+#include "eos_lobby.h"
 #include "eos_p2p.h"
 
 #include <cstring>
@@ -122,6 +123,59 @@ const int getter_count = static_cast<int>(sizeof(getter_names) / sizeof(getter_n
 #define RESOLVE(var, api_name) \
     auto var = reinterpret_cast<decltype(&api_name)>(lib.symbol(#api_name)); \
     REQUIRE((var != nullptr))
+
+// Review regression: the public contract says both outputs are null on error. The core methods do
+// that, but the flat trampolines used to return early for a bad parent handle and leave stale values.
+TEST_CASE("Lobby flat ABI nulls handle outputs when the parent handle is invalid") {
+    REQUIRE_FALSE(g_library_path.empty());
+    dynamic_library lib;
+    REQUIRE(lib.open(g_library_path.c_str()));
+
+    RESOLVE(fn_initialize, EOS_Initialize);
+    RESOLVE(fn_shutdown, EOS_Shutdown);
+    RESOLVE(fn_create, EOS_Platform_Create);
+    RESOLVE(fn_release, EOS_Platform_Release);
+    RESOLVE(fn_get_lobby, EOS_Platform_GetLobbyInterface);
+    RESOLVE(fn_create_search, EOS_Lobby_CreateLobbySearch);
+    RESOLVE(fn_copy_details, EOS_Lobby_CopyLobbyDetailsHandle);
+
+    EOS_InitializeOptions initialize = {};
+    initialize.ApiVersion = EOS_INITIALIZE_API_LATEST;
+    initialize.ProductName = "LobbyReview";
+    initialize.ProductVersion = "1.0";
+    REQUIRE(fn_initialize(&initialize) == EOS_EResult::EOS_Success);
+
+    EOS_Platform_Options platform_options = {};
+    platform_options.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    platform_options.ProductId = "lobby-review";
+    platform_options.SandboxId = "sandbox";
+    platform_options.DeploymentId = "deployment";
+    platform_options.ClientCredentials.ClientId = "client";
+    platform_options.ClientCredentials.ClientSecret = "secret";
+    EOS_HPlatform platform = fn_create(&platform_options);
+    REQUIRE((platform != nullptr));
+    REQUIRE((fn_get_lobby(platform) != nullptr));
+
+    EOS_HLobby bad_lobby = reinterpret_cast<EOS_HLobby>(0xdeadbeef);
+    EOS_Lobby_CreateLobbySearchOptions search_options = {};
+    search_options.ApiVersion = EOS_LOBBY_CREATELOBBYSEARCH_API_LATEST;
+    search_options.MaxResults = 1;
+    EOS_HLobbySearch search = reinterpret_cast<EOS_HLobbySearch>(0x1);
+    CHECK(fn_create_search(bad_lobby, &search_options, &search) ==
+          EOS_EResult::EOS_InvalidParameters);
+    CHECK((search == nullptr));
+
+    EOS_Lobby_CopyLobbyDetailsHandleOptions copy_options = {};
+    copy_options.ApiVersion = EOS_LOBBY_COPYLOBBYDETAILSHANDLE_API_LATEST;
+    copy_options.LobbyId = "missing";
+    EOS_HLobbyDetails details = reinterpret_cast<EOS_HLobbyDetails>(0x1);
+    CHECK(fn_copy_details(bad_lobby, &copy_options, &details) ==
+          EOS_EResult::EOS_InvalidParameters);
+    CHECK((details == nullptr));
+
+    fn_release(platform);
+    CHECK(fn_shutdown() == EOS_EResult::EOS_Success);
+}
 
 TEST_CASE("the built SDK library drives the whole bootstrap sequence") {
     REQUIRE_FALSE(g_library_path.empty());
