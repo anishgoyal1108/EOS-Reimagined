@@ -144,6 +144,14 @@ private:
         EOS_EConnectionClosedReason reason;
     };
 
+    // A packet the incoming queue had no room for. The game is told which packet it lost, so we
+    // keep what it needs to know until the notification fires on the tick.
+    struct overflow_packet {
+        u8 channel;
+        u32 size_bytes;
+        u64 queue_size_bytes; // what the queue held at the moment we turned this one away
+    };
+
     // A registered connection notification, with the socket it is limited to (empty = any).
     struct notify_filter {
         std::string socket;
@@ -161,6 +169,12 @@ private:
     void queue_event(pending_event::kind type, const std::string& peer, const std::string& socket,
                      EOS_EConnectionClosedReason reason);
     void fire_connection_notifications();
+    void fire_queue_full_notifications();
+    // Bytes the incoming queue is holding, and what the delayed-delivery queues are holding for
+    // peers that have not agreed yet -- which is the only outgoing queue we own.
+    u64 incoming_queued_bytes() const;
+    u64 outgoing_queued_bytes() const;
+    u64 outgoing_queued_packets() const;
     // Drop every queued packet from `peer` on `socket`; an empty socket means every socket.
     void flush_packets(const std::string& peer, const std::string& socket);
 
@@ -171,6 +185,7 @@ private:
     std::deque<received_packet> receive_queue_;
     std::map<connection_key, connection> connections_;
     std::vector<pending_event> pending_events_;
+    std::vector<overflow_packet> overflows_;
     std::map<EOS_NotificationId, notify_filter> notify_filters_;
 
     // Configuration a game sets and reads back. The emulator does not act on the relay and port

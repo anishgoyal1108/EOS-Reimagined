@@ -30,6 +30,12 @@ add_executable(unit_tests
 )
 target_link_libraries(unit_tests PRIVATE eosr_core doctest)
 
+# The identity tests write real profile keys. Pin them to an absolute path under the build tree so
+# they land there no matter which directory the binary is run from -- a relative path put generated
+# keys wherever the caller happened to be standing, and they were once committed from the repo root.
+target_compile_definitions(unit_tests PRIVATE
+    EOSR_TEST_PROFILE_DIR="${CMAKE_CURRENT_BINARY_DIR}/test-profiles")
+
 # The authenticated-mesh ADR requires secret HKDF intermediates to be wiped.  GNU-compatible
 # linkers can interpose the vendored wipe primitive so the unit test observes that contract without
 # reading freed storage.  Both supported build targets (Linux and MinGW) use this linker facility.

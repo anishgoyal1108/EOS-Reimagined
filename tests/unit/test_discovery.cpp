@@ -283,6 +283,47 @@ TEST_CASE("a peer that hangs up is dropped promptly") {
     platform::net_shutdown();
 }
 
+// Completing the last Noise message and observing EOF in the same read means the peer is already
+// gone. It must never be surfaced as connected for one tick before the established path drops it.
+TEST_CASE("a peer that closes with its final handshake message is never adopted") {
+    REQUIRE(platform::net_init());
+    message_router alice;
+    message_router bob;
+    REQUIRE(start_router(alice, alice_profile(), "same-game", 45775));
+    REQUIRE(start_router(bob, bob_profile(), "same-game", 45775));
+
+    message_router& dialer = (alice_id() < bob_id()) ? alice : bob;
+    message_router& accepter = (alice_id() < bob_id()) ? bob : alice;
+    event_listener events;
+    accepter.register_listener(message_type::peer_connected, &events);
+    accepter.register_listener(message_type::peer_disconnected, &events);
+
+    // The higher id advertises first. We then stop between the dialer's adoption and the
+    // accepter's processing of message three, so that final proof and EOF arrive together.
+    accepter.cb_run_frame();
+    for (int i = 0; i < 200 && dialer.peer_ids().empty(); i++) {
+        dialer.cb_run_frame();
+        if (!dialer.peer_ids().empty()) {
+            break;
+        }
+        accepter.cb_run_frame();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    REQUIRE(dialer.peer_ids().size() == 1);
+    REQUIRE(accepter.peer_ids().empty());
+
+    dialer.stop();
+    accepter.cb_run_frame();
+
+    CHECK(accepter.peer_ids().empty());
+    CHECK(events.connected.empty());
+    CHECK(events.disconnected.empty());
+
+    alice.stop();
+    bob.stop();
+    platform::net_shutdown();
+}
+
 // Writing faster than a peer reads fills the kernel buffer. That is backpressure, not a broken
 // peer: the connection must survive it, and not one byte of the stream may be lost, or every frame
 // after the truncated one would be misread.

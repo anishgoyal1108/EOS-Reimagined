@@ -26,6 +26,11 @@ std::string g_request_socket;
 int g_established_count;
 int g_closed_count;
 EOS_EConnectionClosedReason g_closed_reason;
+int g_queue_full_count;
+u64 g_queue_full_max;
+u64 g_queue_full_current;
+u8 g_queue_full_channel;
+u32 g_queue_full_packet_size;
 
 void reset_captures() {
     g_request_count = 0;
@@ -33,6 +38,11 @@ void reset_captures() {
     g_established_count = 0;
     g_closed_count = 0;
     g_closed_reason = EOS_EConnectionClosedReason::EOS_CCR_Unknown;
+    g_queue_full_count = 0;
+    g_queue_full_max = 0;
+    g_queue_full_current = 0;
+    g_queue_full_channel = 0;
+    g_queue_full_packet_size = 0;
 }
 
 void EOS_CALL on_request(const EOS_P2P_OnIncomingConnectionRequestInfo* info) {
@@ -45,6 +55,13 @@ void EOS_CALL on_established(const EOS_P2P_OnPeerConnectionEstablishedInfo*) { g
 void EOS_CALL on_closed(const EOS_P2P_OnRemoteConnectionClosedInfo* info) {
     g_closed_count++;
     g_closed_reason = info->Reason;
+}
+void EOS_CALL on_queue_full(const EOS_P2P_OnIncomingPacketQueueFullInfo* info) {
+    g_queue_full_count++;
+    g_queue_full_max = info->PacketQueueMaxSizeBytes;
+    g_queue_full_current = info->PacketQueueCurrentSizeBytes;
+    g_queue_full_channel = info->OverflowPacketChannel;
+    g_queue_full_packet_size = info->OverflowPacketSizeBytes;
 }
 
 EOS_P2P_SocketId make_socket(const char* name) {
@@ -599,6 +616,38 @@ TEST_CASE("close connection drops the connection and clear empties the queue") {
     size_options.LocalUserId = fx.local();
     u32 size = 0;
     CHECK(fx.p2p.get_next_received_packet_size(&size_options, &size) == EOS_EResult::EOS_NotFound);
+}
+
+// SetPacketQueueSize is observable behavior, not bookkeeping: once the next packet would exceed
+// the configured incoming limit, EOS reports that packet through the queue-full notification and
+// does not let the queue grow without bound.
+TEST_CASE("the incoming packet limit rejects overflow and fires the queue-full notification") {
+    p2p_fixture fx;
+    fx.open_connection("game");
+    REQUIRE(fx.p2p.add_notify_incoming_packet_queue_full(0, on_queue_full) !=
+            EOS_INVALID_NOTIFICATIONID);
+
+    EOS_P2P_SetPacketQueueSizeOptions limit = {};
+    limit.ApiVersion = EOS_P2P_SETPACKETQUEUESIZE_API_LATEST;
+    limit.IncomingPacketQueueMaxSizeBytes = 5;
+    limit.OutgoingPacketQueueMaxSizeBytes = EOS_P2P_MAX_QUEUE_SIZE_UNLIMITED;
+    REQUIRE(fx.p2p.set_packet_queue_size(&limit) == EOS_EResult::EOS_Success);
+
+    fx.p2p.on_network_message(
+        make_p2p_envelope(message_type::p2p_data, peer_id, "game", 4, {1, 2, 3}));
+    fx.p2p.on_network_message(
+        make_p2p_envelope(message_type::p2p_data, peer_id, "game", 7, {4, 5, 6}));
+    fx.callbacks.tick();
+
+    EOS_P2P_PacketQueueInfo queue = {};
+    REQUIRE(fx.p2p.get_packet_queue_info(&queue) == EOS_EResult::EOS_Success);
+    CHECK(queue.IncomingPacketQueueCurrentSizeBytes == 3);
+    CHECK(queue.IncomingPacketQueueCurrentPacketCount == 1);
+    REQUIRE(g_queue_full_count == 1);
+    CHECK(g_queue_full_max == 5);
+    CHECK(g_queue_full_current == 3);
+    CHECK(g_queue_full_channel == 7);
+    CHECK(g_queue_full_packet_size >= 3);
 }
 
 TEST_CASE("a p2p notification that removes another while firing is memory-safe") {

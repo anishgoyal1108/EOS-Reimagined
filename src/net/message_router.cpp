@@ -669,17 +669,17 @@ void message_router::drain_handshaking() {
             failed = true;
         }
 
-        if (failed) {
+        // A peer that hung up is gone, and a valid proof arriving in the same read does not bring it
+        // back: a closed socket cannot carry a frame. Adopting one would announce a peer that is
+        // already unreachable -- every interface would take it onto a roster, and then take it off
+        // again on the very next tick when the dead stream reads closed. So the EOF decides,
+        // whether or not the handshake finished first.
+        if (failed || health == stream_closed) {
             handshaking_.erase(handshaking_.begin() + i);
             continue;
         }
         if (proved.empty()) {
-            // Still shaking hands. Give up on one that hung up before it ever said who it was.
-            if (health == stream_closed) {
-                handshaking_.erase(handshaking_.begin() + i);
-                continue;
-            }
-            i++;
+            i++; // still shaking hands
             continue;
         }
 

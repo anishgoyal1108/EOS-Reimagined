@@ -165,6 +165,7 @@ void sdk_p2p::emu_deinit() {
     receive_queue_.clear();
     connections_.clear();
     pending_events_.clear();
+    overflows_.clear();
     notify_filters_.clear();
     registered_ = false;
 }
@@ -245,13 +246,23 @@ EOS_EResult sdk_p2p::send_packet(const EOS_P2P_SendPacketOptions* options) {
     if (it->second.state != connection_open) {
         // The peer has not agreed yet. Delayed delivery means holding the packet until it does;
         // without it the packet is dropped, which is what the API promises.
-        if (options->bAllowDelayedDelivery == EOS_TRUE) {
-            delayed_packet held;
-            held.data = data;
-            held.channel = options->Channel;
-            held.reliable = reliable;
-            it->second.delayed.push_back(held);
+        if (options->bAllowDelayedDelivery != EOS_TRUE) {
+            return EOS_EResult::EOS_Success;
         }
+        // What we hold for a peer that has not agreed is the outgoing queue, and the game's limit
+        // applies to it. A packet we have no room for is dropped exactly as an undelayed one is.
+        const u64 held = outgoing_queued_bytes();
+        if (
+            outgoing_queue_max_bytes_ != EOS_P2P_MAX_QUEUE_SIZE_UNLIMITED &&
+            held + static_cast<u64>(data.size()) > outgoing_queue_max_bytes_
+        ) {
+            return EOS_EResult::EOS_Success;
+        }
+        delayed_packet waiting;
+        waiting.data = data;
+        waiting.channel = options->Channel;
+        waiting.reliable = reliable;
+        it->second.delayed.push_back(waiting);
         return EOS_EResult::EOS_Success;
     }
 
@@ -621,22 +632,47 @@ EOS_EResult sdk_p2p::set_packet_queue_size(const EOS_P2P_SetPacketQueueSizeOptio
     return EOS_EResult::EOS_Success;
 }
 
+u64 sdk_p2p::incoming_queued_bytes() const {
+    u64 total = 0;
+    for (std::size_t i = 0; i < receive_queue_.size(); i++) {
+        total += receive_queue_[i].data.size();
+    }
+    return total;
+}
+
+// A packet we are holding for a peer that has not agreed to the connection yet is a packet we have
+// not sent. That is the only outgoing queue we own -- once a connection is open, a packet goes
+// straight out and the mesh's own backpressure takes over.
+u64 sdk_p2p::outgoing_queued_bytes() const {
+    u64 total = 0;
+    std::map<connection_key, connection>::const_iterator it = connections_.begin();
+    for (; it != connections_.end(); ++it) {
+        for (std::size_t i = 0; i < it->second.delayed.size(); i++) {
+            total += it->second.delayed[i].data.size();
+        }
+    }
+    return total;
+}
+
+u64 sdk_p2p::outgoing_queued_packets() const {
+    u64 total = 0;
+    std::map<connection_key, connection>::const_iterator it = connections_.begin();
+    for (; it != connections_.end(); ++it) {
+        total += it->second.delayed.size();
+    }
+    return total;
+}
+
 EOS_EResult sdk_p2p::get_packet_queue_info(EOS_P2P_PacketQueueInfo* out_info) const {
     if (out_info == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    u64 queued_bytes = 0;
-    for (std::size_t i = 0; i < receive_queue_.size(); i++) {
-        queued_bytes += receive_queue_[i].data.size();
-    }
     out_info->IncomingPacketQueueMaxSizeBytes = incoming_queue_max_bytes_;
-    out_info->IncomingPacketQueueCurrentSizeBytes = queued_bytes;
+    out_info->IncomingPacketQueueCurrentSizeBytes = incoming_queued_bytes();
     out_info->IncomingPacketQueueCurrentPacketCount = receive_queue_.size();
     out_info->OutgoingPacketQueueMaxSizeBytes = outgoing_queue_max_bytes_;
-    // Sent packets are not queued locally: they leave through the peer mesh, which lands with the
-    // networked-discovery milestone.
-    out_info->OutgoingPacketQueueCurrentSizeBytes = 0;
-    out_info->OutgoingPacketQueueCurrentPacketCount = 0;
+    out_info->OutgoingPacketQueueCurrentSizeBytes = outgoing_queued_bytes();
+    out_info->OutgoingPacketQueueCurrentPacketCount = outgoing_queued_packets();
     return EOS_EResult::EOS_Success;
 }
 
@@ -729,9 +765,41 @@ void sdk_p2p::fire_connection_notifications() {
     }
 }
 
+// The queue-full notification is not filtered by socket -- it is about the queue, not a connection --
+// so it does not go through fire_connection_notifications.
+void sdk_p2p::fire_queue_full_notifications() {
+    std::vector<overflow_packet> dropped;
+    dropped.swap(overflows_);
+    const EOS_ProductUserId local =
+        id_registry::instance().get_product_user_id(settings_.product_user_id());
+
+    for (std::size_t i = 0; i < dropped.size(); i++) {
+        // Re-look-up each notification by id before firing: a fired callback may remove another.
+        const std::vector<EOS_NotificationId> ids =
+            callbacks_.notification_ids(this, cb_packet_queue_full);
+        for (std::size_t n = 0; n < ids.size(); n++) {
+            frame_result* note = callbacks_.find_notification(this, ids[n]);
+            if (note == 0) {
+                continue;
+            }
+            EOS_P2P_OnIncomingPacketQueueFullInfo* info =
+                note->get_callback<EOS_P2P_OnIncomingPacketQueueFullInfo>();
+            info->PacketQueueMaxSizeBytes = incoming_queue_max_bytes_;
+            info->PacketQueueCurrentSizeBytes = dropped[i].queue_size_bytes;
+            info->OverflowPacketLocalUserId = local;
+            info->OverflowPacketChannel = dropped[i].channel;
+            info->OverflowPacketSizeBytes = dropped[i].size_bytes;
+            note->fire();
+        }
+    }
+}
+
 bool sdk_p2p::cb_run_frame() {
     if (!pending_events_.empty()) {
         fire_connection_notifications();
+    }
+    if (!overflows_.empty()) {
+        fire_queue_full_notifications();
     }
     return false;
 }
@@ -812,6 +880,24 @@ bool sdk_p2p::on_network_message(const net_envelope& message) {
         if (it->second.state != connection_open) {
             return true;
         }
+
+        // The game asked us to hold no more than this much. Taking the packet anyway would let a
+        // peer grow the queue without bound, and the game would never learn it was happening -- so
+        // we turn the packet away and tell it which one it lost.
+        const u64 held = incoming_queued_bytes();
+        const u64 arriving = static_cast<u64>(payload.data.size());
+        if (
+            incoming_queue_max_bytes_ != EOS_P2P_MAX_QUEUE_SIZE_UNLIMITED &&
+            held + arriving > incoming_queue_max_bytes_
+        ) {
+            overflow_packet dropped;
+            dropped.channel = static_cast<u8>(payload.channel);
+            dropped.size_bytes = static_cast<u32>(payload.data.size());
+            dropped.queue_size_bytes = held;
+            overflows_.push_back(dropped);
+            return true;
+        }
+
         received_packet packet;
         packet.peer = message.source_id;
         packet.socket = payload.socket_name;

@@ -13,10 +13,12 @@ using namespace eosr;
 
 namespace {
 
-// A profile directory of this test's own, under the build tree. We clear it on the way in rather
-// than on the way out, so a run always starts from a known state even if an earlier one was killed.
+// A profile directory of this test's own. The path is absolute and fixed at build time, so the real
+// keys these tests generate land under the build tree whatever directory the binary is run from.
+// We clear it on the way in rather than on the way out, so a run always starts from a known state
+// even if an earlier one was killed.
 std::string fresh_profile_dir(const char* name) {
-    const std::string path = std::string("eosr-test-profiles/") + name;
+    const std::string path = std::string(EOSR_TEST_PROFILE_DIR) + "/" + name;
     platform::make_directories(path);
     for (int slot = 0; slot < max_local_profiles; slot++) {
         std::string base = path + "/profile";
@@ -119,6 +121,32 @@ TEST_CASE("a profile round-trips through its hex export") {
 
     CHECK_FALSE(carried.import_key("not hex"));
     CHECK_FALSE(carried.import_key(std::string(63, 'a')));
+}
+
+// Importing replaces the in-memory identity only. A previously persisted profile must not make the
+// replacement look durable when the key on disk is still the old one.
+TEST_CASE("importing over a persisted profile reports that the replacement is ephemeral") {
+    const std::string directory = fresh_profile_dir("imported");
+
+    identity replacement;
+    REQUIRE(replacement.generate_ephemeral());
+    const std::string imported_key = replacement.export_key();
+    std::string persisted_key;
+    {
+        identity profile;
+        REQUIRE(profile.load_or_create(directory));
+        REQUIRE(profile.is_persistent());
+        persisted_key = profile.export_key();
+        REQUIRE(imported_key != persisted_key);
+        REQUIRE(profile.import_key(imported_key));
+
+        CHECK_FALSE(profile.is_persistent());
+    }
+
+    identity next_run;
+    REQUIRE(next_run.load_or_create(directory));
+    CHECK(next_run.export_key() == persisted_key);
+    CHECK(next_run.export_key() != imported_key);
 }
 
 TEST_CASE("a persisted profile is the same player on the next run") {

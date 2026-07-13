@@ -240,6 +240,13 @@ bool identity::import_key(const std::string& hex) {
     u8 secret[profile_key_len] = {0};
     const bool ok = from_hex(hex, secret, profile_key_len) && adopt_key(secret);
     secure_wipe(secret, sizeof(secret));
+    if (ok) {
+        // Importing replaces the key we are holding, not the one on disk -- which, if there is one,
+        // is still the old key and is what the next run will load. Saying the identity is persistent
+        // would promise a durability it does not have, and the player would silently be somebody
+        // else tomorrow. Writing it out is a separate, deliberate act.
+        persistent_ = false;
+    }
     return ok;
 }
 
