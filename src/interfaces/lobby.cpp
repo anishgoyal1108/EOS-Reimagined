@@ -90,6 +90,24 @@ bool version_ok(i32 version, i32 latest) {
     return version > 0 && version <= latest;
 }
 
+// The ApiVersion at which each EOS_Lobby_CreateLobbyOptions field is first guaranteed to be inside
+// the caller's struct. A game built against an older SDK passes a *shorter* struct, so reading a
+// field it does not have reads the game's own memory -- and BucketId and LobbyId are pointers we
+// would then build a std::string from.
+//
+// The version each field actually arrived in is published nowhere: Epic's headers carry only
+// _API_LATEST, and the numbered structs stop at SDK 1.8, which knew only versions 1 and 2. What we
+// can prove is that EOS only ever appends fields, at least one per version, so the field at ordinal
+// position P is inside any struct whose version has reached P - 3 (version 1 had four fields). That
+// is the strongest bound available, and it errs the right way: a field we ignore costs an old caller
+// a feature its SDK predates anyway, where a field we read too eagerly costs it a crash.
+const i32 createlobby_with_allow_invites = 3;          // field 6
+const i32 createlobby_with_bucket_id = 4;              // field 7
+const i32 createlobby_with_disable_host_migration = 5; // field 8
+const i32 createlobby_with_rtc_room = 6;               // field 9
+const i32 createlobby_with_lobby_id = 8;               // field 11
+const i32 createlobby_with_join_by_id = 9;             // field 12
+
 template <class T>
 bool compare_ordered(const T& mine, const T& theirs, i32 op) {
     // EOS_EComparisonOp: 0 EQUAL, 1 NOTEQUAL, 2 GREATERTHAN, 3 GREATERTHANOREQUAL, 4 LESSTHAN,
@@ -584,7 +602,14 @@ void sdk_lobby::create_lobby(const EOS_Lobby_CreateLobbyOptions* options, void* 
                    EOS_EResult::EOS_InvalidParameters, std::string());
         return;
     }
-    std::string lobby_id = (options->LobbyId != 0) ? options->LobbyId : generate_lobby_id();
+    // Every field past the first four is read only once the caller's version says it is there. The
+    // fallbacks are what the SDK did before each field existed, so an older game gets the behavior
+    // its own SDK would have given it.
+    const i32 version = options->ApiVersion;
+    const char* requested_id =
+        (version >= createlobby_with_lobby_id) ? options->LobbyId : 0;
+
+    std::string lobby_id = (requested_id != 0) ? requested_id : generate_lobby_id();
     if (lobby_id.empty()) {
         deliver_id(cb_create, sizeof(EOS_Lobby_CreateLobbyCallbackInfo),
                    reinterpret_cast<completion_delegate>(delegate), client_data,
@@ -603,13 +628,24 @@ void sdk_lobby::create_lobby(const EOS_Lobby_CreateLobbyOptions* options, void* 
     created.local_state = lobby::hosting;
     created.infos.lobby_id = lobby_id;
     created.infos.owner_id = created.local_user;
-    created.infos.bucket_id = (options->BucketId != 0) ? options->BucketId : std::string();
+    const char* bucket =
+        (version >= createlobby_with_bucket_id) ? options->BucketId : 0;
+    created.infos.bucket_id = (bucket != 0) ? bucket : std::string();
     created.infos.permission_level = static_cast<i32>(options->PermissionLevel);
     created.infos.max_members = options->MaxLobbyMembers;
-    created.infos.allow_invites = (options->bAllowInvites == EOS_TRUE);
-    created.infos.allow_host_migration = (options->bDisableHostMigration != EOS_TRUE);
-    created.infos.allow_join_by_id = (options->bEnableJoinById == EOS_TRUE);
-    created.infos.rtc_enabled = (options->bEnableRTCRoom == EOS_TRUE);
+    // Invites were allowed before a game could say otherwise, and migration was not something a
+    // game could turn off, so an older struct means both stay on.
+    created.infos.allow_invites = (version < createlobby_with_allow_invites) ||
+                                  (options->bAllowInvites == EOS_TRUE);
+    created.infos.allow_host_migration =
+        (version < createlobby_with_disable_host_migration) ||
+        (options->bDisableHostMigration != EOS_TRUE);
+    // RTC rooms and join-by-id did not exist at all before their fields did, so an older struct
+    // means off.
+    created.infos.allow_join_by_id = (version >= createlobby_with_join_by_id) &&
+                                     (options->bEnableJoinById == EOS_TRUE);
+    created.infos.rtc_enabled = (version >= createlobby_with_rtc_room) &&
+                                (options->bEnableRTCRoom == EOS_TRUE);
     lobby_member owner;
     owner.user_id = created.local_user;
     created.infos.members.push_back(owner); // the host is the first member

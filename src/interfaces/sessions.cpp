@@ -118,6 +118,16 @@ bool version_ok(i32 version, i32 latest) {
     return version > 0 && version <= latest;
 }
 
+// The ApiVersion at which each of these fields first exists. A game built against an older SDK
+// passes a shorter struct, so reading a field it does not have reads the game's own memory.
+//
+// EOS_SessionSearch_FindOptions is the sharp one: at version 1 the struct is *nothing but*
+// ApiVersion, so LocalUserId sits entirely past its end. These cutoffs come from the SDK's own
+// numbered option structs, which is the only place they are written down.
+const i32 sessionsearch_find_with_local_user = 2;   // v1 is ApiVersion and nothing else
+const i32 createsessionmod_with_session_id = 3;     // v2 added bPresenceEnabled, v3 added this
+const i32 createsessionmod_with_sanctions = 4;      // and v5 added the allowed-platform pair
+
 std::string text_or_empty(const char* value) {
     return (value != 0) ? value : std::string();
 }
@@ -420,8 +430,12 @@ EOS_EResult sdk_sessions::create_session_modification(
         options->LocalUserId == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    // A game may pin the session id, but only within the length the SDK allows.
-    const std::string override_id = text_or_empty(options->SessionId);
+    // A game may pin the session id, but only within the length the SDK allows -- and only if its
+    // struct is new enough to have the field at all.
+    const i32 version = options->ApiVersion;
+    const std::string override_id =
+        (version >= createsessionmod_with_session_id) ? text_or_empty(options->SessionId)
+                                                      : std::string();
     if (!override_id.empty() &&
         (override_id.size() < EOS_SESSIONMODIFICATION_MIN_SESSIONIDOVERRIDE_LENGTH ||
          override_id.size() > EOS_SESSIONMODIFICATION_MAX_SESSIONIDOVERRIDE_LENGTH)) {
@@ -436,7 +450,9 @@ EOS_EResult sdk_sessions::create_session_modification(
     object->infos.bucket_id = options->BucketId;
     object->infos.max_players = options->MaxPlayers;
     object->infos.host_address = "127.0.0.1";
-    object->infos.sanctions_enabled = (options->bSanctionsEnabled == EOS_TRUE);
+    // Sanctions could not be asked for before the field existed, so an older struct means off.
+    object->infos.sanctions_enabled = (version >= createsessionmod_with_sanctions) &&
+                                      (options->bSanctionsEnabled == EOS_TRUE);
     *out = reinterpret_cast<EOS_HSessionModification>(modifications_.add(std::move(object)));
     return EOS_EResult::EOS_Success;
 }
@@ -1073,9 +1089,15 @@ void sdk_sessions::search_find(void* handle, const EOS_SessionSearch_FindOptions
         return;
     }
     search_object* object = searches_.find(handle);
-    if (object == 0 || options == 0 ||
+    const bool has_local_user =
+        options != 0 && options->ApiVersion >= sessionsearch_find_with_local_user;
+    if (
+        object == 0 || options == 0 ||
         !version_ok(options->ApiVersion, EOS_SESSIONSEARCH_FIND_API_LATEST) ||
-        options->LocalUserId == 0) {
+        // A version-1 struct is ApiVersion and nothing else, so there is no local user in it to
+        // require -- and looking for one would read past the end of what the game handed us.
+        (has_local_user && options->LocalUserId == 0)
+    ) {
         deliver(cb_find, sizeof(EOS_SessionSearch_FindCallbackInfo),
                 reinterpret_cast<completion_delegate>(delegate), client_data,
                 EOS_EResult::EOS_InvalidParameters);

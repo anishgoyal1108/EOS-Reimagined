@@ -660,3 +660,56 @@ TEST_CASE("a lobby does not enable join-by-id when creation left it disabled") {
     release_lobby_details_info(info);
     fx.lobby.details_release(details);
 }
+
+// EOS_Lobby_CreateLobbyOptions has grown from four fields to seventeen. A game built against an
+// older SDK passes the shorter struct, and BucketId and LobbyId are pointers we would otherwise
+// build a std::string from -- out of whatever the game happened to have next in memory.
+// Spec: version cascade (the SDK's numbered option structs)
+TEST_CASE("an older CreateLobby struct is not read past its end") {
+    lobby_fixture fx;
+
+    EOS_Lobby_CreateLobbyOptions options = {};
+    options.LocalUserId = fx.me();
+    options.MaxLobbyMembers = 4;
+    options.PermissionLevel = EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED;
+    // None of these is part of a version-1 or -2 struct. Each is set so that reading it would show.
+    options.BucketId = "NotOursToRead";
+    options.LobbyId = "pinned-lobby-id-not-ours-to-read";
+    options.bEnableJoinById = EOS_TRUE;
+    options.bEnableRTCRoom = EOS_TRUE;
+    options.bAllowInvites = EOS_FALSE;
+
+    SUBCASE("version 1") {
+        options.ApiVersion = 1;
+        g_lobby_id.clear();
+        fx.lobby.create_lobby(&options, 0, on_create);
+        fx.callbacks.tick();
+        REQUIRE(g_create_result == EOS_EResult::EOS_Success);
+        // The lobby id was generated, not taken from a field the caller does not have.
+        CHECK(g_lobby_id != "pinned-lobby-id-not-ours-to-read");
+        CHECK_FALSE(g_lobby_id.empty());
+
+        EOS_HLobbyDetails details = fx.details_for(g_lobby_id);
+        REQUIRE(details != 0);
+        EOS_LobbyDetails_Info* info = 0;
+        REQUIRE(fx.lobby.details_copy_info(details, &info) == EOS_EResult::EOS_Success);
+        REQUIRE(info != 0);
+        // Invites were allowed before a game could say otherwise, so the poisoned EOS_FALSE is not
+        // what decided this -- and neither RTC nor join-by-id existed to be turned on.
+        CHECK(info->bAllowInvites == EOS_TRUE);
+        CHECK(info->bRTCRoomEnabled == EOS_FALSE);
+        CHECK(info->bAllowJoinById == EOS_FALSE);
+        CHECK(std::string(info->BucketId) != "NotOursToRead");
+        release_lobby_details_info(info);
+        fx.lobby.details_release(details);
+    }
+
+    SUBCASE("the latest version does read them all") {
+        options.ApiVersion = EOS_LOBBY_CREATELOBBY_API_LATEST;
+        g_lobby_id.clear();
+        fx.lobby.create_lobby(&options, 0, on_create);
+        fx.callbacks.tick();
+        REQUIRE(g_create_result == EOS_EResult::EOS_Success);
+        CHECK(g_lobby_id == "pinned-lobby-id-not-ours-to-read");
+    }
+}

@@ -766,3 +766,82 @@ TEST_CASE("a queued update callback is not leaked when the callbacks are cleared
     fx.callbacks.clear();
     CHECK(true);
 }
+
+// A game built against an older SDK passes a shorter option struct, so a field it does not have is
+// not ours to read. We hand ourselves a full-size struct with an old ApiVersion and the newer fields
+// set to values that would visibly change the answer if we read them.
+// Spec: version cascade (the SDK's numbered option structs)
+
+// SessionId arrived at version 3, bSanctionsEnabled after it.
+TEST_CASE("an older CreateSessionModification struct has no session id or sanctions flag") {
+    sessions_fixture fx;
+    EOS_Sessions_CreateSessionModificationOptions create = {};
+    create.SessionName = "old-game";
+    create.BucketId = "Coop";
+    create.MaxPlayers = 4;
+    create.LocalUserId = fx.me();
+    // Neither field is part of a version-1 or -2 struct. Both are set to values we would notice.
+    // Longer than the SDK allows a pinned id to be, so reading it is something we cannot get
+    // away with quietly: version 3 must reject it, and the older versions must never see it.
+    create.SessionId = "this-pinned-session-id-is-far-longer-than-the-sixty-four-characters-the-sdk-allows";
+    create.bSanctionsEnabled = EOS_TRUE;
+
+    SUBCASE("version 1 ignores both") {
+        create.ApiVersion = 1;
+        EOS_HSessionModification handle = 0;
+        // If we had read SessionId, its length would have been rejected outright.
+        REQUIRE(fx.sessions.create_session_modification(&create, &handle) ==
+                EOS_EResult::EOS_Success);
+        fx.sessions.modification_release(handle);
+    }
+    SUBCASE("version 2 ignores both") {
+        create.ApiVersion = 2;
+        EOS_HSessionModification handle = 0;
+        REQUIRE(fx.sessions.create_session_modification(&create, &handle) ==
+                EOS_EResult::EOS_Success);
+        fx.sessions.modification_release(handle);
+    }
+    SUBCASE("version 3 does have the session id, and its length is checked") {
+        create.ApiVersion = 3;
+        EOS_HSessionModification handle = 0;
+        CHECK(fx.sessions.create_session_modification(&create, &handle) ==
+              EOS_EResult::EOS_InvalidParameters);
+        CHECK(handle == 0);
+    }
+}
+
+// A version-1 EOS_SessionSearch_FindOptions is ApiVersion and nothing else, so LocalUserId sits
+// entirely past the end of what the game handed us. Requiring it there both read out of bounds and
+// turned away a search that was perfectly well formed.
+TEST_CASE("an older SessionSearch_Find struct has no local user, so we must not require one") {
+    sessions_fixture fx;
+    fx.host("hosted", "Coop", 4);
+
+    EOS_Sessions_CreateSessionSearchOptions create = {};
+    create.ApiVersion = EOS_SESSIONS_CREATESESSIONSEARCH_API_LATEST;
+    create.MaxSearchResults = 10;
+    EOS_HSessionSearch search = 0;
+    REQUIRE(fx.sessions.create_session_search(&create, &search) == EOS_EResult::EOS_Success);
+
+    EOS_SessionSearch_SetParameterOptions parameter = {};
+    parameter.ApiVersion = EOS_SESSIONSEARCH_SETPARAMETER_API_LATEST;
+    EOS_Sessions_AttributeData bucket = {};
+    bucket.ApiVersion = EOS_SESSIONS_ATTRIBUTEDATA_API_LATEST;
+    bucket.Key = EOS_SESSIONS_SEARCH_BUCKET_ID;
+    bucket.ValueType = EOS_ESessionAttributeType::EOS_AT_STRING;
+    bucket.Value.AsUtf8 = "Coop";
+    parameter.Parameter = &bucket;
+    parameter.ComparisonOp = EOS_EComparisonOp::EOS_CO_EQUAL;
+    REQUIRE(fx.sessions.search_set_parameter(search, &parameter) == EOS_EResult::EOS_Success);
+
+    EOS_SessionSearch_FindOptions find = {};
+    find.ApiVersion = 1;
+    find.LocalUserId = 0; // there is no such field at version 1; whatever is here is not ours
+    g_find_fired = false;
+    fx.sessions.search_find(search, &find, 0, on_find);
+    fx.callbacks.tick();
+
+    REQUIRE(g_find_fired);
+    CHECK(g_find_result == EOS_EResult::EOS_Success);
+    fx.sessions.search_release(search);
+}
