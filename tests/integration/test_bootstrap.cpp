@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -771,6 +772,45 @@ TEST_CASE("the built SDK library exposes the version, result and byte-array help
           "EOS_NS_Offline");
 }
 
+// Regression review: the encoded length is 2 * Length + 1, but both the input and output length
+// use uint32_t.  A length above (UINT32_MAX - 1) / 2 therefore cannot be represented by this ABI
+// and must be rejected before the arithmetic wraps.  With a one-byte advertised output buffer the
+// old implementation treated the wrapped requirement as satisfied and entered a multi-gigabyte
+// read/write loop; using a zero-capacity buffer here exposes the same wrap without invoking UB.
+TEST_CASE("byte-array conversion rejects an encoded length that cannot fit its length type") {
+    REQUIRE_FALSE(g_library_path.empty());
+    dynamic_library lib;
+    REQUIRE(lib.open(g_library_path.c_str()));
+
+    RESOLVE(fn_bytes_to_string, EOS_ByteArray_ToString);
+
+    const uint8_t byte = 0;
+    char buffer[1] = {'x'};
+    uint32_t capacity = 0;
+    const uint32_t unrepresentable =
+        (std::numeric_limits<uint32_t>::max() / 2u) + 1u;
+
+    CHECK(fn_bytes_to_string(&byte, unrepresentable, buffer, &capacity) ==
+          EOS_EResult::EOS_InvalidParameters);
+    CHECK(capacity == 0);
+    CHECK(buffer[0] == 'x');
+}
+
+// There is no valid continuance token in this emulator, but the ABI still distinguishes an invalid
+// token from malformed output arguments.  The public contract (and the 2020 implementation) call
+// the former InvalidUser; reporting InvalidParameters sends a game down a different error path.
+TEST_CASE("continuance-token conversion reports a null token as an invalid user") {
+    REQUIRE_FALSE(g_library_path.empty());
+    dynamic_library lib;
+    REQUIRE(lib.open(g_library_path.c_str()));
+
+    RESOLVE(fn_token_to_string, EOS_ContinuanceToken_ToString);
+
+    char buffer[8] = {};
+    int32_t length = static_cast<int32_t>(sizeof(buffer));
+    CHECK(fn_token_to_string(nullptr, buffer, &length) == EOS_EResult::EOS_InvalidUser);
+}
+
 // A game tells the SDK when it is backgrounded or loses the network, and reads country and locale
 // back. None of it reaches a service -- there is none -- but a game that sets a value and does not
 // see it again has every reason to think the SDK is not listening to it.
@@ -845,10 +885,17 @@ TEST_CASE("the built SDK library carries application, network, country and local
     CHECK(std::string(buffer) == "en-US");
 
     // A code longer than the SDK allows is refused rather than stored and handed back truncated.
-    CHECK(fn_set_country(platform, "TOOLONG") == EOS_EResult::EOS_LimitExceeded);
+    // The setter has no output buffer to exceed: its documented error for an invalid/overlong code
+    // is InvalidParameters.  LimitExceeded is reserved for the getter's caller-supplied buffer.
+    CHECK(fn_set_country(platform, "TOOLONG") == EOS_EResult::EOS_InvalidParameters);
     length = static_cast<int32_t>(sizeof(buffer));
     CHECK(fn_get_country(platform, buffer, &length) == EOS_EResult::EOS_Success);
     CHECK(std::string(buffer) == "US"); // and the one it had is still there
+
+    CHECK(fn_set_locale(platform, "locale-is-too-long") == EOS_EResult::EOS_InvalidParameters);
+    length = static_cast<int32_t>(sizeof(buffer));
+    CHECK(fn_get_locale(platform, buffer, &length) == EOS_EResult::EOS_Success);
+    CHECK(std::string(buffer) == "en-US");
 
     // A buffer too small reports the length it would have needed.
     int32_t small = 1;
@@ -859,8 +906,13 @@ TEST_CASE("the built SDK library carries application, network, country and local
     EOS_Platform_GetDesktopCrossplayStatusOptions crossplay = {};
     crossplay.ApiVersion = EOS_PLATFORM_GETDESKTOPCROSSPLAYSTATUS_API_LATEST;
     EOS_Platform_DesktopCrossplayStatusInfo info = {};
+#if defined(_WIN32)
     CHECK(fn_crossplay(platform, &crossplay, &info) == EOS_EResult::EOS_Success);
     CHECK(info.Status == EOS_EDesktopCrossplayStatus::EOS_DCS_ApplicationNotBootstrapped);
+#else
+    // This API is Windows-only; the header explicitly requires NotImplemented elsewhere.
+    CHECK(fn_crossplay(platform, &crossplay, &info) == EOS_EResult::EOS_NotImplemented);
+#endif
 
     fn_release(platform);
     CHECK(fn_shutdown() == EOS_EResult::EOS_Success);

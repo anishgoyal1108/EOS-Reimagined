@@ -100,7 +100,15 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_ByteArray_ToString(const uint8_t* ByteArray, c
     if (OutBuffer == 0 || InOutBufferLength == 0 || (Length != 0 && ByteArray == 0)) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    const uint32_t needed = (Length * 2) + 1; // two characters a byte, and room for the null
+    // Two characters a byte, plus room for the null. We have to know that fits in the length we
+    // report *before* computing it: past this, the multiply wraps, and the wrapped value looks like
+    // a buffer the caller could easily satisfy -- so a caller that trusted it and handed us one byte
+    // would send the loop below walking gigabytes off the end of both buffers.
+    const uint32_t max_encodable_length = (0xffffffffu - 1) / 2;
+    if (Length > max_encodable_length) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    const uint32_t needed = (Length * 2) + 1;
     if (*InOutBufferLength < needed) {
         *InOutBufferLength = needed;
         return EOS_EResult::EOS_LimitExceeded;
@@ -116,17 +124,17 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_ByteArray_ToString(const uint8_t* ByteArray, c
 }
 
 // A continuance token is minted by an interactive login continuation, and there is nothing here to
-// continue: an emulator has no account portal to send anyone to.
+// continue: an emulator has no account portal to send anyone to. So no token we are handed is one of
+// ours, and the header has a word for that which is not the word for a malformed call -- a caller
+// telling those apart is choosing between fixing its arguments and abandoning a login.
 EOS_DECLARE_FUNC(EOS_EResult) EOS_ContinuanceToken_ToString(EOS_ContinuanceToken ContinuanceToken,
                                                             char* OutBuffer,
                                                             int32_t* InOutBufferLength) {
     if (OutBuffer == 0 || InOutBufferLength == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    if (ContinuanceToken == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
-    }
-    return EOS_EResult::EOS_NotFound;
+    (void)ContinuanceToken;
+    return EOS_EResult::EOS_InvalidUser;
 }
 
 EOS_DECLARE_FUNC(const char*) EOS_EApplicationStatus_ToString(EOS_EApplicationStatus Status) {

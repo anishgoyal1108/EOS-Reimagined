@@ -162,8 +162,11 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_SetOverrideCountryCode(EOS_HPlatform 
     if (platform == 0 || NewCountryCode == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
+    // An overlong code is an invalid code, which is what the setter's contract calls it. LimitExceeded
+    // is the getters' word, and it means something a caller can act on -- "your buffer was too small,
+    // here is the size" -- which is not what happened here.
     if (std::strlen(NewCountryCode) >= EOS_COUNTRYCODE_MAX_LENGTH) {
-        return EOS_EResult::EOS_LimitExceeded;
+        return EOS_EResult::EOS_InvalidParameters;
     }
     platform->settings().set_override_country(NewCountryCode);
     return EOS_EResult::EOS_Success;
@@ -186,7 +189,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_SetOverrideLocaleCode(EOS_HPlatform H
         return EOS_EResult::EOS_InvalidParameters;
     }
     if (std::strlen(NewLocaleCode) >= EOS_LOCALECODE_MAX_LENGTH) {
-        return EOS_EResult::EOS_LimitExceeded;
+        return EOS_EResult::EOS_InvalidParameters;
     }
     platform->settings().set_override_locale(NewLocaleCode);
     return EOS_EResult::EOS_Success;
@@ -235,9 +238,13 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetActiveLocaleCode(EOS_HPlatform Han
     return copy_out(locale, OutBuffer, InOutBufferLength);
 }
 
-// Desktop crossplay is the Epic overlay bootstrapper. There is no overlay and nothing to bootstrap,
-// and a game that asks is asking whether it may show the social overlay -- to which the answer is
-// no, for the reason the SDK's own enum already has a name for.
+// Desktop crossplay is the Epic overlay bootstrapper, and the header says plainly that this is
+// Windows only and answers EOS_NotImplemented anywhere else. Answering Success on Linux would tell a
+// Linux game the probe ran and came back with a Windows bootstrap state, which is an answer to a
+// question it never asked -- and one it may well act on.
+//
+// On Windows there is still no overlay and nothing to bootstrap, and a game asking is asking whether
+// it may show the social overlay. The answer is no, in the word the SDK's own enum already has.
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetDesktopCrossplayStatus(
     EOS_HPlatform Handle, const EOS_Platform_GetDesktopCrossplayStatusOptions* Options,
     EOS_Platform_DesktopCrossplayStatusInfo* OutDesktopCrossplayStatusInfo) {
@@ -249,7 +256,11 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetDesktopCrossplayStatus(
         Options->ApiVersion > EOS_PLATFORM_GETDESKTOPCROSSPLAYSTATUS_API_LATEST) {
         return EOS_EResult::EOS_IncompatibleVersion;
     }
+#if defined(_WIN32)
     OutDesktopCrossplayStatusInfo->Status =
         EOS_EDesktopCrossplayStatus::EOS_DCS_ApplicationNotBootstrapped;
     return EOS_EResult::EOS_Success;
+#else
+    return EOS_EResult::EOS_NotImplemented;
+#endif
 }
