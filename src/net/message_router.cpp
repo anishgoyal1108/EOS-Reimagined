@@ -356,17 +356,11 @@ void message_router::drain_pending() {
         const stream_health health =
             drain_stream(pending_[i].connection, pending_[i].buffer, messages);
 
-        // The first envelope names the peer, which promotes the connection into the mesh.
-        std::string id;
-        for (std::size_t m = 0; m < messages.size(); m++) {
-            if (!messages[m].source_id.empty()) {
-                id = messages[m].source_id;
-                break;
-            }
-        }
+        // A peer joins the mesh only once it identifies itself with a proper handshake.
+        const std::string id = identify_peer(messages);
         const bool stale = std::chrono::steady_clock::now() - pending_[i].accepted_at > peer_timeout;
         if (id.empty()) {
-            // Nothing identifying yet. Give up on one that hung up or never says who it is.
+            // Not identified yet. Give up on one that hung up or never says who it is.
             if (health == stream_closed || stale) {
                 pending_.erase(pending_.begin() + i);
             } else {
@@ -378,29 +372,78 @@ void message_router::drain_pending() {
         socket connection = std::move(pending_[i].connection);
         std::vector<u8> leftover = pending_[i].buffer;
         pending_.erase(pending_.begin() + i);
-        adopt_peer(id, std::move(connection));
+        if (!adopt_peer(id, std::move(connection))) {
+            continue; // a duplicate of a peer we already hold; the connection is dropped
+        }
         std::map<std::string, peer>::iterator it = peers_.find(id);
         if (it != peers_.end()) {
             it->second.buffer = leftover;
         }
-        // Deliver what the peer already said, now that the interfaces know it exists.
+        // Deliver what the peer already said, now that the interfaces know it exists. The socket it
+        // arrived on decides who it is from, not the field the sender wrote.
         for (std::size_t m = 0; m < messages.size(); m++) {
-            dispatch(messages[m]);
+            messages[m].source_id = id;
+            if (accept_inbound(messages[m])) {
+                dispatch(messages[m]);
+            }
         }
     }
 }
 
-void message_router::adopt_peer(const std::string& id, socket connection) {
+bool message_router::adopt_peer(const std::string& id, socket connection) {
     if (id.empty() || id == product_user_id_) {
-        return;
+        return false;
     }
-    const bool known = peers_.find(id) != peers_.end();
+    if (peers_.find(id) != peers_.end()) {
+        // Already connected. Refuse a second connection claiming this id rather than replacing the
+        // live one -- replacing would let a fresh socket seize an established peer's identity. If
+        // the existing connection is actually dead, it is dropped when its stream next reads closed,
+        // and the peer's next advertisement dials a clean one. The refused socket closes here.
+        return false;
+    }
     peer& entry = peers_[id];
     entry.connection = std::move(connection);
     entry.last_seen = std::chrono::steady_clock::now();
-    if (!known) {
-        dispatch_peer_event(message_type::peer_connected, id);
+    dispatch_peer_event(message_type::peer_connected, id);
+    return true;
+}
+
+// A peer must identify itself before it joins the mesh, and it does so the one way we can check: a
+// net_advertise naming itself, whose nested id matches the envelope it rode in and whose game is
+// ours. Anything else as a first frame is not a handshake, and the connection is not adopted. This
+// does not authenticate first contact -- identity on the mesh is self-asserted -- but it keeps a
+// peer from being adopted under an id it never actually announced.
+std::string message_router::identify_peer(const std::vector<net_envelope>& frames) const {
+    for (std::size_t i = 0; i < frames.size(); i++) {
+        if (frames[i].type_tag != static_cast<u16>(message_type::net_advertise)) {
+            continue;
+        }
+        net_advertise infos;
+        byte_reader reader(frames[i].payload.data(), frames[i].payload.size());
+        if (!deserialize(reader, infos)) {
+            return std::string();
+        }
+        if (infos.product_user_id.empty() || infos.product_user_id != frames[i].source_id) {
+            return std::string(); // the envelope and the advertisement disagree on who this is
+        }
+        if (infos.game_id != game_id_ ||
+            (!frames[i].game_id.empty() && frames[i].game_id != game_id_)) {
+            return std::string(); // a different game, or an inconsistent one
+        }
+        return infos.product_user_id;
     }
+    return std::string();
+}
+
+bool message_router::accept_inbound(const net_envelope& msg) const {
+    // A frame for a different game, or addressed to a peer other than us, is not ours to deliver.
+    if (!msg.game_id.empty() && msg.game_id != game_id_) {
+        return false;
+    }
+    if (!msg.dest_id.empty() && msg.dest_id != product_user_id_) {
+        return false;
+    }
+    return true;
 }
 
 void message_router::handle_advertise(const net_envelope& msg, const endpoint& from) {
@@ -486,8 +529,11 @@ void message_router::finish_dialing() {
         std::map<std::string, dialing_peer>::iterator entry = dialing_.find(done[i]);
         socket connection = std::move(entry->second.connection);
         dialing_.erase(entry);
-        adopt_peer(done[i], std::move(connection));
-        announce_to(done[i]);
+        // Only name ourselves to a peer we actually adopted; a connection we refused as a duplicate
+        // is already closed.
+        if (adopt_peer(done[i], std::move(connection))) {
+            announce_to(done[i]);
+        }
     }
 }
 
@@ -556,10 +602,20 @@ void message_router::cb_run_frame() {
         if (it == peers_.end()) {
             continue;
         }
-        const std::size_t before = messages.size();
-        const stream_health health = drain_stream(it->second.connection, it->second.buffer, messages);
-        if (messages.size() > before) {
+        std::vector<net_envelope> from_peer;
+        const stream_health health =
+            drain_stream(it->second.connection, it->second.buffer, from_peer);
+        if (!from_peer.empty()) {
             it->second.last_seen = std::chrono::steady_clock::now();
+        }
+        // The socket a frame arrived on is who it is from -- not the source_id the sender wrote.
+        // Stamping the peer's own id here is what lets every ownership check downstream rest on the
+        // connection instead of an unauthenticated claim, so a peer can no longer speak as another.
+        for (std::size_t m = 0; m < from_peer.size(); m++) {
+            from_peer[m].source_id = ids[i];
+            if (accept_inbound(from_peer[m])) {
+                messages.push_back(from_peer[m]);
+            }
         }
         if (health == stream_closed || !flush_outbox(it->second)) {
             dead.push_back(ids[i]);
@@ -569,6 +625,8 @@ void message_router::cb_run_frame() {
         drop_peer(dead[i], true);
     }
 
+    // The self-pipe is our own trusted loopback; its frames already carry our id and pass straight
+    // through.
     drain_stream(self_recv_, self_buffer_, messages);
     for (std::size_t i = 0; i < messages.size(); i++) {
         dispatch(messages[i]);

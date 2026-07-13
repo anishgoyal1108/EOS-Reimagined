@@ -119,7 +119,16 @@ private:
     void drain_pending();
     void finish_dialing();
     void handle_advertise(const net_envelope& msg, const platform::endpoint& from);
-    void adopt_peer(const std::string& id, platform::socket connection);
+    // Bring a connection into the mesh under `id`. Refuses -- and drops the connection -- when `id`
+    // is already connected, so a second socket cannot take over an established peer's identity.
+    // Returns true only when the connection was adopted.
+    bool adopt_peer(const std::string& id, platform::socket connection);
+    // The id a first-frame identity handshake names, verified to agree with the envelope and our
+    // game, or empty if the frames do not identify the peer.
+    std::string identify_peer(const std::vector<net_envelope>& frames) const;
+    // Whether an inbound frame from a meshed peer is one we should deliver: not for a different
+    // game, and not addressed to a peer other than us.
+    bool accept_inbound(const net_envelope& msg) const;
     void announce_to(const std::string& id);
     void drop_peer(const std::string& id, bool notify);
     void expire_peers();

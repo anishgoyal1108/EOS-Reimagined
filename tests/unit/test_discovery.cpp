@@ -1117,3 +1117,75 @@ TEST_CASE("a participant does not re-advertise the host's session to a third sea
     c.stop();
     platform::net_shutdown();
 }
+
+// The connection-bound-identity hardening: once a peer is in the mesh, the socket a frame arrives
+// on decides who it is from, and a frame meant for someone else is not delivered.
+namespace {
+
+struct source_listener : i_run_network {
+    std::vector<std::string> sources;
+
+    bool on_network_message(const net_envelope& msg) {
+        sources.push_back(msg.source_id);
+        return true;
+    }
+};
+
+} // namespace
+
+TEST_CASE("a peer cannot present a frame under another peer's id") {
+    REQUIRE(platform::net_init());
+    message_router alice;
+    message_router bob;
+    REQUIRE(start_router(alice, alice_id, "same-game", 45760));
+    REQUIRE(start_router(bob, bob_id, "same-game", 45760));
+
+    source_listener seen;
+    alice.register_listener(message_type::emu_infos_response, &seen);
+    pump(alice, bob, [&]() { return !alice.peer_ids().empty() && !bob.peer_ids().empty(); });
+    REQUIRE(!bob.peer_ids().empty());
+
+    // Bob sends a frame that claims to come from a third identity.
+    const std::string spoofed = "9999999999999999999999999999999c";
+    CHECK(bob.send(make_hello(spoofed, alice_id, "Impostor")));
+    pump(alice, bob, [&]() { return !seen.sources.empty(); });
+
+    REQUIRE(seen.sources.size() == 1);
+    // Alice sees it as from bob -- the socket it came on -- not the id bob wrote into it.
+    CHECK(seen.sources[0] == bob_id);
+    CHECK(seen.sources[0] != spoofed);
+
+    alice.stop();
+    bob.stop();
+    platform::net_shutdown();
+}
+
+TEST_CASE("a frame tagged for a different game is not delivered") {
+    REQUIRE(platform::net_init());
+    message_router alice;
+    message_router bob;
+    REQUIRE(start_router(alice, alice_id, "same-game", 45770));
+    REQUIRE(start_router(bob, bob_id, "same-game", 45770));
+
+    source_listener seen;
+    alice.register_listener(message_type::emu_infos_response, &seen);
+    pump(alice, bob, [&]() { return !alice.peer_ids().empty() && !bob.peer_ids().empty(); });
+    REQUIRE(!bob.peer_ids().empty());
+
+    // Bob sends alice a frame stamped as a different game, then one for the game they share.
+    net_envelope wrong_game = make_hello(bob_id, alice_id, "WrongGame");
+    wrong_game.game_id = "some-other-game";
+    CHECK(bob.send(wrong_game));
+    net_envelope right_game = make_hello(bob_id, alice_id, "RightGame");
+    right_game.game_id = "same-game";
+    CHECK(bob.send(right_game));
+    pump(alice, bob, [&]() { return !seen.sources.empty(); });
+
+    // Only the frame for the shared game arrived; the other was dropped before dispatch.
+    REQUIRE(seen.sources.size() == 1);
+    CHECK(seen.sources[0] == bob_id);
+
+    alice.stop();
+    bob.stop();
+    platform::net_shutdown();
+}
