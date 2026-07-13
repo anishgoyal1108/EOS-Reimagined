@@ -93,6 +93,21 @@ struct p2p_fixture {
         return id_registry::instance().get_product_user_id(settings.product_user_id());
     }
     EOS_ProductUserId remote() { return id_registry::instance().get_product_user_id(peer_id); }
+
+    // Bring a connection to the open state the way a game does: the peer asks, and we accept.
+    // Data only reaches the game on a connection it agreed to, so tests that inject packets have
+    // to get there first.
+    void open_connection(const char* name) {
+        p2p.on_network_message(make_p2p_envelope(message_type::p2p_connect_request, peer_id, name,
+                                                 0, std::vector<u8>()));
+        EOS_P2P_SocketId socket = make_socket(name);
+        EOS_P2P_AcceptConnectionOptions accept = {};
+        accept.ApiVersion = EOS_P2P_ACCEPTCONNECTION_API_LATEST;
+        accept.LocalUserId = local();
+        accept.RemoteUserId = remote();
+        accept.SocketId = &socket;
+        p2p.accept_connection(&accept);
+    }
 };
 
 } // namespace
@@ -153,6 +168,7 @@ TEST_CASE("send packet validates its options") {
 
 TEST_CASE("packet accessors validate versions and local users before touching the queue") {
     p2p_fixture fx;
+    fx.open_connection("game");
     fx.p2p.on_network_message(
         make_p2p_envelope(message_type::p2p_data, peer_id, "game", 4, {1, 2, 3}));
 
@@ -207,6 +223,7 @@ TEST_CASE("packet accessors validate versions and local users before touching th
 
 TEST_CASE("an inbound packet is queued and received") {
     p2p_fixture fx;
+    fx.open_connection("game");
     const std::vector<u8> data = {0xde, 0xad, 0xbe, 0xef};
     net_envelope envelope = make_p2p_envelope(message_type::p2p_data, peer_id, "game", 2, data);
     CHECK(fx.p2p.on_network_message(envelope));
@@ -242,6 +259,7 @@ TEST_CASE("an inbound packet is queued and received") {
 
 TEST_CASE("receive filters by requested channel") {
     p2p_fixture fx;
+    fx.open_connection("s");
     fx.p2p.on_network_message(make_p2p_envelope(message_type::p2p_data, peer_id, "s", 1, {0xaa}));
     fx.p2p.on_network_message(make_p2p_envelope(message_type::p2p_data, peer_id, "s", 5, {0xbb}));
 
@@ -270,6 +288,7 @@ TEST_CASE("receive filters by requested channel") {
 
 TEST_CASE("receiving into a small buffer truncates and consumes the packet") {
     p2p_fixture fx;
+    fx.open_connection("s");
     fx.p2p.on_network_message(make_p2p_envelope(message_type::p2p_data, peer_id, "s", 0, {1, 2, 3, 4, 5}));
 
     EOS_P2P_ReceivePacketOptions options = {};
@@ -297,6 +316,7 @@ TEST_CASE("receiving into a small buffer truncates and consumes the packet") {
 
 TEST_CASE("malformed or misaddressed inbound packets are not queued") {
     p2p_fixture fx;
+    fx.open_connection("game");
     net_envelope envelope;
 
     SUBCASE("negative wire channel") {
@@ -346,6 +366,7 @@ TEST_CASE("receiving from an empty queue reports NotFound") {
 
 TEST_CASE("our own looped-back packet is dropped") {
     p2p_fixture fx;
+    fx.open_connection("game");
     net_envelope envelope =
         make_p2p_envelope(message_type::p2p_data, fx.settings.product_user_id(), "game", 0, {1, 2});
     CHECK(fx.p2p.on_network_message(envelope));
@@ -562,6 +583,7 @@ TEST_CASE("close connection accepts a null socket to close every socket for a pe
 
 TEST_CASE("close connection drops the connection and clear empties the queue") {
     p2p_fixture fx;
+    fx.open_connection("game");
     EOS_P2P_SocketId socket = make_socket("game");
     EOS_P2P_CloseConnectionOptions options = {};
     options.ApiVersion = EOS_P2P_CLOSECONNECTION_API_LATEST;

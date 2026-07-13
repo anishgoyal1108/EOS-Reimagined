@@ -75,6 +75,9 @@ void sdk_connect::emu_init() {
     callbacks_.register_callbacks(this);
     network_.register_listener(message_type::connect_request, this);
     network_.register_listener(message_type::connect_response, this);
+    // The mesh tells us when a peer joins or leaves; that is what the roster is built from.
+    network_.register_listener(message_type::peer_connected, this);
+    network_.register_listener(message_type::peer_disconnected, this);
     registered_ = true;
 }
 
@@ -84,6 +87,8 @@ void sdk_connect::emu_deinit() {
     }
     network_.unregister_listener(message_type::connect_request, this);
     network_.unregister_listener(message_type::connect_response, this);
+    network_.unregister_listener(message_type::peer_connected, this);
+    network_.unregister_listener(message_type::peer_disconnected, this);
     callbacks_.unregister_callbacks(this);
     callbacks_.unregister_frame(this);
     local_users_.clear();
@@ -330,6 +335,19 @@ bool sdk_connect::on_network_message(const net_envelope& message) {
         return true;
     }
 
+    // A peer joining the mesh is the roster's cue to introduce itself: we tell it who we are, and
+    // its reply tells us who it is. A peer leaving is dropped from the roster outright.
+    if (message.type_tag == static_cast<u16>(message_type::peer_connected)) {
+        if (is_logged_in()) {
+            announce_to(message.source_id);
+        }
+        return true;
+    }
+    if (message.type_tag == static_cast<u16>(message_type::peer_disconnected)) {
+        peers_.erase(message.source_id);
+        return true;
+    }
+
     // Both a peer's request (announcing itself, wanting ours) and its response carry the peer's
     // Connect infos, so we record the peer from either. Replying to a request and advertising
     // ourselves need a real send-to-peer path over the TCP mesh, which lands with the networked
@@ -346,7 +364,28 @@ bool sdk_connect::on_network_message(const net_envelope& message) {
     if (deserialize(reader, infos) && !infos.product_user_id.empty()) {
         peers_[infos.product_user_id] = infos.display_name;
     }
+    // A peer asking who we are gets an answer; a peer answering us does not need another.
+    if (message.type_tag == static_cast<u16>(message_type::connect_request) && is_logged_in()) {
+        announce_to(message.source_id);
+    }
     return true;
+}
+
+// Tell one peer who we are, so its roster can name us.
+void sdk_connect::announce_to(const std::string& peer_id) {
+    connect_infos self;
+    self.product_user_id = settings_.product_user_id();
+    self.display_name = settings_.username();
+    byte_writer writer;
+    serialize(writer, self);
+
+    net_envelope envelope;
+    envelope.type_tag = static_cast<u16>(message_type::connect_response);
+    envelope.source_id = settings_.product_user_id();
+    envelope.dest_id = peer_id;
+    envelope.game_id = settings_.product_id();
+    envelope.payload = writer.data();
+    network_.send(envelope);
 }
 
 } // namespace eosr

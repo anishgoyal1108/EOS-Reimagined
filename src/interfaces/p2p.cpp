@@ -118,6 +118,9 @@ void sdk_p2p::emu_init() {
     network_.register_listener(message_type::p2p_connect_response, this);
     network_.register_listener(message_type::p2p_data, this);
     network_.register_listener(message_type::p2p_connection_close, this);
+    // A peer leaving the mesh takes its connections with it, so we have to hear about that too.
+    network_.register_listener(message_type::peer_connected, this);
+    network_.register_listener(message_type::peer_disconnected, this);
     registered_ = true;
 }
 
@@ -129,6 +132,8 @@ void sdk_p2p::emu_deinit() {
     network_.unregister_listener(message_type::p2p_connect_response, this);
     network_.unregister_listener(message_type::p2p_data, this);
     network_.unregister_listener(message_type::p2p_connection_close, this);
+    network_.unregister_listener(message_type::peer_connected, this);
+    network_.unregister_listener(message_type::peer_disconnected, this);
     callbacks_.unregister_callbacks(this);
     callbacks_.unregister_frame(this);
     receive_queue_.clear();
@@ -188,23 +193,44 @@ EOS_EResult sdk_p2p::send_packet(const EOS_P2P_SendPacketOptions* options) {
     connection_key key;
     key.peer = options->RemoteUserId->id_str;
     key.socket = socket_name_of(options->SocketId);
-    const bool known = connections_.find(key) != connections_.end();
-    if (!known) {
+    std::map<connection_key, connection>::iterator it = connections_.find(key);
+
+    if (it == connections_.end()) {
         if (options->bDisableAutoAcceptConnection == EOS_TRUE) {
             // The caller declined auto-accept and there is no connection, so the data is dropped.
             return EOS_EResult::EOS_NoConnection;
         }
         // Auto-accept opens the connection from our side and asks the peer to agree.
-        connections_[key] = connection_pending;
+        connection entry;
+        entry.state = connection_pending;
+        it = connections_.insert(std::make_pair(key, entry)).first;
         send_p2p(message_type::p2p_connect_request, key.peer, key.socket, 0, std::vector<u8>());
     }
 
-    // Hand the packet to the mesh. Delivery is not guaranteed (the peer may have gone away), and
-    // the API says as much, so a send that finds no route still reports the packet as accepted.
-    send_p2p(message_type::p2p_data, key.peer, key.socket, options->Channel,
-             std::vector<u8>(static_cast<const u8*>(options->Data),
-                             static_cast<const u8*>(options->Data) + options->DataLengthBytes));
+    std::vector<u8> data(static_cast<const u8*>(options->Data),
+                         static_cast<const u8*>(options->Data) + options->DataLengthBytes);
+
+    if (it->second.state != connection_open) {
+        // The peer has not agreed yet. Delayed delivery means holding the packet until it does;
+        // without it the packet is dropped, which is what the API promises.
+        if (options->bAllowDelayedDelivery == EOS_TRUE) {
+            it->second.delayed.push_back(data);
+            it->second.delayed_channels.push_back(options->Channel);
+        }
+        return EOS_EResult::EOS_Success;
+    }
+
+    send_p2p(message_type::p2p_data, key.peer, key.socket, options->Channel, data);
     return EOS_EResult::EOS_Success;
+}
+
+void sdk_p2p::flush_delayed(const connection_key& key, connection& entry) {
+    for (std::size_t i = 0; i < entry.delayed.size(); i++) {
+        send_p2p(message_type::p2p_data, key.peer, key.socket, entry.delayed_channels[i],
+                 entry.delayed[i]);
+    }
+    entry.delayed.clear();
+    entry.delayed_channels.clear();
 }
 
 void sdk_p2p::send_p2p(message_type type, const std::string& peer, const std::string& socket,
@@ -288,12 +314,30 @@ EOS_EResult sdk_p2p::accept_connection(const EOS_P2P_AcceptConnectionOptions* op
     connection_key key;
     key.peer = options->RemoteUserId->id_str;
     key.socket = socket_name_of(options->SocketId);
-    // Accepting records our willingness and tells the peer. The connection is not established,
-    // and no notification fires, until the peer's response arrives.
-    if (connections_.find(key) == connections_.end()) {
-        connections_[key] = connection_pending;
+    std::map<connection_key, connection>::iterator it = connections_.find(key);
+
+    if (it != connections_.end() && it->second.state == connection_open) {
+        return EOS_EResult::EOS_Success; // already open; accepting again changes nothing
     }
-    send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>());
+
+    if (it != connections_.end() && it->second.state == connection_requested) {
+        // The peer asked and the game has now said yes, so both sides have agreed: the connection
+        // is open, and telling the peer completes it on its side too.
+        it->second.state = connection_open;
+        send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>());
+        queue_event(pending_event::established, key.peer, key.socket,
+                    EOS_EConnectionClosedReason::EOS_CCR_Unknown);
+        flush_delayed(key, it->second);
+        return EOS_EResult::EOS_Success;
+    }
+
+    // Nobody has asked us, so this is us opening the connection. We wait for the peer to agree.
+    if (it == connections_.end()) {
+        connection entry;
+        entry.state = connection_pending;
+        connections_.insert(std::make_pair(key, entry));
+    }
+    send_p2p(message_type::p2p_connect_request, key.peer, key.socket, 0, std::vector<u8>());
     return EOS_EResult::EOS_Success;
 }
 
@@ -314,9 +358,11 @@ EOS_EResult sdk_p2p::close_connection(const EOS_P2P_CloseConnectionOptions* opti
     const std::string socket =
         (options->SocketId != 0) ? socket_name_of(options->SocketId) : std::string();
 
-    std::map<connection_key, connection_state>::iterator it = connections_.begin();
+    std::map<connection_key, connection>::iterator it = connections_.begin();
     while (it != connections_.end()) {
         if (it->first.peer == peer && (socket.empty() || it->first.socket == socket)) {
+            send_p2p(message_type::p2p_connection_close, peer, it->first.socket, 0,
+                     std::vector<u8>());
             queue_event(pending_event::closed, peer, it->first.socket,
                         EOS_EConnectionClosedReason::EOS_CCR_ClosedByLocalUser);
             connections_.erase(it++);
@@ -340,10 +386,11 @@ EOS_EResult sdk_p2p::close_connections(const EOS_P2P_CloseConnectionsOptions* op
     }
 
     const std::string socket = socket_name_of(options->SocketId);
-    std::map<connection_key, connection_state>::iterator it = connections_.begin();
+    std::map<connection_key, connection>::iterator it = connections_.begin();
     while (it != connections_.end()) {
         if (it->first.socket == socket) {
             const std::string peer = it->first.peer;
+            send_p2p(message_type::p2p_connection_close, peer, socket, 0, std::vector<u8>());
             queue_event(pending_event::closed, peer, socket,
                         EOS_EConnectionClosedReason::EOS_CCR_ClosedByLocalUser);
             connections_.erase(it++);
@@ -643,6 +690,28 @@ void sdk_p2p::free_callback(frame_result&) {
 }
 
 bool sdk_p2p::on_network_message(const net_envelope& message) {
+    // A peer whose connection to us went away takes its connections with it. The mesh tells us
+    // through these synthetic events, which is the only warning the game will get.
+    if (message.type_tag == static_cast<u16>(message_type::peer_disconnected)) {
+        std::map<connection_key, connection>::iterator it = connections_.begin();
+        while (it != connections_.end()) {
+            if (it->first.peer == message.source_id) {
+                // The peer may come back, so the connection is interrupted rather than closed,
+                // which is exactly what the interrupted notification is for.
+                queue_event(pending_event::interrupted, it->first.peer, it->first.socket,
+                            EOS_EConnectionClosedReason::EOS_CCR_Unknown);
+                connections_.erase(it++);
+            } else {
+                ++it;
+            }
+        }
+        flush_packets(message.source_id, std::string());
+        return true;
+    }
+    if (message.type_tag == static_cast<u16>(message_type::peer_connected)) {
+        return true; // nothing to do until the game opens a connection with it
+    }
+
     // A peer controls every byte of this envelope, so nothing here is trusted. We drop our own
     // looped-back messages, anything addressed to someone else, and anything malformed, before it
     // can reach the packet queue or fire a notification.
@@ -665,7 +734,7 @@ bool sdk_p2p::on_network_message(const net_envelope& message) {
     connection_key key;
     key.peer = message.source_id;
     key.socket = payload.socket_name;
-    std::map<connection_key, connection_state>::iterator connection = connections_.find(key);
+    std::map<connection_key, connection>::iterator it = connections_.find(key);
 
     if (message.type_tag == static_cast<u16>(message_type::p2p_data)) {
         // The wire channel is wider than the API's uint8_t, so an out-of-range channel is
@@ -674,6 +743,19 @@ bool sdk_p2p::on_network_message(const net_envelope& message) {
             return true;
         }
         if (payload.data.size() > EOS_P2P_MAX_PACKET_SIZE) {
+            return true;
+        }
+        // Data only reaches the game on a connection it agreed to. A peer that sends before we
+        // accept is asking to connect, so we surface that instead of handing over its bytes.
+        if (it == connections_.end()) {
+            connection entry;
+            entry.state = connection_requested;
+            connections_.insert(std::make_pair(key, entry));
+            queue_event(pending_event::request, key.peer, key.socket,
+                        EOS_EConnectionClosedReason::EOS_CCR_Unknown);
+            return true;
+        }
+        if (it->second.state != connection_open) {
             return true;
         }
         received_packet packet;
@@ -686,32 +768,47 @@ bool sdk_p2p::on_network_message(const net_envelope& message) {
     }
 
     if (message.type_tag == static_cast<u16>(message_type::p2p_connect_request)) {
-        // A peer asking for a connection we already accepted is not a new request; we just
-        // confirm it so its side can establish too.
-        if (connection == connections_.end()) {
+        if (it == connections_.end()) {
+            connection entry;
+            entry.state = connection_requested;
+            connections_.insert(std::make_pair(key, entry));
             queue_event(pending_event::request, key.peer, key.socket,
                         EOS_EConnectionClosedReason::EOS_CCR_Unknown);
-        } else {
+            return true;
+        }
+        if (it->second.state == connection_pending) {
+            // We both reached for the connection at once. Each side already wants it, so agreeing
+            // is all that is left.
+            it->second.state = connection_open;
+            send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>());
+            queue_event(pending_event::established, key.peer, key.socket,
+                        EOS_EConnectionClosedReason::EOS_CCR_Unknown);
+            flush_delayed(key, it->second);
+            return true;
+        }
+        if (it->second.state == connection_open) {
+            // It asked again for one we have already opened; confirm so its side settles too.
             send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>());
         }
         return true;
     }
 
     if (message.type_tag == static_cast<u16>(message_type::p2p_connect_response)) {
-        // Only a connection we asked for can be established by a response; an unsolicited one is
-        // a peer trying to open a connection we never agreed to.
-        if (connection != connections_.end() && connection->second == connection_pending) {
-            connection->second = connection_open;
+        // Only a connection we asked for can be established by a response; an unsolicited one is a
+        // peer trying to open a connection we never agreed to.
+        if (it != connections_.end() && it->second.state == connection_pending) {
+            it->second.state = connection_open;
             queue_event(pending_event::established, key.peer, key.socket,
                         EOS_EConnectionClosedReason::EOS_CCR_Unknown);
+            flush_delayed(key, it->second);
         }
         return true;
     }
 
     if (message.type_tag == static_cast<u16>(message_type::p2p_connection_close)) {
         // A close for a connection we do not have tells us nothing and must not reach the game.
-        if (connection != connections_.end()) {
-            connections_.erase(connection);
+        if (it != connections_.end()) {
+            connections_.erase(it);
             flush_packets(key.peer, key.socket);
             queue_event(pending_event::closed, key.peer, key.socket,
                         EOS_EConnectionClosedReason::EOS_CCR_ClosedByPeer);

@@ -96,6 +96,8 @@ private:
     };
 
     bool is_logged_in() const { return !local_users_.empty(); }
+    // Tell one peer who we are, so its roster can name us.
+    void announce_to(const std::string& peer_id);
     EOS_ProductUserId local_user() const;
     void deliver_login_result(EOS_EResult result_code, EOS_ProductUserId user, void* client_data,
                               EOS_Connect_OnLoginCallback delegate);

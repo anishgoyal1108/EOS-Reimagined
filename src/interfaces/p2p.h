@@ -112,12 +112,20 @@ private:
         }
     };
 
-    // We accept a connection locally before the peer confirms it, so a connection is only open
-    // once the peer's response arrives. Reporting it established any earlier would tell the game
-    // it can talk to a peer that never agreed.
+    // A connection is only open once both sides have agreed. Reporting it established any earlier
+    // would tell the game it can talk to a peer that never said yes.
     enum connection_state {
-        connection_pending,
-        connection_open
+        connection_requested, // the peer asked us; the game has not accepted yet
+        connection_pending,   // we asked the peer; waiting for it to agree
+        connection_open       // both sides agreed
+    };
+
+    // A connection we have opened from our side, plus anything the game asked us to send before the
+    // peer agreed. Delayed delivery means holding those packets, not dropping them.
+    struct connection {
+        connection_state state;
+        std::vector<std::vector<u8> > delayed;
+        std::vector<u8> delayed_channels;
     };
 
     // A connection notification to deliver on the next frame, so firing happens on the tick.
@@ -136,6 +144,8 @@ private:
     // Frame one P2P message and hand it to the mesh for delivery to `peer`.
     void send_p2p(message_type type, const std::string& peer, const std::string& socket, u8 channel,
                   const std::vector<u8>& data);
+    // Push out everything we held back while the connection was being agreed.
+    void flush_delayed(const connection_key& key, connection& entry);
     void remember_filter(EOS_NotificationId id, const EOS_P2P_SocketId* socket_filter);
     void queue_event(pending_event::kind type, const std::string& peer, const std::string& socket,
                      EOS_EConnectionClosedReason reason);
@@ -148,7 +158,7 @@ private:
     message_router& network_;
 
     std::deque<received_packet> receive_queue_;
-    std::map<connection_key, connection_state> connections_;
+    std::map<connection_key, connection> connections_;
     std::vector<pending_event> pending_events_;
     std::map<EOS_NotificationId, notify_filter> notify_filters_;
 
