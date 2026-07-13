@@ -631,3 +631,102 @@ TEST_CASE("a p2p notification that removes another while firing is memory-safe")
     CHECK(victim_fired == 0);
     remover = 0;
 }
+
+// An EOS option struct only ever gains fields, so a game built against an older SDK passes a
+// *shorter* one. Reading a field it does not have reads whatever sits after it in the game's own
+// memory. These three fields were each added after version 1, and we used to read all of them from
+// every caller. The tests below hand us a full-size struct with an old ApiVersion and the newer
+// fields set to values that would visibly change our answer if we read them -- so if we ever read
+// one again, the test says so instead of a game crashing.
+// Spec: version cascade (EOS versioned option structs)
+
+// bDisableAutoAcceptConnection arrived at version 3.
+TEST_CASE("an older SendPacket struct has no auto-accept flag, so we must not read one") {
+    p2p_fixture fx;
+    EOS_P2P_SocketId socket = make_socket("game");
+    const u8 payload[] = {1, 2, 3};
+
+    EOS_P2P_SendPacketOptions options = {};
+    options.LocalUserId = fx.local();
+    options.RemoteUserId = fx.remote();
+    options.SocketId = &socket;
+    options.Channel = 0;
+    options.DataLengthBytes = sizeof(payload);
+    options.Data = payload;
+    // A version-1 or -2 caller's struct ends before this field. Set it to the value that would make
+    // us refuse the send, so reading it is not something we can get away with.
+    options.bDisableAutoAcceptConnection = EOS_TRUE;
+
+    SUBCASE("version 1") {
+        options.ApiVersion = 1;
+        // Auto-accept is all a v1 caller has, so the send opens the connection and succeeds.
+        CHECK(fx.p2p.send_packet(&options) == EOS_EResult::EOS_Success);
+    }
+    SUBCASE("version 2") {
+        options.ApiVersion = 2;
+        CHECK(fx.p2p.send_packet(&options) == EOS_EResult::EOS_Success);
+    }
+    SUBCASE("version 3 does have the field, and it is honoured") {
+        options.ApiVersion = 3;
+        CHECK(fx.p2p.send_packet(&options) == EOS_EResult::EOS_NoConnection);
+    }
+}
+
+// RequestedChannel arrived at version 2 -- and it is a *pointer*, so reading it from a version-1
+// struct does not merely read a stray value, it dereferences one.
+TEST_CASE("an older GetNextReceivedPacketSize struct has no channel filter, so we must not read one") {
+    p2p_fixture fx;
+    fx.open_connection("game");
+    const std::vector<u8> data(5, 0xab);
+    fx.p2p.on_network_message(
+        make_p2p_envelope(message_type::p2p_data, peer_id, "game", 0, data));
+
+    const u8 another_channel = 7;
+    EOS_P2P_GetNextReceivedPacketSizeOptions options = {};
+    options.LocalUserId = fx.local();
+    options.RequestedChannel = &another_channel;
+
+    u32 size = 0;
+    SUBCASE("version 1 asks for no channel at all, so the packet we have is the answer") {
+        options.ApiVersion = 1;
+        CHECK(fx.p2p.get_next_received_packet_size(&options, &size) == EOS_EResult::EOS_Success);
+        CHECK(size == data.size());
+    }
+    SUBCASE("version 2 does have the field, and a packet on another channel is not a match") {
+        options.ApiVersion = 2;
+        CHECK(fx.p2p.get_next_received_packet_size(&options, &size) == EOS_EResult::EOS_NotFound);
+    }
+}
+
+TEST_CASE("an older ReceivePacket struct has no channel filter, so we must not read one") {
+    p2p_fixture fx;
+    fx.open_connection("game");
+    const std::vector<u8> data(5, 0xcd);
+    fx.p2p.on_network_message(
+        make_p2p_envelope(message_type::p2p_data, peer_id, "game", 0, data));
+
+    const u8 another_channel = 7;
+    u8 buffer[16] = {0};
+    EOS_ProductUserId from = 0;
+    EOS_P2P_SocketId socket = {};
+    u8 channel = 0xff;
+    u32 written = 0;
+
+    EOS_P2P_ReceivePacketOptions options = {};
+    options.LocalUserId = fx.local();
+    options.MaxDataSizeBytes = sizeof(buffer);
+    options.RequestedChannel = &another_channel;
+
+    SUBCASE("version 1 asks for no channel at all, so it gets the packet") {
+        options.ApiVersion = 1;
+        CHECK(fx.p2p.receive_packet(&options, &from, &socket, &channel, buffer, &written) ==
+              EOS_EResult::EOS_Success);
+        CHECK(written == data.size());
+        CHECK(channel == 0);
+    }
+    SUBCASE("version 2 does have the field, and a packet on another channel is not a match") {
+        options.ApiVersion = 2;
+        CHECK(fx.p2p.receive_packet(&options, &from, &socket, &channel, buffer, &written) ==
+              EOS_EResult::EOS_NotFound);
+    }
+}

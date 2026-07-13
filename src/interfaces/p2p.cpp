@@ -89,6 +89,21 @@ bool version_is_supported(i32 version, i32 latest) {
     return version > 0 && version <= latest;
 }
 
+// An EOS option struct only ever gains fields, so a field is present exactly when the caller's
+// ApiVersion is at least the version that introduced it. A game built against an older SDK passes a
+// *shorter* struct, so reading a newer field reads whatever happens to sit after it in the game's
+// memory -- and for a pointer field we would then dereference that. These are the cutoffs; the
+// struct histories are in the SDK's versioned headers.
+const i32 sendpacket_with_disable_auto_accept = 3;
+const i32 receivepacket_with_requested_channel = 2;
+const i32 packet_size_with_requested_channel = 2;
+
+// The channel a caller is asking for, or none when its struct is too old to have said. Never read
+// from a struct that does not have the field.
+const u8* requested_channel_of(i32 version, i32 introduced, const u8* field) {
+    return (version >= introduced) ? field : 0;
+}
+
 } // namespace
 
 sdk_p2p::sdk_p2p(sdk_settings& settings, callback_manager& callbacks, message_router& network)
@@ -195,8 +210,12 @@ EOS_EResult sdk_p2p::send_packet(const EOS_P2P_SendPacketOptions* options) {
     key.socket = socket_name_of(options->SocketId);
     std::map<connection_key, connection>::iterator it = connections_.find(key);
 
+    const bool disable_auto_accept =
+        (options->ApiVersion >= sendpacket_with_disable_auto_accept) &&
+        (options->bDisableAutoAcceptConnection == EOS_TRUE);
+
     if (it == connections_.end()) {
-        if (options->bDisableAutoAcceptConnection == EOS_TRUE) {
+        if (disable_auto_accept) {
             // The caller declined auto-accept and there is no connection, so the data is dropped.
             return EOS_EResult::EOS_NoConnection;
         }
@@ -260,8 +279,10 @@ EOS_EResult sdk_p2p::get_next_received_packet_size(
     if (!is_local_user(options->LocalUserId)) {
         return EOS_EResult::EOS_InvalidUser;
     }
+    const u8* requested = requested_channel_of(
+        options->ApiVersion, packet_size_with_requested_channel, options->RequestedChannel);
     for (std::size_t i = 0; i < receive_queue_.size(); i++) {
-        if (options->RequestedChannel == 0 || receive_queue_[i].channel == *options->RequestedChannel) {
+        if (requested == 0 || receive_queue_[i].channel == *requested) {
             *out_packet_size = static_cast<u32>(receive_queue_[i].data.size());
             return EOS_EResult::EOS_Success;
         }
@@ -280,9 +301,11 @@ EOS_EResult sdk_p2p::receive_packet(const EOS_P2P_ReceivePacketOptions* options,
     if (!is_local_user(options->LocalUserId)) {
         return EOS_EResult::EOS_InvalidUser;
     }
+    const u8* requested = requested_channel_of(
+        options->ApiVersion, receivepacket_with_requested_channel, options->RequestedChannel);
     for (std::deque<received_packet>::iterator it = receive_queue_.begin(); it != receive_queue_.end();
          ++it) {
-        if (options->RequestedChannel != 0 && it->channel != *options->RequestedChannel) {
+        if (requested != 0 && it->channel != *requested) {
             continue;
         }
         // A buffer smaller than the packet truncates it rather than failing; the caller sizes the
