@@ -20,6 +20,7 @@ const u64 max_players_in_list = 1000;   // EOS_SESSIONS_MAXREGISTEREDPLAYERS
 const u64 max_attributes_in_list = 64;  // EOS_SESSIONMODIFICATION_MAX_SESSION_ATTRIBUTES
 const u64 max_search_parameters = 64;   // one condition per attribute is already generous
 const u64 max_search_results = 200;     // EOS_SESSIONS_MAX_SEARCH_RESULTS
+const u64 max_data_records = 32;        // EOS_PRESENCE_DATA_MAX_KEYS
 
 // Read a list length that is safe to reserve: it must fit both the bytes left (every element costs
 // at least one) and the ABI cap for this kind of list.
@@ -337,6 +338,58 @@ bool deserialize(byte_reader& reader, session_members& msg) {
         msg.player_ids.push_back(player);
     }
     return true;
+}
+
+void serialize(byte_writer& writer, const presence_info& msg) {
+    writer.put_string(msg.epic_id);
+    writer.put_svar(msg.status);
+    writer.put_string(msg.product_id);
+    writer.put_string(msg.product_version);
+    writer.put_string(msg.platform);
+    writer.put_string(msg.rich_text);
+    writer.put_string(msg.product_name);
+    writer.put_string(msg.integrated_platform);
+    writer.put_string(msg.join_info);
+    writer.put_var(static_cast<u64>(msg.records.size()));
+    for (std::size_t i = 0; i < msg.records.size(); i++) {
+        writer.put_string(msg.records[i].key);
+        writer.put_string(msg.records[i].value);
+    }
+}
+
+bool deserialize(byte_reader& reader, presence_info& msg) {
+    i64 status = 0;
+    if (!reader.get_string(msg.epic_id) || !reader.get_svar(status) ||
+        !reader.get_string(msg.product_id) || !reader.get_string(msg.product_version) ||
+        !reader.get_string(msg.platform) || !reader.get_string(msg.rich_text) ||
+        !reader.get_string(msg.product_name) || !reader.get_string(msg.integrated_platform) ||
+        !reader.get_string(msg.join_info)) {
+        return false;
+    }
+    msg.status = static_cast<i32>(status);
+
+    u64 count = 0;
+    if (!read_list_count(reader, count, max_data_records)) {
+        return false;
+    }
+    msg.records.clear();
+    msg.records.reserve(static_cast<std::size_t>(count));
+    for (u64 i = 0; i < count; i++) {
+        presence_data_record record;
+        if (!reader.get_string(record.key) || !reader.get_string(record.value)) {
+            return false;
+        }
+        msg.records.push_back(record);
+    }
+    return true;
+}
+
+void serialize(byte_writer& writer, const presence_request& msg) {
+    writer.put_string(msg.target_epic_id);
+}
+
+bool deserialize(byte_reader& reader, presence_request& msg) {
+    return reader.get_string(msg.target_epic_id);
 }
 
 std::vector<u8> frame_message(const std::vector<u8>& body) {

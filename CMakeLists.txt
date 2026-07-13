@@ -31,6 +31,7 @@ add_library(eosr_core STATIC
     src/interfaces/auth.cpp
     src/interfaces/p2p.cpp
     src/interfaces/sessions.cpp
+    src/interfaces/presence.cpp
     src/net/wire.cpp
     src/net/message_router.cpp
 )
@@ -84,6 +85,7 @@ add_library(eos_shared SHARED
     src/flat/eos_auth_flat.cpp
     src/flat/eos_p2p_flat.cpp
     src/flat/eos_sessions_flat.cpp
+    src/flat/eos_presence_flat.cpp
 )
 target_link_libraries(eos_shared PRIVATE eosr_core)
 set_target_properties(eos_shared PROPERTIES

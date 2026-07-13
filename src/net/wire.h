@@ -51,6 +51,12 @@ bool deserialize(byte_reader& reader, session_destroy& msg);
 void serialize(byte_writer& writer, const session_members& msg);
 bool deserialize(byte_reader& reader, session_members& msg);
 
+void serialize(byte_writer& writer, const presence_info& msg);
+bool deserialize(byte_reader& reader, presence_info& msg);
+
+void serialize(byte_writer& writer, const presence_request& msg);
+bool deserialize(byte_reader& reader, presence_request& msg);
+
 // One message on a TCP stream is [u32 big-endian length][body]; UDP datagrams are unframed.
 std::vector<u8> frame_message(const std::vector<u8>& body);
 

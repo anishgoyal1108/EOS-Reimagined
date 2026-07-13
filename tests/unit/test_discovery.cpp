@@ -16,6 +16,7 @@
 #include "core/settings.h"
 #include "interfaces/connect.h"
 #include "interfaces/p2p.h"
+#include "interfaces/presence.h"
 #include "interfaces/sessions.h"
 #include "net/message_router.h"
 #include "net/messages.h"
@@ -757,6 +758,166 @@ TEST_CASE("one instance hosts a game and another finds it and joins") {
     guest.emu_deinit();
     host_connect.emu_deinit();
     guest_connect.emu_deinit();
+    host_net.stop();
+    guest_net.stop();
+    platform::net_shutdown();
+}
+
+// Rich presence, for real: one instance goes into a game and the other sees its status, its rich
+// text, and the join string a "join friend's game" button needs -- all over the mesh.
+namespace {
+
+bool g_presence_changed = false;
+std::string g_changed_epic;
+void EOS_CALL on_presence_changed(const EOS_Presence_PresenceChangedCallbackInfo* info) {
+    g_presence_changed = true;
+    if (info->PresenceUserId != 0) {
+        g_changed_epic = info->PresenceUserId->id_str;
+    }
+}
+
+bool g_e2e_set = false;
+void EOS_CALL on_e2e_set(const EOS_Presence_SetPresenceCallbackInfo* info) {
+    g_e2e_set = info->ResultCode == EOS_EResult::EOS_Success;
+}
+
+bool g_e2e_query = false;
+EOS_EResult g_e2e_query_result = EOS_EResult::EOS_UnexpectedError;
+void EOS_CALL on_e2e_query(const EOS_Presence_QueryPresenceCallbackInfo* info) {
+    g_e2e_query = true;
+    g_e2e_query_result = info->ResultCode;
+}
+
+} // namespace
+
+TEST_CASE("one instance sets rich presence and another sees it over the mesh") {
+    REQUIRE(platform::net_init());
+    g_presence_changed = false;
+    g_changed_epic.clear();
+    g_e2e_set = false;
+    g_e2e_query = false;
+
+    sdk_settings host_settings;
+    sdk_settings guest_settings;
+    EOS_Platform_Options options = {};
+    options.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    options.ProductId = "presence-game";
+    host_settings.apply_platform_options(&options);
+    guest_settings.apply_platform_options(&options);
+    REQUIRE(host_settings.epic_account_id() != guest_settings.epic_account_id());
+
+    callback_manager host_cb;
+    callback_manager guest_cb;
+    message_router host_net;
+    message_router guest_net;
+    sdk_presence host(host_settings, host_cb, host_net);
+    sdk_presence guest(guest_settings, guest_cb, guest_net);
+    host.emu_init();
+    guest.emu_init();
+
+    REQUIRE(start_router(host_net, host_settings.product_user_id(), host_settings.product_id(), 45810));
+    REQUIRE(start_router(guest_net, guest_settings.product_user_id(), guest_settings.product_id(), 45810));
+
+    pump(host_net, guest_net, [&]() {
+        return !host_net.peer_ids().empty() && !guest_net.peer_ids().empty();
+    });
+    REQUIRE(!guest_net.peer_ids().empty());
+
+    EOS_EpicAccountId host_epic =
+        id_registry::instance().get_epic_account_id(host_settings.epic_account_id());
+    EOS_EpicAccountId guest_epic =
+        id_registry::instance().get_epic_account_id(guest_settings.epic_account_id());
+
+    // The guest wants to be told when a friend's presence changes.
+    const EOS_NotificationId note =
+        guest.add_notify_on_presence_changed(0, on_presence_changed);
+    REQUIRE(note != EOS_INVALID_NOTIFICATIONID);
+
+    // The host drops into a game, away from the menu, with a join string.
+    EOS_Presence_CreatePresenceModificationOptions create = {};
+    create.ApiVersion = EOS_PRESENCE_CREATEPRESENCEMODIFICATION_API_LATEST;
+    create.LocalUserId = host_epic;
+    EOS_HPresenceModification modification = 0;
+    REQUIRE(host.create_presence_modification(&create, &modification) == EOS_EResult::EOS_Success);
+
+    EOS_PresenceModification_SetStatusOptions status = {};
+    status.ApiVersion = EOS_PRESENCEMODIFICATION_SETSTATUS_API_LATEST;
+    status.Status = EOS_Presence_EStatus::EOS_PS_Away;
+    REQUIRE(host.modification_set_status(modification, &status) == EOS_EResult::EOS_Success);
+
+    EOS_PresenceModification_SetRawRichTextOptions rich = {};
+    rich.ApiVersion = EOS_PRESENCEMODIFICATION_SETRAWRICHTEXT_API_LATEST;
+    rich.RichText = "In the caves";
+    REQUIRE(host.modification_set_raw_rich_text(modification, &rich) == EOS_EResult::EOS_Success);
+
+    EOS_PresenceModification_SetJoinInfoOptions join = {};
+    join.ApiVersion = EOS_PRESENCEMODIFICATION_SETJOININFO_API_LATEST;
+    join.JoinInfo = "session:crab-island";
+    REQUIRE(host.modification_set_join_info(modification, &join) == EOS_EResult::EOS_Success);
+
+    EOS_Presence_SetPresenceOptions set = {};
+    set.ApiVersion = EOS_PRESENCE_SETPRESENCE_API_LATEST;
+    set.LocalUserId = host_epic;
+    set.PresenceModificationHandle = modification;
+    host.set_presence(&set, 0, on_e2e_set);
+    host_cb.tick();
+    host.modification_release(modification);
+    REQUIRE(g_e2e_set);
+
+    // Wait on the join string arriving: it is only ever set by SetPresence, never seeded, so it is
+    // the unambiguous signal that the host's update -- not just its opening presence -- got here.
+    EOS_Presence_GetJoinInfoOptions get = {};
+    get.ApiVersion = EOS_PRESENCE_GETJOININFO_API_LATEST;
+    get.LocalUserId = guest_epic;
+    get.TargetUserId = host_epic;
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        char probe[128];
+        i32 probe_length = sizeof(probe);
+        return guest.get_join_info(&get, probe, &probe_length) == EOS_EResult::EOS_Success;
+    });
+
+    // The notification fired, naming the host as the one who changed.
+    REQUIRE(g_presence_changed);
+    CHECK(g_changed_epic == host_settings.epic_account_id());
+
+    // The whole presence is there, exactly as the host set it.
+    EOS_Presence_CopyPresenceOptions copy = {};
+    copy.ApiVersion = EOS_PRESENCE_COPYPRESENCE_API_LATEST;
+    copy.LocalUserId = guest_epic;
+    copy.TargetUserId = host_epic;
+    EOS_Presence_Info* info = 0;
+    REQUIRE(guest.copy_presence(&copy, &info) == EOS_EResult::EOS_Success);
+    REQUIRE((info != 0));
+    CHECK(info->Status == EOS_Presence_EStatus::EOS_PS_Away);
+    CHECK(std::string(info->RichText) == "In the caves");
+    CHECK(info->UserId == host_epic);
+    CHECK(std::string(info->ProductId) == "presence-game");
+    release_presence_info(info);
+
+    char buffer[128];
+    i32 length = sizeof(buffer);
+    REQUIRE(guest.get_join_info(&get, buffer, &length) == EOS_EResult::EOS_Success);
+    CHECK(std::string(buffer) == "session:crab-island");
+
+    // And a QueryPresence aimed at the host is answered over the wire.
+    EOS_Presence_QueryPresenceOptions query = {};
+    query.ApiVersion = EOS_PRESENCE_QUERYPRESENCE_API_LATEST;
+    query.LocalUserId = guest_epic;
+    query.TargetUserId = host_epic;
+    guest.query_presence(&query, 0, on_e2e_query);
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return g_e2e_query;
+    });
+    REQUIRE(g_e2e_query);
+    CHECK(g_e2e_query_result == EOS_EResult::EOS_Success);
+
+    guest.remove_notify_on_presence_changed(note);
+    host.emu_deinit();
+    guest.emu_deinit();
     host_net.stop();
     guest_net.stop();
     platform::net_shutdown();

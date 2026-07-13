@@ -475,3 +475,64 @@ TEST_CASE("two framed messages in one buffer deframe one at a time") {
 
     CHECK(offset == buf.size());
 }
+
+TEST_CASE("presence info round-trips, records and all") {
+    presence_info a;
+    a.epic_id = std::string(32, 'a');
+    a.status = 2; // away
+    a.product_id = "co-op-game";
+    a.product_version = "1.4";
+    a.platform = "Linux";
+    a.rich_text = "In the caves";
+    a.product_name = "Crab Quest";
+    a.integrated_platform = "STEAM";
+    a.join_info = "session:crab-island";
+    presence_data_record hp;
+    hp.key = "hp";
+    hp.value = "42";
+    presence_data_record zone;
+    zone.key = "zone";
+    zone.value = "caves";
+    a.records.push_back(hp);
+    a.records.push_back(zone);
+
+    byte_writer writer;
+    serialize(writer, a);
+    byte_reader reader(writer.data().data(), writer.data().size());
+    presence_info b;
+    REQUIRE(deserialize(reader, b));
+    CHECK(b.epic_id == a.epic_id);
+    CHECK(b.status == 2);
+    CHECK(b.product_id == "co-op-game");
+    CHECK(b.rich_text == "In the caves");
+    CHECK(b.join_info == "session:crab-island");
+    CHECK(b.integrated_platform == "STEAM");
+    REQUIRE(b.records.size() == 2);
+    CHECK(b.records[0].key == "hp");
+    CHECK(b.records[0].value == "42");
+    CHECK(b.records[1].key == "zone");
+}
+
+TEST_CASE("presence deserialize rejects an absurd record count") {
+    byte_writer writer;
+    writer.put_string(std::string(32, 'a')); // epic id
+    writer.put_svar(static_cast<i64>(1));     // status
+    for (int i = 0; i < 7; i++) {
+        writer.put_string(""); // the seven remaining strings
+    }
+    writer.put_var(static_cast<u64>(1) << 40); // a record count no buffer could hold
+    byte_reader reader(writer.data().data(), writer.data().size());
+    presence_info b;
+    CHECK_FALSE(deserialize(reader, b));
+}
+
+TEST_CASE("a presence request carries just the target") {
+    presence_request a;
+    a.target_epic_id = std::string(32, 'b');
+    byte_writer writer;
+    serialize(writer, a);
+    byte_reader reader(writer.data().data(), writer.data().size());
+    presence_request b;
+    REQUIRE(deserialize(reader, b));
+    CHECK(b.target_epic_id == a.target_epic_id);
+}

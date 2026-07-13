@@ -42,6 +42,9 @@ enum class message_type : u16 {
     session_register = 36,
     session_unregister = 37,
 
+    presence_request = 50,
+    presence_info = 51,
+
     // Discovery and peer lifecycle. net_advertise travels over UDP and is consumed by the
     // router itself; the peer_connected / peer_disconnected envelopes are synthesized by the
     // router and dispatched to the interfaces so they can track the roster.
@@ -173,6 +176,33 @@ struct session_destroy {
 struct session_members {
     std::string session_id;
     std::vector<std::string> player_ids;
+};
+
+// One key/value pair of a user's rich-presence data.
+struct presence_data_record {
+    std::string key;
+    std::string value;
+};
+
+// A user's rich presence, keyed by their Epic account id. This is what one peer knows and tells
+// the others about itself: its status, what it is playing, the free-text line a friend sees, and
+// the opaque join string a game hands back to rejoin whatever the user is in.
+struct presence_info {
+    std::string epic_id;
+    i32 status = 0; // EOS_Presence_EStatus
+    std::string product_id;
+    std::string product_version;
+    std::string platform;
+    std::string rich_text;
+    std::string product_name;
+    std::string integrated_platform;
+    std::string join_info;
+    std::vector<presence_data_record> records;
+};
+
+// A peer asking whoever is behind an Epic account id to send its presence back.
+struct presence_request {
+    std::string target_epic_id;
 };
 
 } // namespace eosr
