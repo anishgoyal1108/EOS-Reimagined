@@ -23,10 +23,11 @@ public:
     void init_key(const u8 key[32]);
     bool has_key() const { return has_key_; }
 
-    // Encrypt `len` plaintext bytes into `cipher` (which needs len + 16 bytes for the tag).
-    void encrypt(u8* cipher, const u8* ad, std::size_t ad_len, const u8* plain, std::size_t len);
+    // Encrypt `len` plaintext bytes into `cipher` (which needs len + 16 bytes for the tag). Returns
+    // false once the nonce is exhausted (Noise reserves 2^64-1), so a key/nonce pair is never reused.
+    bool encrypt(u8* cipher, const u8* ad, std::size_t ad_len, const u8* plain, std::size_t len);
     // Decrypt `len` bytes (ciphertext + 16-byte tag) into `plain` (needs len - 16 bytes). Returns
-    // false on any tag mismatch; `plain` is not left holding unverified data.
+    // false on a tag mismatch or once the nonce is exhausted; `plain` is not left with unverified data.
     bool decrypt(u8* plain, const u8* ad, std::size_t ad_len, const u8* cipher, std::size_t len);
 
     void wipe();
@@ -65,8 +66,11 @@ public:
 
     bool done() const { return done_; }
 
-    // After done(): our sending and receiving transport cipher states, oriented to this side.
-    void split(cipher_state& send, cipher_state& recv);
+    // After done(), and exactly once: key our sending and receiving transport cipher states,
+    // oriented to this side. Returns false before the handshake completes or on a repeat call, and
+    // leaves the passed states untouched -- so it can never hand out transport keys before the peer
+    // is authenticated, nor reset a live transport back to nonce zero.
+    bool split(cipher_state& send, cipher_state& recv);
     // 32-byte final handshake hash (valid once done()); channel-binding value.
     const u8* handshake_hash() const { return handshake_hash_; }
     // The peer's static public key, valid once its `s` token has been read.
@@ -77,10 +81,12 @@ private:
     // SymmetricState.
     void mix_hash(const u8* data, std::size_t len);
     bool mix_key(const u8* ikm, std::size_t len); // false if the DH input was the zero secret
-    void encrypt_and_hash(const u8* plain, std::size_t len, std::vector<u8>& out);
+    bool encrypt_and_hash(const u8* plain, std::size_t len, std::vector<u8>& out);
     bool decrypt_and_hash(const u8* cipher, std::size_t len, std::vector<u8>& out);
     bool dh(const u8 our_priv[32], const u8 peer_pub[32], u8 out[32]);
-    void ensure_ephemeral();
+    bool ensure_ephemeral(); // false if the platform RNG fails
+    // Does this side write (vs read) the message at `index`? Initiator writes even, responder odd.
+    bool we_write(int index) const { return (index % 2 == 0) == initiator_; }
 
     u8 ck_[32];
     u8 h_[32];
@@ -102,6 +108,7 @@ private:
 
     int message_index_;
     bool done_;
+    bool split_done_; // Split() has already handed out the transport keys; it may not run again
     u8 handshake_hash_[32];
 };
 

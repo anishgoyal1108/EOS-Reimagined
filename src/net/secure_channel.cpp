@@ -15,6 +15,7 @@ const char* const protocol_name = "Noise_XX_25519_ChaChaPoly_SHA256";
 const std::size_t hash_len = 32;
 const std::size_t dh_len = 32;
 const std::size_t tag_len = 16;
+const std::size_t max_noise_message = 65535; // Noise caps a message at 2^16-1 bytes
 
 // The tokens of a Noise message pattern.
 enum token { tok_e, tok_s, tok_ee, tok_es, tok_se };
@@ -65,18 +66,23 @@ void cipher_state::build_nonce(u8 out[12]) const {
     }
 }
 
-void cipher_state::encrypt(u8* cipher, const u8* ad, std::size_t ad_len, const u8* plain,
+bool cipher_state::encrypt(u8* cipher, const u8* ad, std::size_t ad_len, const u8* plain,
                            std::size_t len) {
     if (!has_key_) {
         if (len != 0 && cipher != plain) {
             std::memcpy(cipher, plain, len);
         }
-        return;
+        return true;
+    }
+    // Noise reserves nonce 2^64-1 and requires an error rather than a wrap that reuses a nonce.
+    if (nonce_ == ~static_cast<u64>(0)) {
+        return false;
     }
     u8 nonce[12];
     build_nonce(nonce);
     aead_encrypt(cipher, cipher + len, key_, nonce, ad, ad_len, plain, len);
     nonce_++;
+    return true;
 }
 
 bool cipher_state::decrypt(u8* plain, const u8* ad, std::size_t ad_len, const u8* cipher,
@@ -87,7 +93,7 @@ bool cipher_state::decrypt(u8* plain, const u8* ad, std::size_t ad_len, const u8
         }
         return true;
     }
-    if (len < tag_len) {
+    if (nonce_ == ~static_cast<u64>(0) || len < tag_len) {
         return false;
     }
     u8 nonce[12];
@@ -105,7 +111,7 @@ bool cipher_state::decrypt(u8* plain, const u8* ad, std::size_t ad_len, const u8
 noise_handshake::noise_handshake(bool initiator, const u8 static_priv[32], const u8 static_pub[32],
                                  const u8* prologue, std::size_t prologue_len)
     : initiator_(initiator), have_e_(false), have_rs_(false), have_re_(false),
-      fixed_ephemeral_(false), message_index_(0), done_(false) {
+      fixed_ephemeral_(false), message_index_(0), done_(false), split_done_(false) {
     std::memcpy(s_priv_, static_priv, dh_len);
     std::memcpy(s_pub_, static_pub, dh_len);
     std::memset(e_priv_, 0, sizeof(e_priv_));
@@ -158,11 +164,14 @@ bool noise_handshake::mix_key(const u8* ikm, std::size_t len) {
     return true;
 }
 
-void noise_handshake::encrypt_and_hash(const u8* plain, std::size_t len, std::vector<u8>& out) {
+bool noise_handshake::encrypt_and_hash(const u8* plain, std::size_t len, std::vector<u8>& out) {
     const std::size_t extra = cs_.has_key() ? tag_len : 0;
     out.resize(len + extra);
-    cs_.encrypt(out.data(), h_, hash_len, plain, len);
+    if (!cs_.encrypt(out.data(), h_, hash_len, plain, len)) {
+        return false;
+    }
     mix_hash(out.data(), out.size());
+    return true;
 }
 
 bool noise_handshake::decrypt_and_hash(const u8* cipher, std::size_t len, std::vector<u8>& out) {
@@ -182,37 +191,63 @@ bool noise_handshake::dh(const u8 our_priv[32], const u8 peer_pub[32], u8 out[32
     return x25519_shared(out, our_priv, peer_pub);
 }
 
-void noise_handshake::ensure_ephemeral() {
+bool noise_handshake::ensure_ephemeral() {
     if (have_e_) {
-        return;
+        return true;
     }
     if (fixed_ephemeral_) {
         std::memcpy(e_priv_, fixed_e_priv_, dh_len);
-    } else {
-        platform::random_bytes(e_priv_, dh_len);
+    } else if (!platform::random_bytes(e_priv_, dh_len)) {
+        // Without secure randomness we must not proceed with a predictable ephemeral.
+        return false;
     }
     x25519_public_key(e_pub_, e_priv_);
     have_e_ = true;
+    return true;
 }
 
 bool noise_handshake::write_message(const u8* payload, std::size_t payload_len,
                                     std::vector<u8>& out) {
     out.clear();
-    if (done_) {
+    // It must be our turn to write this message (initiator writes even, responder odd), and the
+    // whole encoded frame must fit Noise's limit -- both checked before any transcript state moves.
+    if (done_ || !we_write(message_index_)) {
         return false;
     }
     const std::vector<token>& tokens = xx_message(message_index_);
+    {
+        std::size_t size = 0;
+        bool keyed = cs_.has_key();
+        for (std::size_t t = 0; t < tokens.size(); t++) {
+            if (tokens[t] == tok_e) {
+                size += dh_len;
+            } else if (tokens[t] == tok_s) {
+                size += dh_len + (keyed ? tag_len : 0);
+            } else {
+                keyed = true; // a DH token establishes a key for what follows
+            }
+        }
+        size += payload_len + (keyed ? tag_len : 0);
+        if (size > max_noise_message) {
+            return false;
+        }
+    }
     for (std::size_t t = 0; t < tokens.size(); t++) {
         u8 shared[32];
         switch (tokens[t]) {
             case tok_e:
-                ensure_ephemeral();
+                if (!ensure_ephemeral()) {
+                    out.clear();
+                    return false;
+                }
                 out.insert(out.end(), e_pub_, e_pub_ + dh_len);
                 mix_hash(e_pub_, dh_len);
                 break;
             case tok_s: {
                 std::vector<u8> enc;
-                encrypt_and_hash(s_pub_, dh_len, enc);
+                if (!encrypt_and_hash(s_pub_, dh_len, enc)) {
+                    return false;
+                }
                 out.insert(out.end(), enc.begin(), enc.end());
                 break;
             }
@@ -237,7 +272,9 @@ bool noise_handshake::write_message(const u8* payload, std::size_t payload_len,
         eosr::secure_wipe(shared, sizeof(shared));
     }
     std::vector<u8> enc_payload;
-    encrypt_and_hash(payload, payload_len, enc_payload);
+    if (!encrypt_and_hash(payload, payload_len, enc_payload)) {
+        return false;
+    }
     out.insert(out.end(), enc_payload.begin(), enc_payload.end());
 
     if (message_index_ == 2) {
@@ -251,7 +288,9 @@ bool noise_handshake::write_message(const u8* payload, std::size_t payload_len,
 bool noise_handshake::read_message(const u8* message, std::size_t message_len,
                                    std::vector<u8>& payload) {
     payload.clear();
-    if (done_) {
+    // It must be the other side's turn to have written this (so ours to read), and the frame must
+    // be within Noise's size limit.
+    if (done_ || we_write(message_index_) || message_len > max_noise_message) {
         return false;
     }
     std::size_t offset = 0;
@@ -317,11 +356,17 @@ bool noise_handshake::read_message(const u8* message, std::size_t message_len,
     return true;
 }
 
-void noise_handshake::split(cipher_state& send, cipher_state& recv) {
+bool noise_handshake::split(cipher_state& send, cipher_state& recv) {
+    // Only after the peer is authenticated, and only once -- a second call must not re-key a live
+    // transport back to nonce zero, and a call before done() must not hand out any key at all. The
+    // passed states are left untouched on refusal.
+    if (!done_ || split_done_) {
+        return false;
+    }
     std::vector<std::vector<u8> > out;
     hkdf_sha256(ck_, hash_len, 0, 0, 2, out);
     if (out.size() != 2) {
-        return;
+        return false;
     }
     // The initiator sends with the first key and receives with the second; the responder is the
     // mirror. Both sides agree on which key is which.
@@ -334,6 +379,8 @@ void noise_handshake::split(cipher_state& send, cipher_state& recv) {
     }
     eosr::secure_wipe(out[0].data(), out[0].size());
     eosr::secure_wipe(out[1].data(), out[1].size());
+    split_done_ = true;
+    return true;
 }
 
 } // namespace eosr

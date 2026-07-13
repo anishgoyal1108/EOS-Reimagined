@@ -99,10 +99,11 @@ The P2P data path uses UDP and is currently unauthenticated. After the TCP hands
 
 ```
 (c_i2r, c_r2i)      = Split()                                    // the two Noise cipher states — TCP ONLY
-udp_i2r, udp_r2i    = HKDF( salt = handshake_hash,
+udp_i2r, udp_r2i    = HKDF( salt = ck_final,                     // the SECRET Noise chaining key
                             ikm  = enc("eosr-udp-subkey-v1", u64_be(session_generation)), 2 )
 ```
 
+- **The UDP keys are derived from `ck_final`, the secret Noise chaining key at the end of the handshake — never from `handshake_hash`.** `handshake_hash` is a hash of *observable* transcript data (public keys and ciphertext), so an eavesdropper could reproduce any key derived from it; the chaining key mixes in every DH shared secret and is never transmitted. `secure_channel` derives these inside `split()` (which holds `ck_`) before the handshake state is discarded, alongside the two TCP cipher states.
 - TCP framing (Section 6) uses `c_i2r`/`c_r2i` directly (standard Noise transport). UDP uses `udp_i2r`/`udp_r2i` — independent keys under a distinct label, so a UDP sequence starting at 0 can never collide with a TCP counter at 0.
 - `session_generation` (folded into the UDP `ikm`) increments on every reconnect, so a fresh session derives fresh UDP keys and an old datagram cannot be replayed into a new one.
 - Each of the four keys has its **own** 64-bit counter/sequence starting at 0; a direction's key is used with a strictly increasing counter and torn down on exhaustion.

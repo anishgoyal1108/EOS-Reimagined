@@ -146,9 +146,10 @@ TEST_CASE("HMAC-SHA256 wipes its secret intermediate material") {
     const std::vector<u8> mac = hmac_sha256(key.data(), key.size(), message.data(), message.size());
     REQUIRE(mac.size() == 32);
 
-    // The padded HMAC key alone is 64 bytes; inner/outer buffers and their digest contain more
-    // secret-derived material that should also be erased.
-    CHECK(observed_wiped_bytes >= 64);
+    // This implementation creates 288 bytes in HMAC itself (padded key, inner input/digest, outer
+    // input) plus two 128-byte padded message copies inside SHA-256. All 544 bytes are
+    // secret-derived and must be erased; wiping only HMAC's outer layer leaves the SHA copies.
+    CHECK(observed_wiped_bytes >= 544);
 }
 
 TEST_CASE("HKDF-SHA256 wipes its secret intermediate material") {

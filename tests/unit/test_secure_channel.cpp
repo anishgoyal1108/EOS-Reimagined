@@ -5,11 +5,17 @@
 
 #include "common/crypto.h"
 #include "common/types.h"
+#define private public
 #include "net/secure_channel.h"
+#undef private
 
 using namespace eosr;
 
 namespace {
+
+#if defined(EOSR_TEST_WRAP_RANDOM_BYTES)
+bool force_random_bytes_failure = false;
+#endif
 
 std::vector<u8> unhex(const std::string& hex) {
     std::vector<u8> out;
@@ -41,6 +47,22 @@ std::vector<u8> pub_of(const std::vector<u8>& priv) {
 }
 
 } // namespace
+
+#if defined(EOSR_TEST_WRAP_RANDOM_BYTES)
+#if defined(_WIN32)
+extern "C" bool __real__ZN4eosr8platform12random_bytesEPhy(u8* out, std::size_t len);
+extern "C" bool __wrap__ZN4eosr8platform12random_bytesEPhy(u8* out, std::size_t len) {
+    return force_random_bytes_failure ? false
+                                      : __real__ZN4eosr8platform12random_bytesEPhy(out, len);
+}
+#else
+extern "C" bool __real__ZN4eosr8platform12random_bytesEPhm(u8* out, std::size_t len);
+extern "C" bool __wrap__ZN4eosr8platform12random_bytesEPhm(u8* out, std::size_t len) {
+    return force_random_bytes_failure ? false
+                                      : __real__ZN4eosr8platform12random_bytesEPhm(out, len);
+}
+#endif
+#endif
 
 // The canonical noise-c / cacophony known-answer for Noise_XX_25519_ChaChaPoly_SHA256, with fixed
 // static and ephemeral keys. If the transcript deviates from the spec by a single byte, a message
@@ -225,4 +247,109 @@ TEST_CASE("a tampered handshake message fails to read") {
     REQUIRE(b.write_message(&payload, 1, m));
     m[m.size() - 1] ^= 1;
     CHECK_FALSE(a.read_message(m.data(), m.size(), p));
+}
+
+#if defined(EOSR_TEST_WRAP_RANDOM_BYTES)
+TEST_CASE("Noise handshake fails closed when ephemeral randomness is unavailable") {
+    const std::vector<u8> static_priv(32, 0x42);
+    const std::vector<u8> static_pub = pub_of(static_priv);
+    noise_handshake handshake(true, static_priv.data(), static_pub.data(), 0, 0);
+    std::vector<u8> message;
+
+    force_random_bytes_failure = true;
+    const bool wrote = handshake.write_message(0, 0, message);
+    force_random_bytes_failure = false;
+
+    CHECK_FALSE(wrote);
+    CHECK(message.empty());
+}
+#endif
+
+TEST_CASE("Noise handshake rejects an operation from the wrong role") {
+    const std::vector<u8> static_priv(32, 0x24);
+    const std::vector<u8> static_pub = pub_of(static_priv);
+    noise_handshake responder(false, static_priv.data(), static_pub.data(), 0, 0);
+    std::vector<u8> message;
+
+    CHECK_FALSE(responder.write_message(0, 0, message));
+    CHECK(message.empty());
+}
+
+TEST_CASE("Noise handshake does not expose transport keys before authentication completes") {
+    const std::vector<u8> static_priv(32, 0x31);
+    const std::vector<u8> static_pub = pub_of(static_priv);
+    noise_handshake handshake(true, static_priv.data(), static_pub.data(), 0, 0);
+    cipher_state send;
+    cipher_state recv;
+
+    handshake.split(send, recv);
+
+    CHECK_FALSE(send.has_key());
+    CHECK_FALSE(recv.has_key());
+}
+
+TEST_CASE("Noise Split cannot reset a live transport nonce") {
+    const std::vector<u8> a_priv(32, 0x51);
+    const std::vector<u8> b_priv(32, 0x62);
+    const std::vector<u8> a_pub = pub_of(a_priv);
+    const std::vector<u8> b_pub = pub_of(b_priv);
+    const std::vector<u8> a_e(32, 0x73);
+    const std::vector<u8> b_e(32, 0x84);
+    noise_handshake a(true, a_priv.data(), a_pub.data(), 0, 0);
+    noise_handshake b(false, b_priv.data(), b_pub.data(), 0, 0);
+    a.set_fixed_ephemeral(a_e.data());
+    b.set_fixed_ephemeral(b_e.data());
+
+    std::vector<u8> message;
+    std::vector<u8> payload;
+    REQUIRE(a.write_message(0, 0, message));
+    REQUIRE(b.read_message(message.data(), message.size(), payload));
+    REQUIRE(b.write_message(0, 0, message));
+    REQUIRE(a.read_message(message.data(), message.size(), payload));
+    REQUIRE(a.write_message(0, 0, message));
+    REQUIRE(b.read_message(message.data(), message.size(), payload));
+    REQUIRE(a.done());
+
+    cipher_state send;
+    cipher_state recv;
+    a.split(send, recv);
+    const u8 plain[] = {1, 2, 3, 4};
+    std::vector<u8> first(sizeof(plain) + 16);
+    std::vector<u8> second(sizeof(plain) + 16);
+    send.encrypt(first.data(), 0, 0, plain, sizeof(plain));
+
+    // A second Split must not reinitialize the same key at nonce zero.
+    a.split(send, recv);
+    send.encrypt(second.data(), 0, 0, plain, sizeof(plain));
+    CHECK(second != first);
+}
+
+TEST_CASE("Noise handshake enforces the 65535-byte message limit") {
+    const std::vector<u8> static_priv(32, 0x19);
+    const std::vector<u8> static_pub = pub_of(static_priv);
+    const std::vector<u8> ephemeral(32, 0x2a);
+    noise_handshake handshake(true, static_priv.data(), static_pub.data(), 0, 0);
+    handshake.set_fixed_ephemeral(ephemeral.data());
+
+    // Message zero contains a 32-byte ephemeral followed by its cleartext payload.
+    std::vector<u8> payload(65504, 0x7f);
+    std::vector<u8> message;
+    CHECK_FALSE(handshake.write_message(payload.data(), payload.size(), message));
+    CHECK(message.empty());
+}
+
+TEST_CASE("Noise transport counter never wraps to zero") {
+    cipher_state state;
+    u8 key[32] = {0};
+    state.init_key(key);
+    state.nonce_ = ~static_cast<u64>(0) - 1;
+
+    const u8 plain = 0x5a;
+    u8 first[17];
+    u8 second[17];
+    state.encrypt(first, 0, 0, &plain, 1); // nonce 2^64 - 2 is the last usable value
+    state.encrypt(second, 0, 0, &plain, 1);
+
+    const bool stopped_before_wrap = !state.has_key() || state.nonce_ == ~static_cast<u64>(0);
+    CHECK(stopped_before_wrap);
 }

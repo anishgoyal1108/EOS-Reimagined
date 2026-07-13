@@ -35,6 +35,15 @@ if((UNIX AND NOT APPLE) OR MINGW)
     target_link_options(unit_tests PRIVATE "-Wl,--wrap=crypto_wipe")
     target_compile_definitions(unit_tests PRIVATE EOSR_TEST_WRAP_CRYPTO_WIPE=1)
 endif()
+if(UNIX AND NOT APPLE)
+    target_link_options(unit_tests PRIVATE
+        "-Wl,--wrap=_ZN4eosr8platform12random_bytesEPhm")
+    target_compile_definitions(unit_tests PRIVATE EOSR_TEST_WRAP_RANDOM_BYTES=1)
+elseif(MINGW)
+    target_link_options(unit_tests PRIVATE
+        "-Wl,--wrap=_ZN4eosr8platform12random_bytesEPhy")
+    target_compile_definitions(unit_tests PRIVATE EOSR_TEST_WRAP_RANDOM_BYTES=1)
+endif()
 
 add_test(NAME unit_tests COMMAND unit_tests)
 

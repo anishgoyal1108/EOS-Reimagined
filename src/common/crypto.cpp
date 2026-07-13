@@ -87,6 +87,12 @@ std::vector<u8> sha256(const u8* data, std::size_t len) {
         digest[i * 4 + 2] = static_cast<u8>((state[i] >> 8) & 0xff);
         digest[i * 4 + 3] = static_cast<u8>(state[i] & 0xff);
     }
+    // When hashing secret input (HMAC's key-derived blocks), the padded copy and the running state
+    // are secret too. Wipe them rather than leave them in freed memory. The digest is the output.
+    if (!message.empty()) {
+        secure_wipe(message.data(), message.size());
+    }
+    secure_wipe(state, sizeof(state));
     return digest;
 }
 
