@@ -46,14 +46,17 @@ if(WIN32)
     target_sources(eosr_core PRIVATE
         src/platform/socket_win32.cpp
         src/platform/net_iface_win32.cpp
+        src/platform/rng_win32.cpp
     )
     target_compile_definitions(eosr_core PRIVATE _WIN32_WINNT=0x0600)
-    # iphlpapi provides the adapter enumeration discovery uses to find its broadcast addresses.
-    target_link_libraries(eosr_core PUBLIC ws2_32 iphlpapi)
+    # iphlpapi enumerates the adapters discovery broadcasts to; bcrypt is the system random source
+    # the per-instance identity is minted from.
+    target_link_libraries(eosr_core PUBLIC ws2_32 iphlpapi bcrypt)
 else()
     target_sources(eosr_core PRIVATE
         src/platform/socket_linux.cpp
         src/platform/net_iface_linux.cpp
+        src/platform/rng_linux.cpp
     )
 endif()
 

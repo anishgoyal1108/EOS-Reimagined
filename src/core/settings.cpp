@@ -1,5 +1,10 @@
 #include "core/settings.h"
 
+#include <chrono>
+#include <cstdint>
+
+#include "platform/rng.h"
+
 namespace eosr {
 
 namespace {
@@ -30,6 +35,28 @@ std::string to_hex16(u64 value) {
     return out;
 }
 
+// A random 32-hex-character id, for an instance with no configured user to identify itself by.
+// If the system random source is unavailable we still must not collide with another instance, so
+// we fall back on this instance's own address and a clock reading, which differ between processes.
+std::string random_id() {
+    const std::size_t id_bytes = 16; // 16 bytes render as the 32 hex characters an id is
+    u8 bytes[id_bytes];
+    if (!platform::random_bytes(bytes, id_bytes)) {
+        const u64 here = static_cast<u64>(reinterpret_cast<std::uintptr_t>(&bytes[0]));
+        const u64 now = static_cast<u64>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        const u64 mixed[2] = {fnv1a_64(to_hex16(here)), fnv1a_64(to_hex16(now ^ here))};
+        return to_hex16(mixed[0]) + to_hex16(mixed[1]);
+    }
+    u64 halves[2] = {0, 0};
+    for (std::size_t i = 0; i < id_bytes; i++) {
+        halves[i / 8] = (halves[i / 8] << 8) | bytes[i];
+    }
+    // An all-zero id is the null sentinel, so never hand one back.
+    halves[0] |= 1;
+    return to_hex16(halves[0]) + to_hex16(halves[1]);
+}
+
 // A stable 32-hex-character id from the username, the product, and a per-kind discriminator.
 // The two halves hash distinct inputs so the epic-account and product-user ids never collide.
 std::string derive_id(const std::string& username, const std::string& product_id, const char* kind) {
@@ -41,6 +68,7 @@ std::string derive_id(const std::string& username, const std::string& product_id
 
 sdk_settings::sdk_settings()
     : username_(default_username),
+      minted_identity_(false),
       is_server_(false),
       flags_(0),
       tick_budget_ms_(0) {
@@ -112,6 +140,20 @@ void sdk_settings::set_username(const std::string& username) {
 }
 
 void sdk_settings::derive_identity() {
+    // With a configured user we derive the identity from the name, so the same person is the same
+    // player on every machine and every run. With no user configured we have nothing to derive
+    // from, and deriving from the placeholder would hand every copy of the game the same id: two
+    // instances would then see each other's advertisement as their own and never meet. So we mint
+    // a random identity instead, once, and keep it for the life of this instance.
+    if (username_ == default_username) {
+        if (!minted_identity_) {
+            epic_account_id_ = random_id();
+            product_user_id_ = random_id();
+            minted_identity_ = true;
+        }
+        return;
+    }
+    minted_identity_ = false;
     epic_account_id_ = derive_id(username_, product_id_, "eaid");
     product_user_id_ = derive_id(username_, product_id_, "puid");
 }

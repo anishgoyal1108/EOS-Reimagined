@@ -42,10 +42,26 @@ TEST_CASE("fresh settings carry a valid, stable default identity") {
     CHECK(s.epic_account_id() != s.product_user_id());
 }
 
+// Two copies of a game with nobody configured must not answer to the same id: each would see the
+// other's advertisement as its own and the two would never discover each other.
+TEST_CASE("two unconfigured instances get different identities") {
+    sdk_settings a;
+    sdk_settings b;
+    CHECK(a.product_user_id() != b.product_user_id());
+    CHECK(a.epic_account_id() != b.epic_account_id());
+    CHECK(id_string_is_valid(a.product_user_id()));
+    CHECK(id_string_is_valid(b.product_user_id()));
+
+    // Applying options must not disturb an identity we already minted.
+    const std::string before = a.product_user_id();
+    EOS_Platform_Options opts = make_options();
+    a.apply_platform_options(&opts);
+    CHECK(a.product_user_id() == before);
+}
+
 TEST_CASE("identity is deterministic for a given username and product") {
     sdk_settings a;
     sdk_settings b;
-    CHECK(a.product_user_id() == b.product_user_id());
 
     a.set_username("InfernusHawk");
     b.set_username("InfernusHawk");
@@ -64,6 +80,9 @@ TEST_CASE("a different username yields a different identity") {
 
 TEST_CASE("platform options are captured and re-derive the identity") {
     sdk_settings s;
+    // A configured user is what makes the identity derived rather than minted, so this is the case
+    // where the product takes part in the seed.
+    s.set_username("InfernusHawk");
     const std::string before = s.product_user_id();
 
     EOS_Platform_Options opts = make_options();
@@ -109,6 +128,7 @@ TEST_CASE("a null option string is treated as empty, not dereferenced") {
 
 TEST_CASE("applying new platform options replaces all previous values") {
     sdk_settings settings;
+    settings.set_username("InfernusHawk");
     EOS_Platform_Options first_options = make_options();
     settings.apply_platform_options(&first_options);
     const std::string first_id = settings.product_user_id();

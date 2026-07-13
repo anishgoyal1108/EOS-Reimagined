@@ -48,6 +48,9 @@ private:
     void clear_platform_options();
 
     std::string username_;
+    // True once we have minted a random identity for an unconfigured user, so that identity stays
+    // put for the life of this instance instead of changing every time an option is applied.
+    bool minted_identity_;
     std::string epic_account_id_;
     std::string product_user_id_;
 
