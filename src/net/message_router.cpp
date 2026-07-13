@@ -277,6 +277,11 @@ std::vector<std::string> message_router::peer_ids() const {
     return out;
 }
 
+std::string message_router::peer_epic_id(const std::string& peer_id) const {
+    std::map<std::string, peer>::const_iterator it = peers_.find(peer_id);
+    return (it != peers_.end()) ? it->second.epic_id : std::string();
+}
+
 std::size_t message_router::pending_output_bytes() const {
     std::size_t total = 0;
     std::map<std::string, peer>::const_iterator it = peers_.begin();
@@ -712,6 +717,10 @@ bool message_router::adopt_peer(const std::string& id, socket connection,
     peer& entry = peers_[id];
     entry.connection = std::move(connection);
     entry.channel = std::move(channel);
+    // The epic account id comes from the same key as the product user id, so it is as unforgeable as
+    // the one we just adopted this peer under. An interface that keys on it never has to take a
+    // peer's word for it.
+    entry.epic_id = derive_epic_account_id(entry.channel->remote_static());
     entry.buffer = leftover;
     entry.outbox = unsent;
     // Datagrams go to the address whose handshake we just authenticated -- nobody without the key
@@ -1015,6 +1024,11 @@ void message_router::dispatch_peer_event(message_type type, const std::string& p
     event.type_tag = static_cast<u16>(type);
     event.source_id = peer_id;
     event.game_id = game_id_;
+    // A peer arrives carrying the epic account id its key derives. An interface that keys on one --
+    // Presence does, and so do Friends and UserInfo -- learns it here, from the key we authenticated,
+    // rather than from a payload the peer wrote later and could have written anything into.
+    const std::string epic_id = peer_epic_id(peer_id);
+    event.payload.assign(epic_id.begin(), epic_id.end());
     dispatch(event);
 }
 

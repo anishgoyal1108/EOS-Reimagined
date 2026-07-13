@@ -183,6 +183,7 @@ void sdk_presence::emu_deinit() {
 
     presences_.clear();
     epic_owner_.clear();
+    peer_epic_.clear();
     modifications_.clear();
     pending_queries_.clear();
     registered_ = false;
@@ -685,8 +686,14 @@ bool sdk_presence::on_network_message(const net_envelope& message) {
         return true;
     }
 
-    // A peer we just met has never heard our presence; tell it, so its first query resolves.
+    // A peer we just met has never heard our presence; tell it, so its first query resolves. It also
+    // arrives carrying the epic account id its key derives, which is the only account it may ever
+    // speak for -- we take it from the router, which recomputed it from the key the handshake proved.
     if (message.type_tag == static_cast<u16>(message_type::peer_connected)) {
+        if (!message.payload.empty()) {
+            peer_epic_[message.source_id] =
+                std::string(message.payload.begin(), message.payload.end());
+        }
         if (message.game_id.empty() || message.game_id == settings_.product_id()) {
             broadcast_my_presence(message.source_id);
         }
@@ -697,6 +704,7 @@ bool sdk_presence::on_network_message(const net_envelope& message) {
     // spoke for are free for whoever holds them next, and a game no longer sees a friend who is
     // gone as present.
     if (message.type_tag == static_cast<u16>(message_type::peer_disconnected)) {
+        peer_epic_.erase(message.source_id);
         std::map<std::string, std::string>::iterator owner = epic_owner_.begin();
         while (owner != epic_owner_.end()) {
             if (owner->second == message.source_id) {
@@ -742,18 +750,19 @@ bool sdk_presence::on_network_message(const net_envelope& message) {
         if (!presence_within_caps(incoming)) {
             return true;
         }
-        // A peer may speak only for its own account. Each Epic id is bound to the peer that
-        // announced it, and anyone else claiming it is refused, so a peer cannot forge a friend's
-        // presence or join string. Identity on the mesh is self-asserted, so this binds accounts to
-        // sources among cooperating peers rather than defending against one that spoofs another's
-        // id; a peer's binding is released when it disconnects (see peer_disconnected) so a departed
-        // account can be re-announced by whoever holds it next.
-        std::map<std::string, std::string>::iterator owner = epic_owner_.find(incoming.epic_id);
-        if (owner == epic_owner_.end()) {
-            epic_owner_[incoming.epic_id] = message.source_id;
-        } else if (owner->second != message.source_id) {
+        // A peer speaks only for its own account, and which account that is is not up to it: the
+        // epic id is derived from the key its handshake proved, exactly as its product user id is.
+        // An announcement naming any other account is simply not from that account's owner.
+        //
+        // This used to be first-writer-wins -- whoever claimed an epic id first kept it -- which was
+        // the best that could be done while identity on the mesh was self-asserted. It no longer is,
+        // so there is nothing left to take on trust and no race to win.
+        std::map<std::string, std::string>::const_iterator proved =
+            peer_epic_.find(message.source_id);
+        if (proved == peer_epic_.end() || incoming.epic_id != proved->second) {
             return true;
         }
+        epic_owner_[incoming.epic_id] = message.source_id;
 
         // Only a real change is worth telling the game about; identical re-broadcasts (a peer
         // answering a request, or re-announcing on connect) do not fire the notification.

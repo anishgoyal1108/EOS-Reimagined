@@ -375,3 +375,46 @@ TEST_CASE("login rejects malformed credentials without logging in") {
         expect_rejected(options, &creds);
     }
 }
+
+// The roster used to be keyed on the product user id inside the message rather than the one the
+// connection proved. A peer could therefore write any *other* player's roster entry -- and once
+// Friends and UserInfo read this roster, that entry is that player's name as everyone on the mesh
+// sees it. The connection says who a peer is; the payload does not get a say.
+TEST_CASE("a peer cannot write another player's roster entry") {
+    connect_fixture fx;
+    fx.do_login(0);
+    fx.callbacks.tick();
+
+    const std::string victim = "0123456789abcdef0123456789abcdef";
+    const std::string attacker = "fedcba9876543210fedcba9876543210";
+
+    // The attacker announces itself under the victim's id.
+    connect_infos forged;
+    forged.product_user_id = victim;
+    forged.display_name = "NotTheVictim";
+    byte_writer writer;
+    serialize(writer, forged);
+    net_envelope envelope;
+    envelope.type_tag = static_cast<u16>(message_type::connect_response);
+    envelope.source_id = attacker; // the id the handshake proved, and the only one that counts
+    envelope.payload = writer.data();
+    CHECK(fx.connect.on_network_message(envelope));
+
+    // It named someone else, so it named nobody: neither player is on the roster under that name.
+    CHECK_FALSE(fx.connect.is_known_peer(victim));
+    CHECK(fx.connect.known_peer_count() == 0);
+
+    // The same peer speaking for itself is believed, and lands under the id it proved.
+    connect_infos honest;
+    honest.product_user_id = attacker;
+    honest.display_name = "Attacker";
+    byte_writer honest_writer;
+    serialize(honest_writer, honest);
+    net_envelope honest_envelope;
+    honest_envelope.type_tag = static_cast<u16>(message_type::connect_response);
+    honest_envelope.source_id = attacker;
+    honest_envelope.payload = honest_writer.data();
+    CHECK(fx.connect.on_network_message(honest_envelope));
+    CHECK(fx.connect.is_known_peer(attacker));
+    CHECK(fx.connect.known_peer_count() == 1);
+}

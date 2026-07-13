@@ -365,8 +365,16 @@ bool sdk_connect::on_network_message(const net_envelope& message) {
 
     connect_infos infos;
     byte_reader reader(message.payload.data(), message.payload.size());
-    if (deserialize(reader, infos) && !infos.product_user_id.empty()) {
-        peers_[infos.product_user_id] = infos.display_name;
+    if (deserialize(reader, infos)) {
+        // The peer is whoever the connection proved it to be, never whoever its payload says. Keying
+        // the roster on the id inside the message would let any peer write another player's entry --
+        // and once Friends and UserInfo read this roster, that is that player's *name*, as everyone
+        // on the mesh sees it. A message naming someone else is not theirs to send.
+        const bool speaks_for_itself =
+            infos.product_user_id.empty() || infos.product_user_id == message.source_id;
+        if (speaks_for_itself && message.source_id != settings_.product_user_id()) {
+            peers_[message.source_id] = infos.display_name;
+        }
     }
     // A peer asking who we are gets an answer; a peer answering us does not need another.
     if (message.type_tag == static_cast<u16>(message_type::connect_request) && is_logged_in()) {

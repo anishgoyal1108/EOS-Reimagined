@@ -95,6 +95,12 @@ public:
     // The product user ids of every authenticated peer in the mesh.
     std::vector<std::string> peer_ids() const;
 
+    // The epic account id a peer's key derives, or empty if we have no such peer. It is recomputed
+    // from the static key the handshake proved, exactly as the product user id is, so it is not a
+    // claim a peer makes -- it is the one identity that key can have. An interface that keys on an
+    // epic account id asks here rather than believing a payload.
+    std::string peer_epic_id(const std::string& peer_id) const;
+
     // Bytes we are holding for peers whose send buffer was full. Non-zero means we are under
     // backpressure right now.
     std::size_t pending_output_bytes() const;
@@ -119,6 +125,8 @@ private:
         std::vector<u8> buffer;
         std::vector<u8> outbox;
         std::unique_ptr<peer_channel> channel;
+        // The epic account id this peer's key derives. Computed once, when the key is proved.
+        std::string epic_id;
         // Where this peer's datagrams go. The address comes from the connection whose handshake
         // authenticated it; the port comes from a sealed advertisement it sent us. Port zero means
         // it has not told us yet, and datagrams take the mesh until it does.

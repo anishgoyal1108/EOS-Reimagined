@@ -52,6 +52,18 @@ struct presence_fixture {
         return id_registry::instance().get_epic_account_id(settings.epic_account_id());
     }
 
+    // A peer joins the mesh carrying the epic account id its key derives -- the only account it may
+    // ever speak for. In production the router computes that from the key the handshake proved; here
+    // we say outright what that key would have derived.
+    void meets(const std::string& peer_id, const std::string& epic_id) {
+        net_envelope event;
+        event.type_tag = static_cast<u16>(message_type::peer_connected);
+        event.source_id = peer_id;
+        event.game_id = settings.product_id();
+        event.payload.assign(epic_id.begin(), epic_id.end());
+        presence.on_network_message(event);
+    }
+
     // Stage a modification and apply it to our own presence, returning the result code.
     EOS_HPresenceModification begin() {
         EOS_Presence_CreatePresenceModificationOptions options = {};
@@ -324,23 +336,42 @@ presence_info remote_presence(const std::string& epic_id, i32 status) {
 
 } // namespace
 
-// The review's headline finding: without an owner binding, any peer could overwrite a friend's
-// presence -- and its join string, redirecting a "join friend's game" click.
-TEST_CASE("a peer cannot speak for an account another peer already owns") {
+// A peer speaks only for the account its own key derives, so it cannot overwrite a friend's presence
+// -- or their join string, which is what a "join friend's game" click follows.
+//
+// This used to be first-writer-wins: whoever announced an account first kept it, which was the most
+// that could be done while identity on the mesh was self-asserted. It is not any more, so an attacker
+// cannot take the account by racing for it either. We check the harder order: the attacker goes
+// *first*, and still does not get it.
+TEST_CASE("a peer cannot speak for an account its key does not derive") {
     presence_fixture fx;
     const std::string victim(32, 'c');
     const std::string real_owner(32, '1');
     const std::string attacker(32, '2');
 
-    presence_info real = remote_presence(victim, 1);
-    real.join_info = "session:real";
-    fx.presence.on_network_message(presence_envelope(fx.settings, real_owner, real));
+    // Each peer arrives owning exactly one account: the one its key derives.
+    fx.meets(real_owner, victim);
+    fx.meets(attacker, std::string(32, 'a'));
 
+    // The attacker announces the victim's account first, and is refused -- there is no race to win.
     presence_info forged = remote_presence(victim, 1);
     forged.join_info = "session:attacker";
     fx.presence.on_network_message(presence_envelope(fx.settings, attacker, forged));
 
-    // The victim's join string is still the one its real owner announced.
+    EOS_Presence_HasPresenceOptions has = {};
+    has.ApiVersion = EOS_PRESENCE_HASPRESENCE_API_LATEST;
+    has.LocalUserId = fx.me();
+    has.TargetUserId = id_registry::instance().get_epic_account_id(victim);
+    CHECK(fx.presence.has_presence(&has) == EOS_FALSE);
+
+    // The peer whose key actually derives that account is believed.
+    presence_info real = remote_presence(victim, 1);
+    real.join_info = "session:real";
+    fx.presence.on_network_message(presence_envelope(fx.settings, real_owner, real));
+
+    // And the attacker still cannot overwrite it afterwards.
+    fx.presence.on_network_message(presence_envelope(fx.settings, attacker, forged));
+
     EOS_Presence_GetJoinInfoOptions get = {};
     get.ApiVersion = EOS_PRESENCE_GETJOININFO_API_LATEST;
     get.LocalUserId = fx.me();
@@ -354,6 +385,7 @@ TEST_CASE("a peer cannot speak for an account another peer already owns") {
 TEST_CASE("an over-cap or out-of-range inbound presence is refused, not cached") {
     presence_fixture fx;
     const std::string friend_id(32, 'e');
+    fx.meets(std::string(32, '1'), friend_id);
 
     EOS_Presence_HasPresenceOptions has = {};
     has.ApiVersion = EOS_PRESENCE_HASPRESENCE_API_LATEST;
@@ -370,10 +402,14 @@ TEST_CASE("an over-cap or out-of-range inbound presence is refused, not cached")
     CHECK(fx.presence.has_presence(&has) == EOS_FALSE);
 }
 
-// Review regression: an invalid packet must not reserve the account-to-peer association.
-TEST_CASE("an invalid first presence does not block a later valid presence") {
+// A peer that sends rubbish must not poison the account it does own: the next thing it sends, if it
+// is well formed, still lands. It is the same peer both times, because an account has exactly one
+// peer whose key derives it.
+TEST_CASE("a peer's invalid presence does not block its own later valid one") {
     presence_fixture fx;
     const std::string friend_id(32, 'e');
+
+    fx.meets(std::string(32, '1'), friend_id);
 
     presence_info invalid = remote_presence(friend_id, 1);
     invalid.rich_text = std::string(EOS_PRESENCE_RICH_TEXT_MAX_VALUE_LENGTH + 1, 'x');
@@ -383,7 +419,7 @@ TEST_CASE("an invalid first presence does not block a later valid presence") {
     presence_info valid = remote_presence(friend_id, 1);
     valid.rich_text = "available";
     fx.presence.on_network_message(
-        presence_envelope(fx.settings, std::string(32, '2'), valid));
+        presence_envelope(fx.settings, std::string(32, '1'), valid));
 
     EOS_Presence_HasPresenceOptions has = {};
     has.ApiVersion = EOS_PRESENCE_HASPRESENCE_API_LATEST;
@@ -398,6 +434,7 @@ TEST_CASE("an identical presence re-broadcast does not fire the change notificat
     fx.presence.add_notify_on_presence_changed(0, count_presence_changed);
     const std::string friend_id(32, 'e');
     const std::string owner(32, '1');
+    fx.meets(owner, friend_id);
 
     presence_info info = remote_presence(friend_id, 1);
     info.rich_text = "hi";
@@ -417,6 +454,7 @@ TEST_CASE("an identical presence re-broadcast does not fire the change notificat
 TEST_CASE("a query for an account we already know resolves from cache, not a timeout") {
     presence_fixture fx;
     const std::string friend_id(32, 'e');
+    fx.meets(std::string(32, '1'), friend_id);
     fx.presence.on_network_message(
         presence_envelope(fx.settings, std::string(32, '1'), remote_presence(friend_id, 1)));
 

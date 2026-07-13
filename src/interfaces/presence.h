@@ -118,6 +118,9 @@ private:
     // announce it. A later announcement from anyone else is refused, so no peer can speak for an
     // account it does not own.
     std::map<std::string, std::string> epic_owner_;
+    // The epic account id each peer's key derives, learned when the peer joined the mesh. It is the
+    // only account that peer may speak for, and it is not a claim it made.
+    std::map<std::string, std::string> peer_epic_;
 
     handle_store<modification_object> modifications_;
 
