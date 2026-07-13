@@ -106,6 +106,10 @@ private:
     void deliver(callback_type_id type, std::size_t info_size, completion_delegate delegate,
                  void* client_data, EOS_EResult result_code, EOS_EpicAccountId local_user,
                  EOS_EpicAccountId target_user);
+    // The header promises a newly registered handler is called on the next tick with the current
+    // state. That is a one-shot delivery alongside -- not instead of -- the persistent registration.
+    void deliver_initial_state(callback_type_id type, std::size_t info_size,
+                               completion_delegate delegate, void* client_data);
 
     sdk_settings& settings_;
     callback_manager& callbacks_;

@@ -1,5 +1,7 @@
 #include "doctest.h"
 
+#include <string>
+
 #include "eos_ui_types.h"
 
 #include "common/ids.h"
@@ -15,12 +17,30 @@ int g_show_count;
 EOS_EResult g_show_result;
 EOS_EpicAccountId g_show_user;
 int g_display_settings_count;
+void* g_display_settings_client_data;
+EOS_Bool g_display_settings_visible;
+EOS_Bool g_display_settings_exclusive;
+int g_memory_monitor_count;
+void* g_memory_monitor_client_data;
+const void* g_memory_monitor_report;
+int g_block_count;
+EOS_EResult g_block_result;
+EOS_EpicAccountId g_block_target;
 
 void reset_captures() {
     g_show_count = 0;
     g_show_result = EOS_EResult::EOS_UnexpectedError;
     g_show_user = 0;
     g_display_settings_count = 0;
+    g_block_count = 0;
+    g_block_result = EOS_EResult::EOS_UnexpectedError;
+    g_block_target = 0;
+    g_display_settings_client_data = 0;
+    g_display_settings_visible = EOS_TRUE;
+    g_display_settings_exclusive = EOS_TRUE;
+    g_memory_monitor_count = 0;
+    g_memory_monitor_client_data = 0;
+    g_memory_monitor_report = reinterpret_cast<const void*>(1);
 }
 
 void EOS_CALL on_show(const EOS_UI_ShowFriendsCallbackInfo* info) {
@@ -28,8 +48,22 @@ void EOS_CALL on_show(const EOS_UI_ShowFriendsCallbackInfo* info) {
     g_show_result = info->ResultCode;
     g_show_user = info->LocalUserId;
 }
-void EOS_CALL on_display_settings(const EOS_UI_OnDisplaySettingsUpdatedCallbackInfo*) {
+void EOS_CALL on_block(const EOS_UI_OnShowBlockPlayerCallbackInfo* info) {
+    g_block_count++;
+    g_block_result = info->ResultCode;
+    g_block_target = info->TargetUserId;
+}
+
+void EOS_CALL on_display_settings(const EOS_UI_OnDisplaySettingsUpdatedCallbackInfo* info) {
     g_display_settings_count++;
+    g_display_settings_client_data = info->ClientData;
+    g_display_settings_visible = info->bIsVisible;
+    g_display_settings_exclusive = info->bIsExclusiveInput;
+}
+void EOS_CALL on_memory_monitor(const EOS_UI_MemoryMonitorCallbackInfo* info) {
+    g_memory_monitor_count++;
+    g_memory_monitor_client_data = info->ClientData;
+    g_memory_monitor_report = info->SystemMemoryMonitorReport;
 }
 
 struct ui_fixture {
@@ -123,6 +157,7 @@ TEST_CASE("the overlay settings a game writes are the settings it reads back") {
     preference.NotificationLocation = EOS_UI_ENotificationLocation::EOS_UNL_TopLeft;
     CHECK(fx.ui.set_display_preference(&preference) == EOS_EResult::EOS_Success);
     CHECK(fx.ui.notification_location() == EOS_UI_ENotificationLocation::EOS_UNL_TopLeft);
+    CHECK(fx.ui.set_display_preference(&preference) == EOS_EResult::EOS_NoChange);
 
     EOS_UI_PauseSocialOverlayOptions pause = {};
     pause.ApiVersion = EOS_UI_PAUSESOCIALOVERLAY_API_LATEST;
@@ -157,26 +192,72 @@ TEST_CASE("a toggle key needs one real key and a modifier") {
     CHECK_FALSE(sdk_ui::key_combination_valid(k::EOS_UIK_None));
 }
 
-// It registers, it unregisters, and it never fires -- because the overlay never shows or hides, and
-// that is the truth. A game keying off it simply never hears from it.
-TEST_CASE("the display-settings notification registers and is never fired") {
+// The header deliberately exposes more input-state buttons than it permits as an overlay toggle.
+// A toggle is made from trigger/special/thumbstick buttons and may include either shoulder; D-pad
+// and face buttons remain input-state flags, but are not valid overlay-opening combinations.
+TEST_CASE("a toggle button uses only the subset allowed for opening the overlay") {
+    typedef EOS_UI_EInputStateButtonFlags b;
+    const i32 trigger = static_cast<i32>(b::EOS_UISBF_LeftTrigger);
+    const i32 shoulder = static_cast<i32>(b::EOS_UISBF_RightShoulder);
+
+    CHECK(sdk_ui::button_combination_valid(b::EOS_UISBF_None));
+    CHECK(sdk_ui::button_combination_valid(b::EOS_UISBF_Special_Left));
+    CHECK(sdk_ui::button_combination_valid(static_cast<b>(trigger | shoulder)));
+
+    CHECK_FALSE(sdk_ui::button_combination_valid(b::EOS_UISBF_DPad_Up));
+    CHECK_FALSE(sdk_ui::button_combination_valid(b::EOS_UISBF_FaceButton_Bottom));
+    CHECK_FALSE(sdk_ui::button_combination_valid(static_cast<b>(1 << 16)));
+}
+
+// This initial notification is not contingent on the overlay changing. The 1.19 header promises
+// that every newly registered handler receives the current display state on the next tick. That is
+// how a game learns the initial false/false state without polling and it is deliberately stricter
+// than the 2020 emulator, which stored this payload but never scheduled its first delivery.
+TEST_CASE("a display-settings notification reports the current state on the next tick") {
     ui_fixture fx;
     EOS_UI_AddNotifyDisplaySettingsUpdatedOptions options = {};
     options.ApiVersion = EOS_UI_ADDNOTIFYDISPLAYSETTINGSUPDATED_API_LATEST;
+    int marker = 0;
 
     const EOS_NotificationId id =
-        fx.ui.add_notify_display_settings_updated(&options, 0, on_display_settings);
+        fx.ui.add_notify_display_settings_updated(&options, &marker, on_display_settings);
     REQUIRE(id != EOS_INVALID_NOTIFICATIONID);
+    CHECK(g_display_settings_count == 0); // never synchronously
 
-    EOS_UI_ShowFriendsOptions show = {};
-    show.ApiVersion = EOS_UI_SHOWFRIENDS_API_LATEST;
-    show.LocalUserId = fx.me();
-    fx.ui.show_friends(&show, 0, on_show);
-    for (int i = 0; i < 5; i++) {
-        fx.callbacks.tick();
-    }
-    CHECK(g_display_settings_count == 0);
+    fx.callbacks.tick();
+    CHECK(g_display_settings_count == 1);
+    CHECK(g_display_settings_client_data == &marker);
+    CHECK(g_display_settings_visible == EOS_FALSE);
+    CHECK(g_display_settings_exclusive == EOS_FALSE);
 
+    // No state changed, so subsequent ticks do not invent additional notifications.
+    fx.callbacks.tick();
+    CHECK(g_display_settings_count == 1);
+
+    fx.ui.remove_notify(id);
+}
+
+// The memory-monitor registration carries the same explicit next-tick guarantee. A headless
+// desktop implementation has no platform report to attach, but it must still publish that current
+// null state once after registration.
+TEST_CASE("a memory-monitor notification reports the current state on the next tick") {
+    ui_fixture fx;
+    EOS_UI_AddNotifyMemoryMonitorOptions options = {};
+    options.ApiVersion = EOS_UI_ADDNOTIFYMEMORYMONITOR_API_LATEST;
+    int marker = 0;
+
+    const EOS_NotificationId id =
+        fx.ui.add_notify_memory_monitor(&options, &marker, on_memory_monitor);
+    REQUIRE(id != EOS_INVALID_NOTIFICATIONID);
+    CHECK(g_memory_monitor_count == 0);
+
+    fx.callbacks.tick();
+    CHECK(g_memory_monitor_count == 1);
+    CHECK(g_memory_monitor_client_data == &marker);
+    CHECK(g_memory_monitor_report == 0);
+
+    fx.callbacks.tick();
+    CHECK(g_memory_monitor_count == 1);
     fx.ui.remove_notify(id);
 }
 
@@ -194,18 +275,83 @@ TEST_CASE("no ui event exists to acknowledge yet") {
     CHECK(fx.ui.acknowledge_event_id(0) == EOS_EResult::EOS_InvalidParameters);
 }
 
-// The game hands us its input and its frame so an overlay could draw over one and react to the
-// other. We do neither -- but refusing would tell the game its own pipeline is broken, and it is not.
-TEST_CASE("input and frame hand-offs are accepted rather than refused") {
+// Both functions are console integration points. The bundled header explicitly says their desktop
+// implementations are empty and return NotImplemented. Success falsely claims the frame/input was
+// consumed and prevents a game from taking the fallback path the result code exists to select.
+TEST_CASE("console input and frame hand-offs report not implemented on desktop") {
     ui_fixture fx;
     EOS_UI_ReportInputStateOptions input = {};
     input.ApiVersion = EOS_UI_REPORTINPUTSTATE_API_LATEST;
-    CHECK(fx.ui.report_input_state(&input) == EOS_EResult::EOS_Success);
+    CHECK(fx.ui.report_input_state(&input) == EOS_EResult::EOS_NotImplemented);
 
     EOS_UI_PrePresentOptions present = {};
     present.ApiVersion = EOS_UI_PREPRESENT_API_LATEST;
-    CHECK(fx.ui.pre_present(&present) == EOS_EResult::EOS_Success);
+    CHECK(fx.ui.pre_present(&present) == EOS_EResult::EOS_NotImplemented);
 
     CHECK(fx.ui.report_input_state(0) == EOS_EResult::EOS_InvalidParameters);
     CHECK(fx.ui.pre_present(0) == EOS_EResult::EOS_InvalidParameters);
+}
+
+// EOS reserves a distinct result for a structurally valid call made against an unsupported ABI
+// version. Games use it to select an older call shape or disable a feature; folding it into
+// InvalidParameters makes that compatibility path indistinguishable from a malformed request.
+TEST_CASE("ui result APIs distinguish an incompatible version from bad parameters") {
+    ui_fixture fx;
+
+    EOS_UI_SetToggleFriendsKeyOptions key = {};
+    key.ApiVersion = EOS_UI_SETTOGGLEFRIENDSKEY_API_LATEST + 1;
+    key.KeyCombination = static_cast<EOS_UI_EKeyCombination>(shift_f3);
+    CHECK(fx.ui.set_toggle_friends_key(&key) == EOS_EResult::EOS_IncompatibleVersion);
+
+    EOS_UI_SetDisplayPreferenceOptions display = {};
+    display.ApiVersion = EOS_UI_SETDISPLAYPREFERENCE_API_LATEST + 1;
+    display.NotificationLocation = EOS_UI_ENotificationLocation::EOS_UNL_TopLeft;
+    CHECK(fx.ui.set_display_preference(&display) == EOS_EResult::EOS_IncompatibleVersion);
+
+    EOS_UI_PauseSocialOverlayOptions pause = {};
+    pause.ApiVersion = EOS_UI_PAUSESOCIALOVERLAY_API_LATEST + 1;
+    pause.bIsPaused = EOS_TRUE;
+    CHECK(fx.ui.pause_social_overlay(&pause) == EOS_EResult::EOS_IncompatibleVersion);
+
+    EOS_UI_ConfigureOnScreenKeyboardOptions keyboard = {};
+    keyboard.ApiVersion = EOS_UI_CONFIGUREONSCREENKEYBOARD_API_LATEST + 1;
+    keyboard.Behavior = EOS_UI_EOnScreenKeyboardBehavior::EOS_UIOSKB_None;
+    CHECK(fx.ui.configure_on_screen_keyboard(&keyboard) ==
+          EOS_EResult::EOS_IncompatibleVersion);
+}
+
+// ShowFriends opens a list and answers Success. These three do not: each describes a flow the
+// *player* completes -- a block confirmation, a report form, a profile page -- and the callback
+// fires when they leave it. Answering Success would tell the game a player finished something they
+// were never shown, and a game may act on that: mark the report filed, treat the block as applied.
+//
+// The labeled reference draws exactly this line. ShowFriends writes result code 0; all three of
+// these write 0xe, EOS_NotConfigured. The overlay is not set up to run them, which is true, and it
+// leaves the game free to fall back to its own UI.
+TEST_CASE("a flow the player would have to complete is not reported as completed") {
+    ui_fixture fx;
+    const EOS_EpicAccountId target =
+        id_registry::instance().get_epic_account_id(std::string(32, 'b'));
+
+    EOS_UI_ShowBlockPlayerOptions block = {};
+    block.ApiVersion = EOS_UI_SHOWBLOCKPLAYER_API_LATEST;
+    block.LocalUserId = fx.me();
+    block.TargetUserId = target;
+
+    fx.ui.show_block_player(&block, 0, on_block);
+    CHECK(g_block_count == 0); // never synchronously
+    fx.callbacks.tick();
+
+    REQUIRE(g_block_count == 1);
+    CHECK(g_block_result == EOS_EResult::EOS_NotConfigured);
+    // The ids still come back, so the game can tell which request this answers.
+    CHECK(g_block_target == target);
+
+    // A malformed call is still a malformed call, not an unconfigured overlay.
+    EOS_UI_ShowBlockPlayerOptions bad = block;
+    bad.TargetUserId = 0;
+    fx.ui.show_block_player(&bad, 0, on_block);
+    fx.callbacks.tick();
+    CHECK(g_block_count == 2);
+    CHECK(g_block_result == EOS_EResult::EOS_InvalidParameters);
 }

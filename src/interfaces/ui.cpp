@@ -37,8 +37,20 @@ bool version_ok(i32 version, i32 latest) {
     return version > 0 && version <= latest;
 }
 
-// Only the sixteen defined gamepad buttons; anything outside them is not a button we know.
-const i32 all_button_flags = 0xffff;
+// The header exposes more input-state buttons than it will accept as an overlay toggle. A toggle is
+// built from the triggers, the special buttons, and the thumbsticks, and may additionally include a
+// shoulder -- so a shoulder on its own is not a chord, and the D-pad and face buttons, which are
+// perfectly good input-state flags, are not toggles at all.
+const i32 toggle_core_buttons =
+    static_cast<i32>(EOS_UI_EInputStateButtonFlags::EOS_UISBF_LeftTrigger) |
+    static_cast<i32>(EOS_UI_EInputStateButtonFlags::EOS_UISBF_RightTrigger) |
+    static_cast<i32>(EOS_UI_EInputStateButtonFlags::EOS_UISBF_Special_Left) |
+    static_cast<i32>(EOS_UI_EInputStateButtonFlags::EOS_UISBF_Special_Right) |
+    static_cast<i32>(EOS_UI_EInputStateButtonFlags::EOS_UISBF_LeftThumbstick) |
+    static_cast<i32>(EOS_UI_EInputStateButtonFlags::EOS_UISBF_RightThumbstick);
+const i32 toggle_shoulders =
+    static_cast<i32>(EOS_UI_EInputStateButtonFlags::EOS_UISBF_LeftShoulder) |
+    static_cast<i32>(EOS_UI_EInputStateButtonFlags::EOS_UISBF_RightShoulder);
 
 // The header spells the toggle-key set out: F1 through F12, Space, Backspace, Escape, or Tab.
 bool toggleable_key(i32 key) {
@@ -69,10 +81,16 @@ bool sdk_ui::key_combination_valid(EOS_UI_EKeyCombination combination) {
 }
 
 bool sdk_ui::button_combination_valid(EOS_UI_EInputStateButtonFlags combination) {
-    // None is the default and is a legitimate value, so the only thing to refuse is a bit that does
-    // not name a button.
     const i32 value = static_cast<i32>(combination);
-    return (value & ~all_button_flags) == 0;
+    // None is the default, and the header says outright that it reverts to it.
+    if (value == static_cast<i32>(EOS_UI_EInputStateButtonFlags::EOS_UISBF_None)) {
+        return true;
+    }
+    if ((value & ~(toggle_core_buttons | toggle_shoulders)) != 0) {
+        return false;
+    }
+    // A shoulder may join a chord but is not one by itself.
+    return (value & toggle_core_buttons) != 0;
 }
 
 sdk_ui::sdk_ui(sdk_settings& settings, callback_manager& callbacks)
@@ -169,6 +187,11 @@ EOS_Bool sdk_ui::friends_exclusive_input(
     return EOS_FALSE;
 }
 
+// Unlike ShowFriends, these three describe a flow the *player* completes -- a block confirmation, a
+// report form, a profile page -- and the callback fires when they leave it. Reporting Success would
+// tell the game the player finished something they were never shown. The labeled reference answers
+// all three with EOS_NotConfigured (result code 0xe) while answering ShowFriends with Success, which
+// is the honest split: the overlay is not set up to run these, and the game can fall back.
 void sdk_ui::show_block_player(const EOS_UI_ShowBlockPlayerOptions* options, void* client_data,
                                EOS_UI_OnShowBlockPlayerCallback delegate) {
     if (delegate == 0) {
@@ -179,7 +202,7 @@ void sdk_ui::show_block_player(const EOS_UI_ShowBlockPlayerOptions* options, voi
                        options->LocalUserId != 0 && options->TargetUserId != 0;
     deliver(cb_block_player, sizeof(EOS_UI_OnShowBlockPlayerCallbackInfo),
             reinterpret_cast<completion_delegate>(delegate), client_data,
-            valid ? EOS_EResult::EOS_Success : EOS_EResult::EOS_InvalidParameters,
+            valid ? EOS_EResult::EOS_NotConfigured : EOS_EResult::EOS_InvalidParameters,
             valid ? options->LocalUserId : 0, valid ? options->TargetUserId : 0);
 }
 
@@ -193,7 +216,7 @@ void sdk_ui::show_report_player(const EOS_UI_ShowReportPlayerOptions* options, v
                        options->LocalUserId != 0 && options->TargetUserId != 0;
     deliver(cb_report_player, sizeof(EOS_UI_OnShowReportPlayerCallbackInfo),
             reinterpret_cast<completion_delegate>(delegate), client_data,
-            valid ? EOS_EResult::EOS_Success : EOS_EResult::EOS_InvalidParameters,
+            valid ? EOS_EResult::EOS_NotConfigured : EOS_EResult::EOS_InvalidParameters,
             valid ? options->LocalUserId : 0, valid ? options->TargetUserId : 0);
 }
 
@@ -207,7 +230,7 @@ void sdk_ui::show_native_profile(const EOS_UI_ShowNativeProfileOptions* options,
                        options->LocalUserId != 0 && options->TargetUserId != 0;
     deliver(cb_native_profile, sizeof(EOS_UI_ShowNativeProfileCallbackInfo),
             reinterpret_cast<completion_delegate>(delegate), client_data,
-            valid ? EOS_EResult::EOS_Success : EOS_EResult::EOS_InvalidParameters,
+            valid ? EOS_EResult::EOS_NotConfigured : EOS_EResult::EOS_InvalidParameters,
             valid ? options->LocalUserId : 0, valid ? options->TargetUserId : 0);
 }
 
@@ -216,8 +239,11 @@ void sdk_ui::show_native_profile(const EOS_UI_ShowNativeProfileOptions* options,
 // reason to conclude the SDK is broken.
 
 EOS_EResult sdk_ui::set_toggle_friends_key(const EOS_UI_SetToggleFriendsKeyOptions* options) {
-    if (options == 0 || !version_ok(options->ApiVersion, EOS_UI_SETTOGGLEFRIENDSKEY_API_LATEST)) {
+    if (options == 0) {
         return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (!version_ok(options->ApiVersion, EOS_UI_SETTOGGLEFRIENDSKEY_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
     }
     // The header singles out None: it reverts to the default rather than being rejected.
     const EOS_UI_EKeyCombination wanted =
@@ -244,8 +270,11 @@ EOS_UI_EKeyCombination sdk_ui::toggle_friends_key(
 
 EOS_EResult sdk_ui::set_toggle_friends_button(
     const EOS_UI_SetToggleFriendsButtonOptions* options) {
-    if (options == 0 || !version_ok(options->ApiVersion, EOS_UI_SETTOGGLEFRIENDSBUTTON_API_LATEST)) {
+    if (options == 0) {
         return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (!version_ok(options->ApiVersion, EOS_UI_SETTOGGLEFRIENDSBUTTON_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
     }
     if (!button_combination_valid(options->ButtonCombination)) {
         return EOS_EResult::EOS_InvalidParameters;
@@ -266,13 +295,19 @@ EOS_UI_EInputStateButtonFlags sdk_ui::toggle_friends_button(
 }
 
 EOS_EResult sdk_ui::set_display_preference(const EOS_UI_SetDisplayPreferenceOptions* options) {
-    if (options == 0 || !version_ok(options->ApiVersion, EOS_UI_SETDISPLAYPREFERENCE_API_LATEST)) {
+    if (options == 0) {
         return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (!version_ok(options->ApiVersion, EOS_UI_SETDISPLAYPREFERENCE_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
     }
     const i32 location = static_cast<i32>(options->NotificationLocation);
     if (location < static_cast<i32>(EOS_UI_ENotificationLocation::EOS_UNL_TopLeft) ||
         location > static_cast<i32>(EOS_UI_ENotificationLocation::EOS_UNL_BottomRight)) {
         return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (options->NotificationLocation == notification_location_) {
+        return EOS_EResult::EOS_NoChange;
     }
     notification_location_ = options->NotificationLocation;
     return EOS_EResult::EOS_Success;
@@ -288,26 +323,34 @@ EOS_EResult sdk_ui::acknowledge_event_id(const EOS_UI_AcknowledgeEventIdOptions*
     return EOS_EResult::EOS_NotFound;
 }
 
-// The game hands us its input and its frame so the overlay can draw over one and react to the other.
-// We draw nothing and consume nothing, but refusing would tell a game its own input pipeline is
-// broken, and it is not: there is simply nothing here to feed.
+// These two are console integration points: the game routes its gamepad input and its frame through
+// the SDK so an overlay can react to one and draw over the other. The header is explicit that both
+// have "an empty implementation (i.e. returns EOS_NotImplemented) on all non-console platforms", and
+// we are always one of those.
+//
+// Success would be a worse answer than it looks. It says the input and the frame were consumed, and
+// a game reads that to mean the overlay is handling them -- which is exactly the branch it should
+// not take when there is no overlay. NotImplemented is what sends it down its own path.
 EOS_EResult sdk_ui::report_input_state(const EOS_UI_ReportInputStateOptions* options) {
-    if (options == 0 || !version_ok(options->ApiVersion, EOS_UI_REPORTINPUTSTATE_API_LATEST)) {
+    if (options == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    return EOS_EResult::EOS_Success;
+    return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_EResult sdk_ui::pre_present(const EOS_UI_PrePresentOptions* options) {
-    if (options == 0 || !version_ok(options->ApiVersion, EOS_UI_PREPRESENT_API_LATEST)) {
+    if (options == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    return EOS_EResult::EOS_Success;
+    return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_EResult sdk_ui::pause_social_overlay(const EOS_UI_PauseSocialOverlayOptions* options) {
-    if (options == 0 || !version_ok(options->ApiVersion, EOS_UI_PAUSESOCIALOVERLAY_API_LATEST)) {
+    if (options == 0) {
         return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (!version_ok(options->ApiVersion, EOS_UI_PAUSESOCIALOVERLAY_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
     }
     social_overlay_paused_ = (options->bIsPaused == EOS_TRUE);
     return EOS_EResult::EOS_Success;
@@ -322,19 +365,38 @@ EOS_Bool sdk_ui::social_overlay_paused(const EOS_UI_IsSocialOverlayPausedOptions
 
 EOS_EResult sdk_ui::configure_on_screen_keyboard(
     const EOS_UI_ConfigureOnScreenKeyboardOptions* options) {
-    if (options == 0 ||
-        !version_ok(options->ApiVersion, EOS_UI_CONFIGUREONSCREENKEYBOARD_API_LATEST)) {
+    if (options == 0) {
         return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (!version_ok(options->ApiVersion, EOS_UI_CONFIGUREONSCREENKEYBOARD_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
     }
     keyboard_behavior_ = options->Behavior;
     keyboard_device_checks_ = (options->bIsDeviceChecksEnabled == EOS_TRUE);
     return EOS_EResult::EOS_Success;
 }
 
-// Every notification here fires when the overlay does something, and the overlay never does
-// anything. They register, they unregister, and they never fire -- which is the truth, and is what a
-// game that keys off them will see. The join-accepted notifications, which are the ones that
-// actually gate multiplayer, live on Presence, Lobby and Sessions and are the companion's job.
+// The overlay never shows, hides, or reports memory, so after registration these never fire again.
+// But the header promises something separate and unconditional: "Newly registered handlers will
+// always be called the next tick with the current state." That is how a game learns the initial
+// state without polling for it, and a game that waits for it would otherwise wait forever. So the
+// registration persists *and* one copy of the current state is queued for the next tick.
+//
+// The join-accepted notifications, which are the ones that actually gate multiplayer, live on
+// Presence, Lobby and Sessions and are the companion's job.
+
+// Queue a one-shot copy of a notification payload, so the game hears the current state on the next
+// tick without the persistent registration being spent.
+void sdk_ui::deliver_initial_state(callback_type_id type, std::size_t info_size,
+                                   completion_delegate delegate, void* client_data) {
+    std::unique_ptr<frame_result> result(new frame_result());
+    void* raw = result->create_callback(type, info_size, delegate);
+    // Every one of these payloads begins with ClientData, and the rest of it is the zeroed current
+    // state: not visible, no exclusive input, no memory report.
+    *static_cast<void**>(raw) = client_data;
+    result->set_done(true);
+    callbacks_.add_callback(this, std::move(result));
+}
 
 EOS_NotificationId sdk_ui::add_notify_display_settings_updated(
     const EOS_UI_AddNotifyDisplaySettingsUpdatedOptions* options, void* client_data,
@@ -351,7 +413,13 @@ EOS_NotificationId sdk_ui::add_notify_display_settings_updated(
     info->ClientData = client_data;
     info->bIsVisible = EOS_FALSE;
     info->bIsExclusiveInput = EOS_FALSE;
-    return callbacks_.add_notification(this, std::move(result));
+    const EOS_NotificationId id = callbacks_.add_notification(this, std::move(result));
+    if (id != EOS_INVALID_NOTIFICATIONID) {
+        deliver_initial_state(cb_display_settings,
+                              sizeof(EOS_UI_OnDisplaySettingsUpdatedCallbackInfo),
+                              reinterpret_cast<completion_delegate>(delegate), client_data);
+    }
+    return id;
 }
 
 EOS_NotificationId sdk_ui::add_notify_memory_monitor(
@@ -367,7 +435,12 @@ EOS_NotificationId sdk_ui::add_notify_memory_monitor(
                                 reinterpret_cast<completion_delegate>(delegate)));
     info->ClientData = client_data;
     info->SystemMemoryMonitorReport = 0;
-    return callbacks_.add_notification(this, std::move(result));
+    const EOS_NotificationId id = callbacks_.add_notification(this, std::move(result));
+    if (id != EOS_INVALID_NOTIFICATIONID) {
+        deliver_initial_state(cb_memory_monitor, sizeof(EOS_UI_MemoryMonitorCallbackInfo),
+                              reinterpret_cast<completion_delegate>(delegate), client_data);
+    }
+    return id;
 }
 
 EOS_NotificationId sdk_ui::add_notify_on_screen_keyboard_requested(
