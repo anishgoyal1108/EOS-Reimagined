@@ -85,12 +85,28 @@ void pump_until(message_router& router, Predicate done) {
     }
 }
 
+// A private discovery range on loopback, so the tests never advertise onto the real network.
+net_config test_config(u16 first) {
+    net_config config;
+    config.discovery_port_first = first;
+    config.discovery_port_last = static_cast<u16>(first + 3);
+    config.broadcast_addresses.push_back(platform::ip_loopback);
+    return config;
+}
+
+// Bring a router up on its own discovery range with a distinct identity.
+bool start_router(message_router& router, const std::string& id, u16 first) {
+    router.set_identity(id, "test-game");
+    router.set_config(test_config(first));
+    return router.start();
+}
+
 } // namespace
 
 TEST_CASE("the router delivers a self-sent message to its registered listener") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(router.start(0));
+    REQUIRE(start_router(router, "self", 45700));
 
     capture_listener listener;
     router.register_listener(message_type::emu_infos_response, &listener);
@@ -108,7 +124,7 @@ TEST_CASE("the router delivers a self-sent message to its registered listener") 
 TEST_CASE("the router does not deliver a message of an unregistered type") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(router.start(0));
+    REQUIRE(start_router(router, "self", 45700));
 
     capture_listener listener;
     router.register_listener(message_type::emu_infos_response, &listener);
@@ -128,7 +144,7 @@ TEST_CASE("the router does not deliver a message of an unregistered type") {
 TEST_CASE("an unregistered listener stops receiving") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(router.start(0));
+    REQUIRE(start_router(router, "self", 45700));
 
     capture_listener listener;
     router.register_listener(message_type::emu_infos_response, &listener);
@@ -148,7 +164,7 @@ TEST_CASE("an unregistered listener stops receiving") {
 TEST_CASE("listener mutation during dispatch takes effect on the next message") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(router.start(0));
+    REQUIRE(start_router(router, "self", 45700));
 
     unregistering_listener removes_itself(router);
     capture_listener stable;
@@ -172,7 +188,7 @@ TEST_CASE("listener mutation during dispatch takes effect on the next message") 
 TEST_CASE("a listener registered during dispatch does not receive the current message") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(router.start(0));
+    REQUIRE(start_router(router, "self", 45700));
 
     capture_listener added;
     registering_listener registrar(router, added);
@@ -195,7 +211,7 @@ TEST_CASE("a listener registered during dispatch does not receive the current me
 TEST_CASE("duplicate and null listener registrations are ignored") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(router.start(0));
+    REQUIRE(start_router(router, "self", 45700));
 
     capture_listener listener;
     router.register_listener(message_type::emu_infos_response, &listener);
@@ -217,10 +233,10 @@ TEST_CASE("the router can stop and restart while retaining registrations") {
     router.register_listener(message_type::emu_infos_response, &listener);
 
     CHECK_FALSE(router.send_to_self(make_envelope(message_type::emu_infos_response, "stopped")));
-    REQUIRE(router.start(0));
+    REQUIRE(start_router(router, "self", 45700));
     router.stop();
     router.stop();
-    REQUIRE(router.start(0));
+    REQUIRE(start_router(router, "self", 45700));
 
     REQUIRE(router.send_to_self(make_envelope(message_type::emu_infos_response, "restarted")));
     pump_until(router, [&]() { return listener.count == 1; });
