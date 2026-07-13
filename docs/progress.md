@@ -84,7 +84,7 @@ Total: **42 classes, 705 methods named.**
 - **Phase 5 (Tier-B) key findings**: AntiCheat `ProtectMessage` = **CRC32-C checksum** (poly 0x82f63b78), NOT encryption; Register* records peers → fires faked auth-success; Server Log* = no-ops. **CustomInvites is genuinely networked** (only Tier-B iface w/ OnNetworkMessage; new protocol msg). RTC room/participant mgmt real but **SendAudio/SendData discard payloads** (voice/data not carried). Sanctions=clean(0), Reports=discard, KWS=permitted/adult, Mods=empty, Metrics=no-op, ProgressionSnapshot=accept. UI/Overlay = social overlay (render out of scope for headless lib).
 
 ## Foundation milestone: FROZEN (2026-07-13)
-All planned foundation interfaces are implemented over the peer mesh, each adversarially reviewed and hardened, and the mesh identity is bound to the connection. This is the baseline the Authenticated Mesh Identity milestone (see [[eos-authenticated-identity-milestone]] / the note below) builds on; treat it as stable.
+All planned foundation interfaces are implemented over the peer mesh, each adversarially reviewed and hardened, and the mesh identity is bound to the connection. This is the baseline the Authenticated Mesh Identity milestone (see below) builds on; treat it as stable.
 - **Interfaces live:** Connect, Auth, P2P, Sessions, Presence, Lobby (+ Platform/Client bootstrap). Every other `EOS_Platform_Get<X>Interface` returns a non-null stub.
 - **276 EOS_* exports**, 0 non-EOS symbols exported; builds both targets (Linux `.so` + Windows `.dll` via MinGW/Wine).
 - **Tests:** 204 unit cases / 11.3k+ assertions, integration (loads the real built lib, incl. ABI out-param contracts), export-surface, and real-mesh e2e (2- and 3-instance) — green on both targets, clean under ASan + UBSan.
