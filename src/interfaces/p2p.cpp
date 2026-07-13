@@ -194,13 +194,35 @@ EOS_EResult sdk_p2p::send_packet(const EOS_P2P_SendPacketOptions* options) {
             // The caller declined auto-accept and there is no connection, so the data is dropped.
             return EOS_EResult::EOS_NoConnection;
         }
-        // Auto-accept opens the connection from our side; the peer still has to agree.
+        // Auto-accept opens the connection from our side and asks the peer to agree.
         connections_[key] = connection_pending;
+        send_p2p(message_type::p2p_connect_request, key.peer, key.socket, 0, std::vector<u8>());
     }
 
-    // The packet is accepted for delivery. The datagram to the peer rides on the peer mesh that
-    // lands with the networked-discovery milestone; until then a sent packet is not delivered.
+    // Hand the packet to the mesh. Delivery is not guaranteed (the peer may have gone away), and
+    // the API says as much, so a send that finds no route still reports the packet as accepted.
+    send_p2p(message_type::p2p_data, key.peer, key.socket, options->Channel,
+             std::vector<u8>(static_cast<const u8*>(options->Data),
+                             static_cast<const u8*>(options->Data) + options->DataLengthBytes));
     return EOS_EResult::EOS_Success;
+}
+
+void sdk_p2p::send_p2p(message_type type, const std::string& peer, const std::string& socket,
+                       u8 channel, const std::vector<u8>& data) {
+    p2p_data payload;
+    payload.socket_name = socket;
+    payload.channel = static_cast<i32>(channel);
+    payload.data = data;
+    byte_writer writer;
+    serialize(writer, payload);
+
+    net_envelope envelope;
+    envelope.type_tag = static_cast<u16>(type);
+    envelope.source_id = settings_.product_user_id();
+    envelope.dest_id = peer;
+    envelope.game_id = settings_.product_id();
+    envelope.payload = writer.data();
+    network_.send(envelope);
 }
 
 EOS_EResult sdk_p2p::get_next_received_packet_size(
@@ -266,11 +288,12 @@ EOS_EResult sdk_p2p::accept_connection(const EOS_P2P_AcceptConnectionOptions* op
     connection_key key;
     key.peer = options->RemoteUserId->id_str;
     key.socket = socket_name_of(options->SocketId);
-    // Accepting only records our willingness. The connection is not established, and no
-    // notification fires, until the peer's response arrives.
+    // Accepting records our willingness and tells the peer. The connection is not established,
+    // and no notification fires, until the peer's response arrives.
     if (connections_.find(key) == connections_.end()) {
         connections_[key] = connection_pending;
     }
+    send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>());
     return EOS_EResult::EOS_Success;
 }
 
@@ -663,10 +686,13 @@ bool sdk_p2p::on_network_message(const net_envelope& message) {
     }
 
     if (message.type_tag == static_cast<u16>(message_type::p2p_connect_request)) {
-        // A peer asking for a connection we have already accepted is not a new request.
+        // A peer asking for a connection we already accepted is not a new request; we just
+        // confirm it so its side can establish too.
         if (connection == connections_.end()) {
             queue_event(pending_event::request, key.peer, key.socket,
                         EOS_EConnectionClosedReason::EOS_CCR_Unknown);
+        } else {
+            send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>());
         }
         return true;
     }

@@ -12,6 +12,7 @@
 #include "common/types.h"
 #include "core/i_run_callback.h"
 #include "core/i_run_network.h"
+#include "net/messages.h"
 
 namespace eosr {
 
@@ -19,7 +20,6 @@ class sdk_settings;
 class callback_manager;
 class message_router;
 class frame_result;
-struct net_envelope;
 
 // The P2P interface: the packet data path co-op gameplay rides on. A local user sends packets to
 // a remote peer on a named socket and channel, and receives packets queued from peers. Unlike
@@ -133,6 +133,9 @@ private:
         std::string socket;
     };
 
+    // Frame one P2P message and hand it to the mesh for delivery to `peer`.
+    void send_p2p(message_type type, const std::string& peer, const std::string& socket, u8 channel,
+                  const std::vector<u8>& data);
     void remember_filter(EOS_NotificationId id, const EOS_P2P_SocketId* socket_filter);
     void queue_event(pending_event::kind type, const std::string& peer, const std::string& socket,
                      EOS_EConnectionClosedReason reason);
