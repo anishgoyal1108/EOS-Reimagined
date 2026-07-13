@@ -370,6 +370,28 @@ TEST_CASE("an over-cap or out-of-range inbound presence is refused, not cached")
     CHECK(fx.presence.has_presence(&has) == EOS_FALSE);
 }
 
+// Review regression: an invalid packet must not reserve the account-to-peer association.
+TEST_CASE("an invalid first presence does not block a later valid presence") {
+    presence_fixture fx;
+    const std::string friend_id(32, 'e');
+
+    presence_info invalid = remote_presence(friend_id, 1);
+    invalid.rich_text = std::string(EOS_PRESENCE_RICH_TEXT_MAX_VALUE_LENGTH + 1, 'x');
+    fx.presence.on_network_message(
+        presence_envelope(fx.settings, std::string(32, '1'), invalid));
+
+    presence_info valid = remote_presence(friend_id, 1);
+    valid.rich_text = "available";
+    fx.presence.on_network_message(
+        presence_envelope(fx.settings, std::string(32, '2'), valid));
+
+    EOS_Presence_HasPresenceOptions has = {};
+    has.ApiVersion = EOS_PRESENCE_HASPRESENCE_API_LATEST;
+    has.LocalUserId = fx.me();
+    has.TargetUserId = id_registry::instance().get_epic_account_id(friend_id);
+    CHECK(fx.presence.has_presence(&has) == EOS_TRUE);
+}
+
 TEST_CASE("an identical presence re-broadcast does not fire the change notification") {
     presence_fixture fx;
     g_change_count = 0;

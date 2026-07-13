@@ -37,6 +37,18 @@ void EOS_CALL on_simple(const EOS_Sessions_StartSessionCallbackInfo* info) {
     g_simple_result = info->ResultCode;
 }
 
+u32 g_registered_count;
+EOS_ProductUserId g_registered_player;
+void EOS_CALL on_registered(const EOS_Sessions_RegisterPlayersCallbackInfo* info) {
+    g_simple_fired = true;
+    g_simple_result = info->ResultCode;
+    g_registered_count = info->RegisteredPlayersCount;
+    g_registered_player =
+        (info->RegisteredPlayersCount > 0 && info->RegisteredPlayers != 0)
+            ? info->RegisteredPlayers[0]
+            : 0;
+}
+
 EOS_EResult g_find_result;
 bool g_find_fired;
 void EOS_CALL on_find(const EOS_SessionSearch_FindCallbackInfo* info) {
@@ -60,6 +72,8 @@ struct sessions_fixture {
         g_update_result = EOS_EResult::EOS_UnexpectedError;
         g_simple_result = EOS_EResult::EOS_UnexpectedError;
         g_find_result = EOS_EResult::EOS_UnexpectedError;
+        g_registered_count = 0;
+        g_registered_player = 0;
     }
     ~sessions_fixture() { sessions.emu_deinit(); }
 
@@ -624,6 +638,109 @@ TEST_CASE("a forged verdict from a non-host cannot stuff the roster with ghosts"
     REQUIRE(fx.sessions.copy_active_session_handle(&copy, &active) == EOS_EResult::EOS_Success);
     CHECK(fx.sessions.active_registered_count(active) == 1); // still just the host; no ghost
     fx.sessions.active_release(active);
+}
+
+// Review regression: joined participants must not be able to remove the session owner.
+TEST_CASE("a participant cannot remove the session owner from the roster") {
+    sessions_fixture fx;
+    const std::string id = fx.host("my-game", "b", 4);
+    EOS_ProductUserId participant =
+        id_registry::instance().get_product_user_id(std::string(32, 'a'));
+
+    EOS_Sessions_RegisterPlayersOptions add = {};
+    add.ApiVersion = EOS_SESSIONS_REGISTERPLAYERS_API_LATEST;
+    add.SessionName = "my-game";
+    add.PlayersToRegister = &participant;
+    add.PlayersToRegisterCount = 1;
+    fx.sessions.register_players(
+        &add, 0, reinterpret_cast<EOS_Sessions_OnRegisterPlayersCallback>(on_simple));
+    fx.callbacks.tick();
+    REQUIRE(g_simple_result == EOS_EResult::EOS_Success);
+
+    session_members update;
+    update.session_id = id;
+    update.player_ids.push_back(fx.settings.product_user_id());
+    byte_writer writer;
+    serialize(writer, update);
+    net_envelope envelope;
+    envelope.type_tag = static_cast<u16>(message_type::session_unregister);
+    envelope.source_id = participant->id_str;
+    envelope.game_id = fx.settings.product_id();
+    envelope.payload = writer.data();
+    fx.sessions.on_network_message(envelope);
+
+    EOS_Sessions_CopyActiveSessionHandleOptions copy = {};
+    copy.ApiVersion = EOS_SESSIONS_COPYACTIVESESSIONHANDLE_API_LATEST;
+    copy.SessionName = "my-game";
+    EOS_HActiveSession active = 0;
+    REQUIRE(fx.sessions.copy_active_session_handle(&copy, &active) == EOS_EResult::EOS_Success);
+    CHECK(fx.sessions.active_registered_count(active) == 2);
+    fx.sessions.active_release(active);
+}
+
+// Review regression: the completion ABI must identify the entries changed by the operation.
+TEST_CASE("register players reports the successfully registered players") {
+    sessions_fixture fx;
+    fx.host("my-game", "b", 4);
+    EOS_ProductUserId participant =
+        id_registry::instance().get_product_user_id(std::string(32, 'a'));
+
+    EOS_Sessions_RegisterPlayersOptions add = {};
+    add.ApiVersion = EOS_SESSIONS_REGISTERPLAYERS_API_LATEST;
+    add.SessionName = "my-game";
+    add.PlayersToRegister = &participant;
+    add.PlayersToRegisterCount = 1;
+    fx.sessions.register_players(&add, 0, on_registered);
+    fx.callbacks.tick();
+
+    REQUIRE(g_simple_result == EOS_EResult::EOS_Success);
+    CHECK(g_registered_count == 1);
+    CHECK(g_registered_player == participant);
+}
+
+// Review regression: only requested peers may contribute results, and results must match the query.
+TEST_CASE("a search ignores an unrequested non-matching response") {
+    sessions_fixture fx;
+    EOS_Sessions_CreateSessionSearchOptions create = {};
+    create.ApiVersion = EOS_SESSIONS_CREATESESSIONSEARCH_API_LATEST;
+    create.MaxSearchResults = 10;
+    EOS_HSessionSearch search = 0;
+    REQUIRE(fx.sessions.create_session_search(&create, &search) == EOS_EResult::EOS_Success);
+
+    EOS_Sessions_AttributeData bucket = string_attribute("bucket", "wanted");
+    EOS_SessionSearch_SetParameterOptions parameter = {};
+    parameter.ApiVersion = EOS_SESSIONSEARCH_SETPARAMETER_API_LATEST;
+    parameter.Parameter = &bucket;
+    parameter.ComparisonOp = EOS_EComparisonOp::EOS_CO_EQUAL;
+    REQUIRE(fx.sessions.search_set_parameter(search, &parameter) == EOS_EResult::EOS_Success);
+
+    EOS_SessionSearch_FindOptions find = {};
+    find.ApiVersion = EOS_SESSIONSEARCH_FIND_API_LATEST;
+    find.LocalUserId = fx.me();
+    fx.sessions.search_find(search, &find, 0, on_find);
+
+    session_infos non_matching;
+    non_matching.session_id = std::string(32, '9');
+    non_matching.owner_id = std::string(32, 'a');
+    non_matching.bucket_id = "different";
+    non_matching.max_players = 4;
+    non_matching.state = static_cast<i32>(EOS_EOnlineSessionState::EOS_OSS_Pending);
+    session_search_response response;
+    response.search_id = "1";
+    response.sessions.push_back(non_matching);
+    byte_writer writer;
+    serialize(writer, response);
+    net_envelope envelope;
+    envelope.type_tag = static_cast<u16>(message_type::session_search_response);
+    envelope.source_id = std::string(32, 'a');
+    envelope.game_id = fx.settings.product_id();
+    envelope.payload = writer.data();
+    fx.sessions.on_network_message(envelope);
+    fx.callbacks.tick();
+
+    CHECK(g_find_fired);
+    CHECK(fx.sessions.search_result_count(search) == 0);
+    fx.sessions.search_release(search);
 }
 
 // An UpdateSession callback carries strings it allocated. Tearing the platform down before the

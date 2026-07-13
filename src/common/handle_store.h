@@ -1,25 +1,29 @@
 #ifndef EOSR_COMMON_HANDLE_STORE_H
 #define EOSR_COMMON_HANDLE_STORE_H
 
+#include <atomic>
 #include <cstddef>
-#include <deque>
+#include <cstdint>
 #include <map>
 #include <memory>
 
 namespace eosr {
 
+// A handle is a small integer minted from a single process-wide counter, handed back to the game
+// as an opaque pointer. The counter never repeats and never reuses a value, which is what makes a
+// handle safe to hand out: because no value is ever issued twice, a released handle, a
+// double-release, and a handle minted by a different store all fail to find anything and are
+// ignored rather than dereferenced. Sharing one counter across every store is what lets a handle
+// from one store be rejected by another instead of colliding with an unrelated id.
+inline std::uintptr_t next_handle_id() {
+    // Starts at 1 so a null handle (0) is never a value we issued.
+    static std::atomic<std::uintptr_t> counter(1);
+    return counter.fetch_add(1);
+}
+
 // Hands the game an opaque handle to an object it later releases, and survives the ways a game
-// gets that wrong.
-//
-// The handle is a pointer to a slot, not to the object. Releasing frees the object but keeps the
-// slot, so a slot's address is never handed out twice. That is what makes a stale handle safe: a
-// release of one we already freed, or of a pointer we never issued, finds no live object and does
-// nothing, instead of freeing whatever happens to live at that address by then. Using a released
-// handle is likewise rejected rather than dereferenced.
-//
-// What accumulates is only the slots, and the objects behind them — a search's results, a
-// session's attributes — are freed on release, so a game that browses sessions all afternoon does
-// not grow without bound.
+// gets that wrong. Releasing removes the object outright, so memory tracks the handles a game is
+// actually holding -- a game that browses sessions all afternoon does not grow without bound.
 template <class object_type>
 class handle_store {
 public:
@@ -30,63 +34,35 @@ public:
 
     // Take ownership of `object` and return the handle the game will hold.
     void* add(std::unique_ptr<object_type> object) {
-        // A deque never moves an element already in it, so the slot's address is stable for as
-        // long as this store lives. That stability is the whole point.
-        slots_.push_back(slot());
-        slot* entry = &slots_.back();
-        entry->object = std::move(object);
-        index_[entry] = entry;
-        return entry;
+        const std::uintptr_t id = next_handle_id();
+        objects_[id] = std::move(object);
+        return reinterpret_cast<void*>(id);
     }
 
     // The object behind `handle`, or null if we never issued it or it has been released.
     object_type* find(void* handle) const {
-        const slot* entry = lookup(handle);
-        return (entry != 0) ? entry->object.get() : 0;
+        typename map_type::const_iterator it =
+            objects_.find(reinterpret_cast<std::uintptr_t>(handle));
+        return (it != objects_.end()) ? it->second.get() : 0;
     }
 
-    // Free the object behind `handle`. A handle we never issued, or one already released, is a
-    // no-op rather than a second free.
+    // Free the object behind `handle`. A handle we never issued, or one already released, finds
+    // nothing to erase and is a no-op rather than a second free.
     void release(void* handle) {
-        typename std::map<const void*, slot*>::iterator found = index_.find(handle);
-        if (found != index_.end()) {
-            found->second->object.reset();
-        }
+        objects_.erase(reinterpret_cast<std::uintptr_t>(handle));
     }
 
-    // Free every live object, keeping the slots so their addresses stay spent.
     void clear() {
-        typename std::map<const void*, slot*>::iterator it = index_.begin();
-        for (; it != index_.end(); ++it) {
-            it->second->object.reset();
-        }
+        objects_.clear();
     }
 
     std::size_t live_count() const {
-        std::size_t live = 0;
-        typename std::map<const void*, slot*>::const_iterator it = index_.begin();
-        for (; it != index_.end(); ++it) {
-            if (it->second->object) {
-                live++;
-            }
-        }
-        return live;
+        return objects_.size();
     }
 
 private:
-    struct slot {
-        std::unique_ptr<object_type> object;
-    };
-
-    const slot* lookup(const void* handle) const {
-        typename std::map<const void*, slot*>::const_iterator found = index_.find(handle);
-        return (found != index_.end()) ? found->second : 0;
-    }
-
-    std::deque<slot> slots_;
-    // Only a pointer we issued may be dereferenced, so a handle is looked up here before we ever
-    // treat it as a slot.
-    std::map<const void*, slot*> index_;
+    typedef std::map<std::uintptr_t, std::unique_ptr<object_type> > map_type;
+    map_type objects_;
 };
 
 } // namespace eosr

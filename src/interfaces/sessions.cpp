@@ -83,6 +83,20 @@ const char* duplicate(const std::string& text) {
     return copy;
 }
 
+// The register/unregister callbacks hand the game an array of the players the call actually
+// changed. The ids are interned handles, so the array only holds pointers; it is freed in
+// free_callback when the result is done with.
+EOS_ProductUserId* alloc_player_array(const std::vector<std::string>& ids) {
+    if (ids.empty()) {
+        return 0;
+    }
+    EOS_ProductUserId* out = new EOS_ProductUserId[ids.size()];
+    for (std::size_t i = 0; i < ids.size(); i++) {
+        out[i] = id_registry::instance().get_product_user_id(ids[i]);
+    }
+    return out;
+}
+
 // A session needs an id nobody else will pick. The same source the identity is minted from does.
 std::string generate_session_id() {
     static const char digits[] = "0123456789abcdef";
@@ -807,9 +821,18 @@ void sdk_sessions::register_players(const EOS_Sessions_RegisterPlayersOptions* o
         serialize(writer, notice);
         send_to_members(*entry, message_type::session_register, writer, std::string());
     }
-    deliver(cb_register, sizeof(EOS_Sessions_RegisterPlayersCallbackInfo),
-            reinterpret_cast<completion_delegate>(delegate), client_data,
-            changed.empty() ? EOS_EResult::EOS_NoChange : EOS_EResult::EOS_Success);
+
+    std::unique_ptr<frame_result> result(new frame_result());
+    EOS_Sessions_RegisterPlayersCallbackInfo* info =
+        static_cast<EOS_Sessions_RegisterPlayersCallbackInfo*>(
+            result->create_callback(cb_register, sizeof(EOS_Sessions_RegisterPlayersCallbackInfo),
+                                    reinterpret_cast<completion_delegate>(delegate)));
+    info->ResultCode = changed.empty() ? EOS_EResult::EOS_NoChange : EOS_EResult::EOS_Success;
+    info->ClientData = client_data;
+    info->RegisteredPlayers = alloc_player_array(changed);
+    info->RegisteredPlayersCount = static_cast<u32>(changed.size());
+    result->set_done(true);
+    callbacks_.add_callback(this, std::move(result));
 }
 
 void sdk_sessions::unregister_players(const EOS_Sessions_UnregisterPlayersOptions* options,
@@ -864,9 +887,19 @@ void sdk_sessions::unregister_players(const EOS_Sessions_UnregisterPlayersOption
         serialize(writer, notice);
         send_to_members(*entry, message_type::session_unregister, writer, std::string());
     }
-    deliver(cb_unregister, sizeof(EOS_Sessions_UnregisterPlayersCallbackInfo),
-            reinterpret_cast<completion_delegate>(delegate), client_data,
-            changed.empty() ? EOS_EResult::EOS_NoChange : EOS_EResult::EOS_Success);
+
+    std::unique_ptr<frame_result> result(new frame_result());
+    EOS_Sessions_UnregisterPlayersCallbackInfo* info =
+        static_cast<EOS_Sessions_UnregisterPlayersCallbackInfo*>(
+            result->create_callback(cb_unregister,
+                                    sizeof(EOS_Sessions_UnregisterPlayersCallbackInfo),
+                                    reinterpret_cast<completion_delegate>(delegate)));
+    info->ResultCode = changed.empty() ? EOS_EResult::EOS_NoChange : EOS_EResult::EOS_Success;
+    info->ClientData = client_data;
+    info->UnregisteredPlayers = alloc_player_array(changed);
+    info->UnregisteredPlayersCount = static_cast<u32>(changed.size());
+    result->set_done(true);
+    callbacks_.add_callback(this, std::move(result));
 }
 
 void sdk_sessions::join_session(const EOS_Sessions_JoinSessionOptions* options, void* client_data,
@@ -1071,13 +1104,16 @@ void sdk_sessions::search_find(void* handle, const EOS_SessionSearch_FindOptions
     object->query.search_id = id;
     object->query.max_results = object->max_results;
 
-    // Our own sessions answer the search too; a host can find what it is hosting.
+    // A host finds what it is hosting, but never a session it merely joined: those are the host's
+    // to surface, and a searcher should not turn up games it is already in. This is the local twin
+    // of the rule that only a host advertises over the network.
     std::map<std::string, session>::const_iterator local = sessions_.begin();
     for (; local != sessions_.end(); ++local) {
         if (object->results.size() >= object->max_results) {
             break;
         }
-        if (session_matches(local->second.infos, object->query)) {
+        if (local->second.local_state == session::hosting &&
+            session_matches(local->second.infos, object->query)) {
             object->results.push_back(local->second.infos);
         }
     }
@@ -1465,7 +1501,9 @@ void sdk_sessions::free_callback(frame_result& result) {
     pending_finds_.erase(&result);
     pending_joins_.erase(&result);
 
-    // The update callback is the one that hands the game strings of its own.
+    // These callbacks hand the game heap of their own: the update its session strings, and
+    // register/unregister the arrays of players they changed. A null (an error path never filled
+    // them) deletes safely.
     if (result.type_id() == cb_update) {
         EOS_Sessions_UpdateSessionCallbackInfo* info =
             result.get_callback<EOS_Sessions_UpdateSessionCallbackInfo>();
@@ -1473,6 +1511,16 @@ void sdk_sessions::free_callback(frame_result& result) {
         delete[] info->SessionId;
         info->SessionName = 0;
         info->SessionId = 0;
+    } else if (result.type_id() == cb_register) {
+        EOS_Sessions_RegisterPlayersCallbackInfo* info =
+            result.get_callback<EOS_Sessions_RegisterPlayersCallbackInfo>();
+        delete[] info->RegisteredPlayers;
+        info->RegisteredPlayers = 0;
+    } else if (result.type_id() == cb_unregister) {
+        EOS_Sessions_UnregisterPlayersCallbackInfo* info =
+            result.get_callback<EOS_Sessions_UnregisterPlayersCallbackInfo>();
+        delete[] info->UnregisteredPlayers;
+        info->UnregisteredPlayers = 0;
     }
 }
 
@@ -1508,12 +1556,14 @@ bool sdk_sessions::on_network_message(const net_envelope& message) {
         answer.search_id = query.search_id;
 
         // The one place a different game is turned away. We answer regardless, though: a searcher
-        // waits on every peer it asked, and an empty answer is what lets it stop waiting. Every
-        // matching session goes in one reply, so a searcher can never see part of what we host.
+        // waits on every peer it asked, and an empty answer is what lets it stop waiting. We answer
+        // only for sessions we host -- a copy of a session we merely joined is the host's to
+        // advertise, not ours, or a searcher would see the same session from every member.
         if (message.game_id == settings_.product_id()) {
             std::map<std::string, session>::const_iterator it = sessions_.begin();
             for (; it != sessions_.end(); ++it) {
-                if (session_matches(it->second.infos, query)) {
+                if (it->second.local_state == session::hosting &&
+                    session_matches(it->second.infos, query)) {
                     answer.sessions.push_back(it->second.infos);
                 }
             }
@@ -1525,6 +1575,10 @@ bool sdk_sessions::on_network_message(const net_envelope& message) {
     }
 
     if (message.type_tag == static_cast<u16>(message_type::session_search_response)) {
+        // Not our game's answer, so not ours to read.
+        if (message.game_id != settings_.product_id()) {
+            return true;
+        }
         session_search_response answer;
         if (!deserialize(reader, answer)) {
             return true;
@@ -1535,12 +1589,21 @@ bool sdk_sessions::on_network_message(const net_envelope& message) {
             if (object == 0 || !object->searching || object->query.search_id != answer.search_id) {
                 continue;
             }
+            // Only a peer we actually asked can answer this search; an unsolicited response, with a
+            // guessed search id, is ignored rather than allowed to plant results.
+            if (object->awaiting.find(message.source_id) == object->awaiting.end()) {
+                continue;
+            }
             object->awaiting.erase(message.source_id);
             for (std::size_t s = 0; s < answer.sessions.size(); s++) {
                 if (object->results.size() >= object->max_results) {
                     break;
                 }
-                object->results.push_back(answer.sessions[s]);
+                // Do not trust the responder to have filtered honestly: re-test each session
+                // against our own query, so a peer cannot return one that does not match.
+                if (session_matches(answer.sessions[s], object->query)) {
+                    object->results.push_back(answer.sessions[s]);
+                }
             }
         }
         return true;
@@ -1689,17 +1752,33 @@ bool sdk_sessions::on_network_message(const net_envelope& message) {
             return true;
         }
         session* entry = find_by_id(notice.session_id);
-        if (entry == 0 || !contains(entry->infos.registered_players, message.source_id)) {
-            return true; // only a registered member may move the roster
+        if (entry == 0) {
+            return true;
         }
         const bool adding = message.type_tag == static_cast<u16>(message_type::session_register);
+        const bool from_owner = message.source_id == entry->infos.owner_id;
+        // The host manages the whole roster; anyone else may only take itself out (leaving). A
+        // register from a non-host, or an unregister of anyone but the sender, is refused -- else
+        // a participant could evict the host, drop other players, or pad the roster with ghosts.
+        if (!from_owner) {
+            if (adding) {
+                return true;
+            }
+            for (std::size_t i = 0; i < notice.player_ids.size(); i++) {
+                if (notice.player_ids[i] != message.source_id) {
+                    return true;
+                }
+            }
+        }
         for (std::size_t i = 0; i < notice.player_ids.size(); i++) {
             const std::string& player = notice.player_ids[i];
             if (adding) {
-                if (!contains(entry->infos.registered_players, player)) {
+                if (!contains(entry->infos.registered_players, player) &&
+                    entry->infos.registered_players.size() < entry->infos.max_players) {
                     entry->infos.registered_players.push_back(player);
                 }
-            } else {
+            } else if (player != entry->infos.owner_id) {
+                // The host keeps its seat; it leaves by destroying the session, not unregistering.
                 remove_from(entry->infos.registered_players, player);
             }
         }

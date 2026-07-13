@@ -738,6 +738,40 @@ TEST_CASE("one instance hosts a game and another finds it and joins") {
     REQUIRE(g_join_result == EOS_EResult::EOS_Success);
     CHECK(host.active_registered_count(active) == 2);
 
+    // The guest has joined the host's session, so it holds a copy of it. When the guest searches,
+    // it must find exactly the one game -- the host's -- and not a second phantom match from the
+    // copy it merely joined. It asks the host (which answers, hosting) and seeds nothing of its own
+    // (a joined session is not something to find); a result of two would mean a session showing up
+    // once per member.
+    EOS_Sessions_CreateSessionSearchOptions again_options = {};
+    again_options.ApiVersion = EOS_SESSIONS_CREATESESSIONSEARCH_API_LATEST;
+    again_options.MaxSearchResults = 10;
+    EOS_HSessionSearch again = 0;
+    REQUIRE(guest.create_session_search(&again_options, &again) == EOS_EResult::EOS_Success);
+    EOS_Sessions_AttributeData again_bucket = {};
+    again_bucket.ApiVersion = EOS_SESSIONS_ATTRIBUTEDATA_API_LATEST;
+    again_bucket.Key = EOS_SESSIONS_SEARCH_BUCKET_ID;
+    again_bucket.ValueType = EOS_EAttributeType::EOS_AT_STRING;
+    again_bucket.Value.AsUtf8 = "Region:Coop";
+    EOS_SessionSearch_SetParameterOptions again_param = {};
+    again_param.ApiVersion = EOS_SESSIONSEARCH_SETPARAMETER_API_LATEST;
+    again_param.Parameter = &again_bucket;
+    again_param.ComparisonOp = EOS_EComparisonOp::EOS_CO_EQUAL;
+    REQUIRE(guest.search_set_parameter(again, &again_param) == EOS_EResult::EOS_Success);
+    EOS_SessionSearch_FindOptions again_find = {};
+    again_find.ApiVersion = EOS_SESSIONSEARCH_FIND_API_LATEST;
+    again_find.LocalUserId = guest_id;
+    g_found = false;
+    guest.search_find(again, &again_find, 0, on_found);
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return g_found;
+    });
+    REQUIRE(g_found);
+    CHECK(guest.search_result_count(again) == 1); // the host's game, once, not the joined copy too
+    guest.search_release(again);
+
     // Now the host quits, and the game the guest was in is gone.
     EOS_Sessions_DestroySessionOptions shut_down = {};
     shut_down.ApiVersion = EOS_SESSIONS_DESTROYSESSION_API_LATEST;
@@ -920,5 +954,166 @@ TEST_CASE("one instance sets rich presence and another sees it over the mesh") {
     guest.emu_deinit();
     host_net.stop();
     guest_net.stop();
+    platform::net_shutdown();
+}
+
+// The reviewer's exact scenario: host A, participant B, searcher C. Once B has joined A's session,
+// a search by C must turn up that session once -- from its host -- and never a second copy echoed
+// by B, who only joined it.
+namespace {
+
+struct mesh_node {
+    sdk_settings settings;
+    callback_manager cb;
+    message_router net;
+    sdk_connect connect;
+    sdk_sessions sessions;
+
+    mesh_node() : connect(settings, cb, net), sessions(settings, cb, net, connect) {}
+
+    void start(const char* product, u16 port) {
+        EOS_Platform_Options options = {};
+        options.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+        options.ProductId = product;
+        settings.apply_platform_options(&options);
+        connect.emu_init();
+        sessions.emu_init();
+        REQUIRE(start_router(net, settings.product_user_id(), settings.product_id(), port));
+
+        EOS_Connect_Credentials credentials = {};
+        credentials.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
+        credentials.Token = "device";
+        credentials.Type = EOS_EExternalCredentialType::EOS_ECT_DEVICEID_ACCESS_TOKEN;
+        EOS_Connect_LoginOptions login = {};
+        login.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
+        login.Credentials = &credentials;
+        connect.login(&login, 0, ignore_login);
+        cb.tick();
+    }
+
+    void stop() {
+        sessions.emu_deinit();
+        connect.emu_deinit();
+        net.stop();
+    }
+
+    EOS_ProductUserId id() {
+        return id_registry::instance().get_product_user_id(settings.product_user_id());
+    }
+};
+
+template <class predicate>
+void pump3(mesh_node& a, mesh_node& b, mesh_node& c, predicate done, int max_ms = 8000) {
+    for (int elapsed = 0; elapsed < max_ms && !done(); elapsed += 10) {
+        a.net.cb_run_frame();
+        b.net.cb_run_frame();
+        c.net.cb_run_frame();
+        a.cb.tick();
+        b.cb.tick();
+        c.cb.tick();
+        if (!done()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+}
+
+EOS_HSessionSearch bucket_search(sdk_sessions& sessions, EOS_ProductUserId who, const char* bucket) {
+    EOS_Sessions_CreateSessionSearchOptions options = {};
+    options.ApiVersion = EOS_SESSIONS_CREATESESSIONSEARCH_API_LATEST;
+    options.MaxSearchResults = 10;
+    EOS_HSessionSearch search = 0;
+    REQUIRE(sessions.create_session_search(&options, &search) == EOS_EResult::EOS_Success);
+    EOS_Sessions_AttributeData key = {};
+    key.ApiVersion = EOS_SESSIONS_ATTRIBUTEDATA_API_LATEST;
+    key.Key = EOS_SESSIONS_SEARCH_BUCKET_ID;
+    key.ValueType = EOS_EAttributeType::EOS_AT_STRING;
+    key.Value.AsUtf8 = bucket;
+    EOS_SessionSearch_SetParameterOptions parameter = {};
+    parameter.ApiVersion = EOS_SESSIONSEARCH_SETPARAMETER_API_LATEST;
+    parameter.Parameter = &key;
+    parameter.ComparisonOp = EOS_EComparisonOp::EOS_CO_EQUAL;
+    REQUIRE(sessions.search_set_parameter(search, &parameter) == EOS_EResult::EOS_Success);
+    return search;
+}
+
+} // namespace
+
+TEST_CASE("a participant does not re-advertise the host's session to a third searcher") {
+    REQUIRE(platform::net_init());
+    mesh_node a;
+    mesh_node b;
+    mesh_node c;
+    a.start("mesh-coop", 45820);
+    b.start("mesh-coop", 45820);
+    c.start("mesh-coop", 45820);
+
+    // All three know one another.
+    pump3(a, b, c, [&]() {
+        return a.connect.known_peer_count() >= 2 && b.connect.known_peer_count() >= 2 &&
+               c.connect.known_peer_count() >= 2;
+    });
+    REQUIRE(a.connect.known_peer_count() == 2);
+    REQUIRE(c.connect.known_peer_count() == 2);
+
+    // A hosts a game.
+    EOS_Sessions_CreateSessionModificationOptions create = {};
+    create.ApiVersion = EOS_SESSIONS_CREATESESSIONMODIFICATION_API_LATEST;
+    create.SessionName = "game";
+    create.BucketId = "Coop";
+    create.MaxPlayers = 4;
+    create.LocalUserId = a.id();
+    EOS_HSessionModification modification = 0;
+    REQUIRE(a.sessions.create_session_modification(&create, &modification) == EOS_EResult::EOS_Success);
+    EOS_Sessions_UpdateSessionOptions update = {};
+    update.ApiVersion = EOS_SESSIONS_UPDATESESSION_API_LATEST;
+    update.SessionModificationHandle = modification;
+    g_host_updated = false;
+    a.sessions.update_session(&update, 0, on_host_update);
+    a.cb.tick();
+    a.sessions.modification_release(modification);
+    REQUIRE(g_host_updated);
+
+    // B finds it and joins it.
+    EOS_HSessionSearch b_search = bucket_search(b.sessions, b.id(), "Coop");
+    EOS_SessionSearch_FindOptions b_find = {};
+    b_find.ApiVersion = EOS_SESSIONSEARCH_FIND_API_LATEST;
+    b_find.LocalUserId = b.id();
+    g_found = false;
+    b.sessions.search_find(b_search, &b_find, 0, on_found);
+    pump3(a, b, c, [&]() { return g_found; });
+    REQUIRE(b.sessions.search_result_count(b_search) == 1);
+
+    EOS_SessionSearch_CopySearchResultByIndexOptions pick = {};
+    pick.ApiVersion = EOS_SESSIONSEARCH_COPYSEARCHRESULTBYINDEX_API_LATEST;
+    pick.SessionIndex = 0;
+    EOS_HSessionDetails b_details = 0;
+    REQUIRE(b.sessions.search_copy_result(b_search, &pick, &b_details) == EOS_EResult::EOS_Success);
+    EOS_Sessions_JoinSessionOptions join = {};
+    join.ApiVersion = EOS_SESSIONS_JOINSESSION_API_LATEST;
+    join.SessionName = "joined";
+    join.SessionHandle = b_details;
+    join.LocalUserId = b.id();
+    g_joined = false;
+    b.sessions.join_session(&join, 0, on_joined);
+    pump3(a, b, c, [&]() { return g_joined; });
+    REQUIRE(g_join_result == EOS_EResult::EOS_Success);
+
+    // Now C searches. A answers (it hosts the game); B must stay silent (it only joined). One match.
+    EOS_HSessionSearch c_search = bucket_search(c.sessions, c.id(), "Coop");
+    EOS_SessionSearch_FindOptions c_find = {};
+    c_find.ApiVersion = EOS_SESSIONSEARCH_FIND_API_LATEST;
+    c_find.LocalUserId = c.id();
+    g_found = false;
+    c.sessions.search_find(c_search, &c_find, 0, on_found);
+    pump3(a, b, c, [&]() { return g_found; });
+    REQUIRE(g_found);
+    CHECK(c.sessions.search_result_count(c_search) == 1);
+
+    c.sessions.search_release(c_search);
+    b.sessions.details_release(b_details);
+    b.sessions.search_release(b_search);
+    a.stop();
+    b.stop();
+    c.stop();
     platform::net_shutdown();
 }

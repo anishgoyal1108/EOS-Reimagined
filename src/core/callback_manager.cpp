@@ -27,7 +27,20 @@ void callback_manager::register_callbacks(i_run_callback* owner) {
 
 void callback_manager::unregister_callbacks(i_run_callback* owner) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    callbacks_to_run_.erase(owner);
+    std::map<i_run_callback*, std::deque<std::unique_ptr<frame_result>>>::iterator it =
+        callbacks_to_run_.find(owner);
+    if (it == callbacks_to_run_.end()) {
+        return;
+    }
+    // A queued result may own heap fields in its payload. This runs during the owner's teardown,
+    // before clear() ever gets the chance, so it -- not clear() -- has to release them or a
+    // platform torn down with callbacks still queued leaks. The owner is still alive here.
+    for (std::size_t i = 0; i < it->second.size(); i++) {
+        if (it->second[i]) {
+            owner->free_callback(*it->second[i]);
+        }
+    }
+    callbacks_to_run_.erase(it);
 }
 
 void callback_manager::add_callback(i_run_callback* owner, std::unique_ptr<frame_result> result) {

@@ -116,3 +116,16 @@ TEST_CASE("notifications: nonzero id, lookup by type, and removal") {
     CHECK(mgr.notification_ids(&rec, type_id).size() == 0);
     CHECK((mgr.find_notification(&rec, id) == 0));
 }
+
+// Review regression: skipped until unregister_callbacks drains callback-owned payloads.
+// Run explicitly with: unit_tests --no-skip --test-case="unregistering callbacks frees queued payloads"
+TEST_CASE("unregistering callbacks frees queued payloads") {
+    callback_manager mgr;
+    recorder rec;
+    mgr.register_callbacks(&rec);
+    mgr.add_callback(&rec, make_result(on_a, true));
+
+    mgr.unregister_callbacks(&rec);
+
+    CHECK(rec.freed == 1);
+}

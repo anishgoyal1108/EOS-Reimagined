@@ -165,6 +165,7 @@ void sdk_presence::emu_init() {
     network_.register_listener(message_type::presence_request, this);
     network_.register_listener(message_type::presence_info, this);
     network_.register_listener(message_type::peer_connected, this);
+    network_.register_listener(message_type::peer_disconnected, this);
     seed_myself();
     registered_ = true;
 }
@@ -176,6 +177,7 @@ void sdk_presence::emu_deinit() {
     network_.unregister_listener(message_type::presence_request, this);
     network_.unregister_listener(message_type::presence_info, this);
     network_.unregister_listener(message_type::peer_connected, this);
+    network_.unregister_listener(message_type::peer_disconnected, this);
     callbacks_.unregister_callbacks(this);
     callbacks_.unregister_frame(this);
 
@@ -691,6 +693,22 @@ bool sdk_presence::on_network_message(const net_envelope& message) {
         return true;
     }
 
+    // A peer that leaves takes its presence and its account bindings with it, so the accounts it
+    // spoke for are free for whoever holds them next, and a game no longer sees a friend who is
+    // gone as present.
+    if (message.type_tag == static_cast<u16>(message_type::peer_disconnected)) {
+        std::map<std::string, std::string>::iterator owner = epic_owner_.begin();
+        while (owner != epic_owner_.end()) {
+            if (owner->second == message.source_id) {
+                presences_.erase(owner->first);
+                epic_owner_.erase(owner++);
+            } else {
+                ++owner;
+            }
+        }
+        return true;
+    }
+
     // A different game's presence is not ours to cache or answer.
     if (message.game_id != settings_.product_id()) {
         return true;
@@ -719,18 +737,21 @@ bool sdk_presence::on_network_message(const net_envelope& message) {
         if (incoming.epic_id.empty() || incoming.epic_id == settings_.epic_account_id()) {
             return true;
         }
-        // A peer may speak only for its own account. We bind each Epic id to the mesh peer that
-        // first announced it (its source id is authenticated by the connection), and refuse anyone
-        // else's attempt to speak for it -- otherwise a peer could forge a friend's join string.
+        // Reject a malformed message before it can leave any trace. Validating first is what keeps
+        // a bad announcement from claiming an account (below) and locking out the real owner.
+        if (!presence_within_caps(incoming)) {
+            return true;
+        }
+        // A peer may speak only for its own account. Each Epic id is bound to the peer that
+        // announced it, and anyone else claiming it is refused, so a peer cannot forge a friend's
+        // presence or join string. Identity on the mesh is self-asserted, so this binds accounts to
+        // sources among cooperating peers rather than defending against one that spoofs another's
+        // id; a peer's binding is released when it disconnects (see peer_disconnected) so a departed
+        // account can be re-announced by whoever holds it next.
         std::map<std::string, std::string>::iterator owner = epic_owner_.find(incoming.epic_id);
         if (owner == epic_owner_.end()) {
             epic_owner_[incoming.epic_id] = message.source_id;
         } else if (owner->second != message.source_id) {
-            return true;
-        }
-        // Fields a peer cannot legitimately produce (the same emulator enforces these caps before
-        // it ever sends) mark the message as malformed rather than something to cache and hand on.
-        if (!presence_within_caps(incoming)) {
             return true;
         }
 
