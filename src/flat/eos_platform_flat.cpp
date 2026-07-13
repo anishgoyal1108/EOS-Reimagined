@@ -267,6 +267,11 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetDesktopCrossplayStatus(
     }
 #if defined(_WIN32)
     OutDesktopCrossplayStatusInfo->Status = EOS_EDesktopCrossplayStatus::EOS_DCS_OK;
+    // Every field of an out-struct is ours to write. This one only carries meaning when the status
+    // is ServiceStartFailed, which ours never is -- but a game is told to put it in its logs and its
+    // error screens, so leaving it as whatever the game happened to have there is not an option. The
+    // reference emulator writes -1, and so do we.
+    OutDesktopCrossplayStatusInfo->ServiceInitResult = -1;
     return EOS_EResult::EOS_Success;
 #else
     return EOS_EResult::EOS_NotImplemented;

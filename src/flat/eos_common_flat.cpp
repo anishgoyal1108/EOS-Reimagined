@@ -97,7 +97,10 @@ EOS_DECLARE_FUNC(EOS_Bool) EOS_EResult_IsOperationComplete(EOS_EResult Result) {
 EOS_DECLARE_FUNC(EOS_EResult) EOS_ByteArray_ToString(const uint8_t* ByteArray, const uint32_t Length,
                                                      char* OutBuffer,
                                                      uint32_t* InOutBufferLength) {
-    if (OutBuffer == 0 || InOutBufferLength == 0 || (Length != 0 && ByteArray == 0)) {
+    // A zero length is not an empty success: the header lists InvalidParameters for "a null pointer
+    // or invalid length", and the reference SDK refuses a zero length outright. There is nothing to
+    // encode, and a caller asking us to encode nothing has made a mistake it would rather hear about.
+    if (OutBuffer == 0 || InOutBufferLength == 0 || ByteArray == 0 || Length == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
     // Two characters a byte, plus room for the null. We have to know that fits in the length we

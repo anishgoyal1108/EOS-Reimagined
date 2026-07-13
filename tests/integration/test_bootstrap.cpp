@@ -762,9 +762,10 @@ TEST_CASE("the built SDK library exposes the version, result and byte-array help
     CHECK(fn_bytes_to_string(bytes, 5, buffer, &small) == EOS_EResult::EOS_LimitExceeded);
     CHECK(small == 11);
 
+    // A zero length is not an empty success. The header calls an invalid length InvalidParameters,
+    // and the reference SDK refuses it outright -- there is nothing to encode.
     uint32_t empty = static_cast<uint32_t>(sizeof(buffer));
-    CHECK(fn_bytes_to_string(bytes, 0, buffer, &empty) == EOS_EResult::EOS_Success);
-    CHECK(std::string(buffer).empty());
+    CHECK(fn_bytes_to_string(bytes, 0, buffer, &empty) == EOS_EResult::EOS_InvalidParameters);
 
     CHECK(std::string(fn_app_status_to_string(EOS_EApplicationStatus::EOS_AS_Foreground)) ==
           "EOS_AS_Foreground");
@@ -904,7 +905,10 @@ TEST_CASE("the built SDK library carries application, network, country and local
 
     EOS_Platform_GetDesktopCrossplayStatusOptions crossplay = {};
     crossplay.ApiVersion = EOS_PLATFORM_GETDESKTOPCROSSPLAYSTATUS_API_LATEST;
-    EOS_Platform_DesktopCrossplayStatusInfo info = {};
+    // Poisoned, not zeroed: every field of an out-struct is ours to write, and a zeroed one would
+    // hide us failing to write one.
+    EOS_Platform_DesktopCrossplayStatusInfo info;
+    std::memset(&info, 0x5a, sizeof(info));
 #if defined(_WIN32)
     // The header says desktop crossplay "is required to use Epic accounts login with applications
     // that are distributed outside the Epic Games Store" -- and a game with our library dropped into
@@ -913,6 +917,9 @@ TEST_CASE("the built SDK library carries application, network, country and local
     // exist to provide. So we say the prerequisites are met, because for us they are.
     CHECK(fn_crossplay(platform, &crossplay, &info) == EOS_EResult::EOS_Success);
     CHECK(info.Status == EOS_EDesktopCrossplayStatus::EOS_DCS_OK);
+    // Only meaningful when the status is ServiceStartFailed, but a game is told to log it, so it
+    // must not be whatever the game had in that memory before it called us.
+    CHECK(info.ServiceInitResult == -1);
 #else
     // This API is Windows-only; the header explicitly requires NotImplemented elsewhere.
     CHECK(fn_crossplay(platform, &crossplay, &info) == EOS_EResult::EOS_NotImplemented);
