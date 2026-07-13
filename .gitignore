@@ -31,6 +31,18 @@ Thumbs.db
 *.rep
 
 # Local tooling (not for distribution)
+.clangd
+
+# AI coding assistants: their instruction files and caches are a local convenience and say
+# nothing about the library, so they stay out of the tree.
+AGENTS.md
+.agents/
 CLAUDE.md
 .claude/
-.clangd
+CODEX.md
+codex.md
+.codex/
+.cursor/
+.cursorrules
+.aider*
+.github/copilot-instructions.md
