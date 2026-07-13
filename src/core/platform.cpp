@@ -3,6 +3,7 @@
 #include <chrono>
 
 #include "common/log.h"
+#include "platform/paths.h"
 #include "platform/socket.h"
 
 namespace eosr {
@@ -31,6 +32,12 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
     if (!platform::net_init()) {
         log_error("platform: socket subsystem failed to initialize");
         return false;
+    }
+    // Take the persistent profile before the options fold the title into it, so the identity we
+    // advertise is the one whose key we can actually prove. Failing that, the ephemeral key the
+    // settings started with stands: the mesh still works, the identity just does not outlive the run.
+    if (!settings_.load_identity(platform::user_data_directory())) {
+        log_warn("platform: no profile directory available; this identity lasts only for this run");
     }
     settings_.apply_platform_options(options);
     cb_manager_.set_max_tick_budget(std::chrono::milliseconds(settings_.tick_budget_ms()));

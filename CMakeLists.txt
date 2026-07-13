@@ -27,6 +27,7 @@ add_library(eosr_core STATIC
     src/common/crypto.cpp
     src/core/frame_result.cpp
     src/core/callback_manager.cpp
+    src/core/identity.cpp
     src/core/settings.cpp
     src/core/client.cpp
     src/core/platform.cpp
@@ -59,6 +60,7 @@ if(WIN32)
         src/platform/socket_win32.cpp
         src/platform/net_iface_win32.cpp
         src/platform/rng_win32.cpp
+        src/platform/paths_win32.cpp
     )
     target_compile_definitions(eosr_core PRIVATE _WIN32_WINNT=0x0600)
     # iphlpapi enumerates the adapters discovery broadcasts to; bcrypt is the system random source
@@ -69,6 +71,7 @@ else()
         src/platform/socket_linux.cpp
         src/platform/net_iface_linux.cpp
         src/platform/rng_linux.cpp
+        src/platform/paths_linux.cpp
     )
 endif()
 

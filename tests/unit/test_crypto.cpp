@@ -197,3 +197,47 @@ TEST_CASE("a generated X25519 keypair agrees on a shared secret") {
     REQUIRE(x25519_shared(ba, b_priv, a_pub));
     CHECK(tohex(ab, 32) == tohex(ba, 32));
 }
+
+// Every hashed input in the authenticated mesh is length-prefixed. A raw concatenation would make
+// ("ab","c") and ("a","bc") one and the same input, so two different peers -- or two different
+// games -- could derive one identity, or one handshake transcript, and never notice.
+// Spec: enc()/lp() (docs/adr/0001 §4, §11)
+TEST_CASE("the canonical encoder length-prefixes every field") {
+    canonical_encoder encoder;
+    encoder.field("ab").field("c").field("");
+    const std::vector<u8>& encoded = encoder.data();
+
+    // 00000002 'ab' 00000001 'c' 00000000
+    REQUIRE(encoded.size() == 4 + 2 + 4 + 1 + 4);
+    CHECK(tohex(encoded.data(), encoded.size()) == "000000026162000000016300000000");
+}
+
+TEST_CASE("no two field lists share a canonical encoding") {
+    canonical_encoder split_left;
+    canonical_encoder split_right;
+    split_left.field("ab").field("c").field("");
+    split_right.field("a").field("bc").field("");
+    CHECK(split_left.data() != split_right.data());
+
+    // An empty field is a field: dropping one must not leave the same bytes behind.
+    canonical_encoder with_empty;
+    canonical_encoder without_empty;
+    with_empty.field("a").field("");
+    without_empty.field("a");
+    CHECK(with_empty.data() != without_empty.data());
+}
+
+TEST_CASE("fixed-width numbers are fields, and a bare byte is not") {
+    canonical_encoder numbers;
+    numbers.field_u32(1).field_u64(2);
+    // 00000004 00000001 | 00000008 0000000000000002
+    CHECK(tohex(numbers.data().data(), numbers.data().size()) ==
+          "0000000400000001" "000000080000000000000002");
+
+    // The prologue pins the wire version as a bare byte, which needs no length to be unambiguous.
+    canonical_encoder prologue;
+    prologue.field("eosr-noise-v1").raw_u8(2);
+    const std::vector<u8>& encoded = prologue.data();
+    REQUIRE(encoded.size() == 4 + 13 + 1);
+    CHECK(encoded[encoded.size() - 1] == 2);
+}

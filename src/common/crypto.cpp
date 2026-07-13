@@ -249,4 +249,40 @@ void secure_wipe(void* secret, std::size_t size) {
     crypto_wipe(secret, size);
 }
 
+canonical_encoder& canonical_encoder::field(const u8* data, std::size_t len) {
+    const u32 length = static_cast<u32>(len);
+    buffer_.push_back(static_cast<u8>((length >> 24) & 0xff));
+    buffer_.push_back(static_cast<u8>((length >> 16) & 0xff));
+    buffer_.push_back(static_cast<u8>((length >> 8) & 0xff));
+    buffer_.push_back(static_cast<u8>(length & 0xff));
+    if (len != 0) {
+        buffer_.insert(buffer_.end(), data, data + len);
+    }
+    return *this;
+}
+
+canonical_encoder& canonical_encoder::field(const std::string& text) {
+    return field(reinterpret_cast<const u8*>(text.data()), text.size());
+}
+
+canonical_encoder& canonical_encoder::field_u32(u32 value) {
+    const u8 bytes[4] = {
+        static_cast<u8>((value >> 24) & 0xff), static_cast<u8>((value >> 16) & 0xff),
+        static_cast<u8>((value >> 8) & 0xff), static_cast<u8>(value & 0xff)};
+    return field(bytes, sizeof(bytes));
+}
+
+canonical_encoder& canonical_encoder::field_u64(u64 value) {
+    u8 bytes[8];
+    for (int i = 0; i < 8; i++) {
+        bytes[i] = static_cast<u8>((value >> (56 - 8 * i)) & 0xff);
+    }
+    return field(bytes, sizeof(bytes));
+}
+
+canonical_encoder& canonical_encoder::raw_u8(u8 value) {
+    buffer_.push_back(value);
+    return *this;
+}
+
 } // namespace eosr

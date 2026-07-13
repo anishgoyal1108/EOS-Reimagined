@@ -18,6 +18,28 @@ std::vector<u8> hmac_sha256(const u8* key, std::size_t key_len, const u8* messag
 std::string base64url_encode(const u8* data, std::size_t len);
 std::string base64url_encode(const std::string& text);
 
+// The canonical encoding every hashed input in the authenticated mesh is built with: each field is
+// its byte length as a big-endian u32, then the bytes. Hashing a raw concatenation instead would
+// make ("ab", "c") and ("a", "bc") the same input, so two different peers -- or two different
+// games -- could derive one identity or one handshake transcript. Fixed-width numbers are fields
+// too, so a value can never be mistaken for the length of the next one.
+// Spec: enc()/lp() (docs/adr/0001 §4)
+class canonical_encoder {
+public:
+    canonical_encoder& field(const u8* data, std::size_t len);
+    canonical_encoder& field(const std::string& text);
+    canonical_encoder& field_u32(u32 value);
+    canonical_encoder& field_u64(u64 value);
+    // A bare byte, not length-prefixed: the prologue pins the wire version this way, and a
+    // fixed-width value needs no length to be unambiguous.
+    canonical_encoder& raw_u8(u8 value);
+
+    const std::vector<u8>& data() const { return buffer_; }
+
+private:
+    std::vector<u8> buffer_;
+};
+
 // --- Primitives for the authenticated mesh (docs/adr/0001) ---
 //
 // These wrap the vendored Monocypher; that dependency lives only in crypto.cpp and never escapes

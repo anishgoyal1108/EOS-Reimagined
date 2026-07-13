@@ -52,37 +52,39 @@ TEST_CASE("two unconfigured instances get different identities") {
     CHECK(id_string_is_valid(a.product_user_id()));
     CHECK(id_string_is_valid(b.product_user_id()));
 
-    // Applying options must not disturb an identity we already minted.
-    const std::string before = a.product_user_id();
+    // Applying options folds the title into the product user id, so that id moves -- but the
+    // profile behind it does not, and the epic account id it derives stays put.
+    const std::string account_before = a.epic_account_id();
     EOS_Platform_Options opts = make_options();
     a.apply_platform_options(&opts);
-    CHECK(a.product_user_id() == before);
+    CHECK(a.epic_account_id() == account_before);
+    CHECK(id_string_is_valid(a.product_user_id()));
 }
 
-TEST_CASE("identity is deterministic for a given username and product") {
+// The username used to seed the identity, which meant anyone who typed a name answered to that
+// player's id. The profile key replaced it, and the name is now only what other players see.
+TEST_CASE("the username is a display name and does not move the identity") {
+    sdk_settings settings;
+    const std::string account = settings.epic_account_id();
+    const std::string user = settings.product_user_id();
+
+    settings.set_username("InfernusHawk");
+    CHECK(settings.username() == "InfernusHawk");
+    CHECK(settings.epic_account_id() == account);
+    CHECK(settings.product_user_id() == user);
+}
+
+TEST_CASE("two instances sharing a username are still two different players") {
     sdk_settings a;
     sdk_settings b;
-
     a.set_username("InfernusHawk");
     b.set_username("InfernusHawk");
-    CHECK(a.product_user_id() == b.product_user_id());
-    CHECK(a.epic_account_id() == b.epic_account_id());
-}
-
-TEST_CASE("a different username yields a different identity") {
-    sdk_settings a;
-    a.set_username("PlayerOne");
-    sdk_settings b;
-    b.set_username("PlayerTwo");
     CHECK(a.product_user_id() != b.product_user_id());
     CHECK(a.epic_account_id() != b.epic_account_id());
 }
 
 TEST_CASE("platform options are captured and re-derive the identity") {
     sdk_settings s;
-    // A configured user is what makes the identity derived rather than minted, so this is the case
-    // where the product takes part in the seed.
-    s.set_username("InfernusHawk");
     const std::string before = s.product_user_id();
 
     EOS_Platform_Options opts = make_options();
@@ -100,7 +102,7 @@ TEST_CASE("platform options are captured and re-derive the identity") {
     CHECK(s.is_server());
     CHECK(s.flags() == 0x3u);
     CHECK(s.tick_budget_ms() == 5u);
-    // product_id feeds the identity seed, so the id changed but stays valid.
+    // The title is folded into the product user id, so it moved -- and stays a valid id.
     CHECK(s.product_user_id() != before);
     CHECK(id_string_is_valid(s.product_user_id()));
 }

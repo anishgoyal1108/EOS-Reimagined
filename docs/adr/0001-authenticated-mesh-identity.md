@@ -116,29 +116,35 @@ udp_i2r, udp_r2i    = HKDF( salt = ck_final,                     // the SECRET N
 `wire_protocol_version` **1 → 2**. A v2 peer speaks the Noise handshake; a v1 peer speaks the plaintext `net_advertise` handshake.
 
 - **v2 ↔ v2:** authenticated, as above.
-- **v2 ↔ v1:** governed by the peer's mode (Section 9). In *authenticated mode* a v2 peer refuses a v1 peer (no silent downgrade). In *legacy/compatibility mode* it may accept v1 with the old connection-bound (unauthenticated-first-contact) semantics, and the peer is surfaced as **unverified**.
+- **v2 ↔ v1:** **refused.** A v1 peer cannot prove an identity, and there are no v1 profiles in the world to be compatible with (Section 9), so there is no downgrade path to keep open. The prologue pins the version into the transcript, so a v1 peer simply fails the handshake rather than being talked out of one.
 
 ## 9. Migration & modes
 
-Existing profiles derive ids deterministically from username, or randomly when unconfigured (`settings::derive_identity`). We cannot both *preserve an arbitrary legacy id* and *authenticate it on first contact* — the legacy id is not bound to any key. So:
+**Amended when task 53 landed. There is no legacy profile to migrate, so there is no legacy mode.**
 
-- **New profile (default going forward):** generate an X25519 profile key on first run, derive self-certifying ids (Section 4), run in **authenticated mode**.
-- **Legacy profile:** keep the username/random id, generate a key, and pin `(id → key)` on first contact — **TOFU**. Strong continuity *after* first meeting; first meeting is still self-asserted. Such peers are labeled **unverified** to the game/UI and never silently upgrade a claim.
-- **Profile export/import:** a small file so the same person keeps one identity across machines (replacing the "derive from username" portability we lose).
-- **Orchestrator provisioning:** allow a launcher (e.g. Nucleus) to provision a **distinct profile key per local instance**, so N local copies are N distinct authenticated identities.
-- **No silent downgrade:** authenticated mode never falls back to unverified for the same peer within a session; a peer is either verified (key-proven) or explicitly unverified.
+The original plan here was: keep an existing username-derived or random id, generate a key for it, and pin `(id → key)` on first contact (TOFU), with a v2 peer able to accept a v1 peer as *unverified*. Implementing it revealed the premise was wrong. `settings::derive_identity` re-derived its ids **in memory on every run and never wrote them anywhere** — the emulator had no persistence at all. No identity has ever survived a process exit, so no user holds one, and nothing exists to preserve. A legacy/TOFU mode would be dead code whose only effect would be to keep an unauthenticated acceptance path alive in the router.
 
-The mode is a platform setting; default **authenticated** for new profiles, **legacy/TOFU** when an existing username/random identity is detected, with a clear log line either way.
+So the mode is dropped. Authenticated is the only mode:
+
+- **Every profile is a key.** An X25519 profile key is minted on first run, persisted, and the ids are derived from it (Section 4). Losing the file loses the identity; there is no authority that can reissue it.
+- **No downgrade, no unverified peer.** A v1 peer is refused outright (Section 8). A peer is verified or it is not connected.
+- **Profile export/import:** the profile file *is* the export format — 64 hex characters. Copying it to another machine makes you the same player there, which is the portability the username derivation used to give (and gave to anyone else who typed the same name).
+- **A profile slot per local instance.** Several copies of one game on one machine must be several *players*. If they all read one profile file they would derive one id, each would see the other's advertisement as its own, and couch co-op would never mesh — the exact failure the old random-id mint was avoiding. Each instance therefore takes an **exclusive profile slot** (`profile.key`, `profile-1.key`, …), held by an OS advisory lock for the life of the process, in the same way and for the same reason each instance takes an exclusive discovery port. The lock dies with the process, so a crash never strands a slot, and a given instance lands on the same profile every run.
+- **Orchestrator provisioning:** a launcher (e.g. Nucleus) can instead point each instance at its own directory via `EOSR_DATA_DIR`, which is also how the alpha test tooling runs two isolated players on one machine.
+- **No writable directory** is not fatal: the instance keeps the ephemeral key it started with and logs that the identity will not outlive the run. The mesh still works; only persistence is lost.
 
 ## 10. Code layout
 
 ```
 third_party/monocypher/        monocypher.c, monocypher.h, LICENSE.md, UPSTREAM.md (version + checksums)
-src/common/crypto.{h,cpp}      + X25519, ChaCha20-Poly1305 (thin wrappers; Monocypher API never escapes), HKDF
+src/common/crypto.{h,cpp}      + X25519, ChaCha20-Poly1305 (thin wrappers; Monocypher API never escapes),
+                               HKDF, canonical_encoder (the enc()/lp() of §4)
 src/net/secure_channel.{h,cpp} Noise XX SymmetricState/HandshakeState + transport cipher states
-src/core/identity.{h,cpp}      profile key load/generate, id derivation, verified-identity registry, mode/TOFU
+src/core/identity.{h,cpp}      profile key load/generate/persist, id derivation, per-instance profile
+                               slot, hex export/import
 src/net/message_router.*       runs the handshake, frames over the channel, exposes the verified id
-src/platform/paths.*           profile-key file location (already have the config-dir shim)
+src/platform/paths.*           data directory (EOSR_DATA_DIR override), mkdir -p, owner-only file
+                               write, and the advisory file_lock the profile slot is held with
 ```
 
 The Monocypher header is included **only** inside `src/common/crypto.cpp` (and the vendored target). Nothing else in the tree sees it, so a future primitive swap touches one file.
@@ -156,15 +162,16 @@ The Monocypher header is included **only** inside `src/common/crypto.cpp` (and t
 - **Encoding non-ambiguity:** `enc("ab","c","")` and `enc("a","bc","")` produce **different** PUIDs and different prologues (the length-prefix regression from the review).
 - **Transport-key separation:** the TCP counter-0 and UDP sequence-0 tuples never share a `(key, nonce)` — the UDP keys are derived under their own label and differ from the Split outputs.
 - **PSK (when gating is enabled):** the `Noise_XXpsk0_25519_ChaChaPoly_SHA256` path matches its official vectors, and a non-64-hex or otherwise malformed `EncryptionKey` is rejected explicitly, not silently ignored.
-- **Legacy:** in authenticated mode a v1/legacy peer is refused without downgrade; in legacy mode it is accepted and surfaced unverified.
+- **No downgrade:** a v1 peer is refused; there is no code path that adopts an unverified peer.
+- **Profile slots:** two instances sharing one profile directory take two slots and derive two different identities; each keeps its slot across runs; a crashed instance's slot is free again; a corrupt or all-zero profile is replaced rather than adopted.
 - **Sanitizers + fuzz:** ASan/UBSan across the suite; a malformed-frame fuzz target on the channel decoder. (Note: the integration/dynamic-library LSan tier has a **pre-existing** process-lifetime leak in the load/unload path, present since `foundation-frozen` and unrelated to crypto — tracked separately; the unit tier is leak-clean.)
 
 ## 12. Implementation phases (each committed green on both targets, ASan-clean)
 
-1. Vendor Monocypher (fetch + verify + CMake target). *(task 50)*
-2. crypto wrapper: X25519, ChaCha20-Poly1305, HKDF + KATs. *(task 51)*
-3. `secure_channel`: Noise XX + Noise vectors + transcript-equality. *(task 52)*
-4. Self-certifying identity + profile key + legacy/TOFU + export/import. *(task 53)*
+1. ~~Vendor Monocypher (fetch + verify + CMake target).~~ *(task 50 — done)*
+2. ~~crypto wrapper: X25519, ChaCha20-Poly1305, HKDF + KATs.~~ *(task 51 — done)*
+3. ~~`secure_channel`: Noise XX + Noise vectors + transcript-equality.~~ *(task 52 — done)*
+4. ~~Self-certifying identity + profile key + per-instance slot + export/import.~~ *(task 53 — done; legacy/TOFU dropped, see §9)*
 5. Wire v2: router runs the handshake, frames over the channel, exposes the verified id; authenticated UDP + replay; interfaces consume the verified id; full regression + authenticated-mesh e2e. *(task 54)*
 
 ## 13. What this does not change

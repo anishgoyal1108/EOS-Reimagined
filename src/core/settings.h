@@ -6,29 +6,43 @@
 #include "eos_types.h"
 
 #include "common/types.h"
+#include "core/identity.h"
 
 namespace eosr {
 
-// The per-platform configuration and local identity. The application-supplied half comes
-// from EOS_Platform_Options (product/sandbox/deployment ids, encryption key, flags); the
-// identity half is derived deterministically from the username so the same user always
-// resolves to the same ids across runs and peers. Reading the on-disk eos_reimagined.json
-// is layered on with the Connect interface, where the username actually drives login.
-// Spec: Settings + username->id derivation (docs/architecture.md), EOSSDK_Platform option members (docs/client.md)
+// The per-platform configuration and local identity. The application-supplied half comes from
+// EOS_Platform_Options (product/sandbox/deployment ids, encryption key, flags); the identity half
+// comes from the profile key, which is what a peer proves it holds during the handshake. A settings
+// object starts with an ephemeral key so it always has a usable identity, and the platform upgrades
+// it to the persistent profile on disk when it is created.
+//
+// The username is a display name and nothing more. It used to seed the identity, which meant anyone
+// who knew a name could answer to that player's id; the key replaced it.
+// Spec: Settings (docs/architecture.md), EOSSDK_Platform option members (docs/client.md),
+// self-certifying identity (docs/adr/0001)
 class sdk_settings {
 public:
     sdk_settings();
 
-    // Copy the application-supplied option strings and re-derive the local identity. Ignores
-    // a null pointer; treats any null option string as empty.
+    // Copy the application-supplied option strings and fold the title into the product user id.
+    // Ignores a null pointer; treats any null option string as empty.
     void apply_platform_options(const EOS_Platform_Options* options);
+
+    // Take the persistent profile under `directory`, replacing the ephemeral key. False when there
+    // is no profile to be had, in which case the ephemeral key stands and only persistence is lost.
+    bool load_identity(const std::string& directory);
 
     void set_username(const std::string& username);
 
     const std::string& username() const { return username_; }
-    // 32 lowercase hex characters, stable for a given (username, product_id).
-    const std::string& epic_account_id() const { return epic_account_id_; }
-    const std::string& product_user_id() const { return product_user_id_; }
+    // 32 lowercase hex characters, derived from the profile key (and, for the product user id, the
+    // title), so the same profile is the same player on every run.
+    const std::string& epic_account_id() const { return identity_.epic_account_id(); }
+    const std::string& product_user_id() const { return identity_.product_user_id(); }
+
+    // The profile itself, for the handshake: it needs the secret key to prove this identity.
+    identity& profile() { return identity_; }
+    const identity& profile() const { return identity_; }
 
     const std::string& product_id() const { return product_id_; }
     const std::string& sandbox_id() const { return sandbox_id_; }
@@ -44,15 +58,10 @@ public:
     u32 tick_budget_ms() const { return tick_budget_ms_; }
 
 private:
-    void derive_identity();
     void clear_platform_options();
 
+    identity identity_;
     std::string username_;
-    // True once we have minted a random identity for an unconfigured user, so that identity stays
-    // put for the life of this instance instead of changing every time an option is applied.
-    bool minted_identity_;
-    std::string epic_account_id_;
-    std::string product_user_id_;
 
     std::string product_id_;
     std::string sandbox_id_;
