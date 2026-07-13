@@ -76,11 +76,13 @@ void serialize(byte_writer& writer, const net_advertise& msg) {
     writer.put_string(msg.product_user_id);
     writer.put_string(msg.game_id);
     writer.put_u16(msg.tcp_port);
+    writer.put_u16(msg.udp_port);
 }
 bool deserialize(byte_reader& reader, net_advertise& msg) {
     return reader.get_string(msg.product_user_id)
         && reader.get_string(msg.game_id)
-        && reader.get_u16(msg.tcp_port);
+        && reader.get_u16(msg.tcp_port)
+        && reader.get_u16(msg.udp_port);
 }
 
 void serialize(byte_writer& writer, const connect_infos& msg) {

@@ -1528,3 +1528,162 @@ TEST_CASE("an awaited lobby search peer cannot return a lobby owned by somebody 
     responder_router.stop();
     platform::net_shutdown();
 }
+
+// P2P packets used to ride the reliable mesh regardless of what the game asked for, so
+// EOS_EPacketReliability meant nothing: an unreliable packet was delivered reliably and in order,
+// and -- the part that actually hurts -- one lost segment held up every packet behind it, including
+// the ones that had arrived perfectly well. A game replicating movement would feel that.
+//
+// An unreliable packet now takes the datagram path, sealed under keys the handshake derived, and a
+// reliable one still takes the mesh. This watches which one each actually took.
+TEST_CASE("reliability picks the transport, and an unreliable packet really does take the datagram path") {
+    REQUIRE(platform::net_init());
+    g_request_count = 0;
+    g_alice_established = 0;
+    g_bob_established = 0;
+
+    sdk_settings alice_settings;
+    sdk_settings bob_settings;
+    EOS_Platform_Options options = {};
+    options.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    options.ProductId = "co-op-game";
+    alice_settings.apply_platform_options(&options);
+    bob_settings.apply_platform_options(&options);
+
+    callback_manager alice_callbacks;
+    callback_manager bob_callbacks;
+    message_router alice_net;
+    message_router bob_net;
+    sdk_p2p alice(alice_settings, alice_callbacks, alice_net);
+    sdk_p2p bob(bob_settings, bob_callbacks, bob_net);
+    alice.emu_init();
+    bob.emu_init();
+
+    REQUIRE(start_router(alice_net, alice_settings.profile(), alice_settings.product_id(), 45850));
+    REQUIRE(start_router(bob_net, bob_settings.profile(), bob_settings.product_id(), 45850));
+
+    EOS_ProductUserId alice_id_h =
+        id_registry::instance().get_product_user_id(alice_settings.product_user_id());
+    EOS_ProductUserId bob_id_h =
+        id_registry::instance().get_product_user_id(bob_settings.product_user_id());
+    REQUIRE(bob.add_notify_connection_request(0, 0, on_request) != EOS_INVALID_NOTIFICATIONID);
+
+    pump(alice_net, bob_net, [&]() {
+        return !alice_net.peer_ids().empty() && !bob_net.peer_ids().empty();
+    });
+    REQUIRE(alice_net.peer_ids().size() == 1);
+
+    EOS_P2P_SocketId socket = {};
+    socket.ApiVersion = EOS_P2P_SOCKETID_API_LATEST;
+    std::strncpy(socket.SocketName, "game", EOS_P2P_SOCKETID_SOCKETNAME_SIZE - 1);
+
+    // Open the connection with a reliable packet, so the datagram path plays no part in getting
+    // there and we are measuring only what happens once it is up.
+    const u8 hello[] = {0x01};
+    EOS_P2P_SendPacketOptions send = {};
+    send.ApiVersion = EOS_P2P_SENDPACKET_API_LATEST;
+    send.LocalUserId = alice_id_h;
+    send.RemoteUserId = bob_id_h;
+    send.SocketId = &socket;
+    send.Channel = 1;
+    send.DataLengthBytes = sizeof(hello);
+    send.Data = hello;
+    send.bAllowDelayedDelivery = EOS_TRUE;
+    send.Reliability = EOS_EPacketReliability::EOS_PR_ReliableOrdered;
+    REQUIRE(alice.send_packet(&send) == EOS_EResult::EOS_Success);
+
+    pump(alice_net, bob_net, [&]() {
+        bob_callbacks.tick();
+        return g_request_count > 0;
+    });
+    EOS_P2P_AcceptConnectionOptions accept = {};
+    accept.ApiVersion = EOS_P2P_ACCEPTCONNECTION_API_LATEST;
+    accept.LocalUserId = bob_id_h;
+    accept.RemoteUserId = alice_id_h;
+    accept.SocketId = &socket;
+    REQUIRE(bob.accept_connection(&accept) == EOS_EResult::EOS_Success);
+
+    EOS_P2P_GetNextReceivedPacketSizeOptions size_options = {};
+    size_options.ApiVersion = EOS_P2P_GETNEXTRECEIVEDPACKETSIZE_API_LATEST;
+    size_options.LocalUserId = bob_id_h;
+    u32 size = 0;
+    pump(alice_net, bob_net, [&]() {
+        alice_callbacks.tick();
+        bob_callbacks.tick();
+        return bob.get_next_received_packet_size(&size_options, &size) == EOS_EResult::EOS_Success;
+    });
+    REQUIRE(size == sizeof(hello));
+
+    // The reliable packet took the mesh, as it must: nothing has gone by datagram.
+    CHECK(alice_net.datagrams_sent() == 0);
+    CHECK(bob_net.datagrams_received() == 0);
+
+    EOS_P2P_ReceivePacketOptions receive = {};
+    receive.ApiVersion = EOS_P2P_RECEIVEPACKET_API_LATEST;
+    receive.LocalUserId = bob_id_h;
+    receive.MaxDataSizeBytes = 16;
+    EOS_ProductUserId from = 0;
+    EOS_P2P_SocketId from_socket = {};
+    u8 channel = 0;
+    u8 buffer[16] = {0};
+    u32 written = 0;
+    REQUIRE(bob.receive_packet(&receive, &from, &from_socket, &channel, buffer, &written) ==
+            EOS_EResult::EOS_Success);
+
+    // Now an unreliable one. Each peer learns where the other's datagrams go from a sealed
+    // advertisement, sent the moment they meet, so by now Alice knows where to aim.
+    const u8 movement[] = {0x10, 0x20, 0x30, 0x40};
+    send.Channel = 2;
+    send.DataLengthBytes = sizeof(movement);
+    send.Data = movement;
+    send.Reliability = EOS_EPacketReliability::EOS_PR_UnreliableUnordered;
+
+    pump(alice_net, bob_net, [&]() {
+        if (alice_net.datagrams_sent() == 0) {
+            alice.send_packet(&send);
+        }
+        alice_callbacks.tick();
+        bob_callbacks.tick();
+        return bob.get_next_received_packet_size(&size_options, &size) == EOS_EResult::EOS_Success;
+    });
+
+    // It went as a datagram, and it arrived as one.
+    CHECK(alice_net.datagrams_sent() >= 1);
+    CHECK(bob_net.datagrams_received() >= 1);
+
+    // And it is the same packet the game handed us: the transport changed, the contract did not.
+    REQUIRE(bob.receive_packet(&receive, &from, &from_socket, &channel, buffer, &written) ==
+            EOS_EResult::EOS_Success);
+    CHECK(written == sizeof(movement));
+    CHECK(channel == 2);
+    CHECK(std::memcmp(buffer, movement, sizeof(movement)) == 0);
+    // Who it is from is the key that opened it, not anything the datagram said about itself.
+    REQUIRE(from != 0);
+    CHECK(from->id_str == alice_settings.product_user_id());
+    CHECK(std::string(from_socket.SocketName) == "game");
+
+    // A reliable packet still takes the mesh, even now that the datagram path is there to take.
+    const u64 datagrams_before = alice_net.datagrams_sent();
+    const u8 important[] = {0xaa, 0xbb};
+    send.Channel = 3;
+    send.DataLengthBytes = sizeof(important);
+    send.Data = important;
+    send.Reliability = EOS_EPacketReliability::EOS_PR_ReliableOrdered;
+    REQUIRE(alice.send_packet(&send) == EOS_EResult::EOS_Success);
+
+    pump(alice_net, bob_net, [&]() {
+        alice_callbacks.tick();
+        bob_callbacks.tick();
+        return bob.get_next_received_packet_size(&size_options, &size) == EOS_EResult::EOS_Success;
+    });
+    REQUIRE(bob.receive_packet(&receive, &from, &from_socket, &channel, buffer, &written) ==
+            EOS_EResult::EOS_Success);
+    CHECK(channel == 3);
+    CHECK(alice_net.datagrams_sent() == datagrams_before);
+
+    alice.emu_deinit();
+    bob.emu_deinit();
+    alice_net.stop();
+    bob_net.stop();
+    platform::net_shutdown();
+}

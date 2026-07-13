@@ -77,12 +77,18 @@ struct net_envelope {
     std::vector<u8> payload;
 };
 
-// What an instance broadcasts so peers can find it: who it is, which game it is running, and
-// the TCP port its mesh listener is accepting on.
+// What an instance broadcasts so peers can find it: who it is, which game it is running, the TCP
+// port its mesh listener is accepting on, and the UDP port its P2P datagrams should be sent to.
+//
+// Broadcast, this is only a hint -- anyone can send one, and nothing in it is believed. The same
+// message is also sent to each established peer over the sealed mesh, and *there* it is how a peer
+// tells us where to aim its datagrams: the port comes from a frame its key sealed, and the address
+// from the connection that key authenticated, so neither is anyone's to redirect.
 struct net_advertise {
     std::string product_user_id;
     std::string game_id;
     u16 tcp_port = 0;
+    u16 udp_port = 0;
 };
 
 // The emu-info handshake peers exchange on connect so each learns the other's app and name.

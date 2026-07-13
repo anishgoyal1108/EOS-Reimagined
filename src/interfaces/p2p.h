@@ -120,12 +120,20 @@ private:
         connection_open       // both sides agreed
     };
 
+    // A packet the game handed us before the peer had agreed to the connection. It keeps the
+    // reliability it was sent with: a packet does not become one the game is willing to lose just
+    // because it had to wait.
+    struct delayed_packet {
+        std::vector<u8> data;
+        u8 channel;
+        bool reliable;
+    };
+
     // A connection we have opened from our side, plus anything the game asked us to send before the
     // peer agreed. Delayed delivery means holding those packets, not dropping them.
     struct connection {
         connection_state state;
-        std::vector<std::vector<u8> > delayed;
-        std::vector<u8> delayed_channels;
+        std::vector<delayed_packet> delayed;
     };
 
     // A connection notification to deliver on the next frame, so firing happens on the tick.
@@ -141,9 +149,12 @@ private:
         std::string socket;
     };
 
-    // Frame one P2P message and hand it to the mesh for delivery to `peer`.
+    // Frame one P2P message and get it to `peer`. A packet the game does not need to arrive goes by
+    // datagram; everything else -- and anything the datagram path cannot carry yet -- goes over the
+    // reliable mesh. Control messages are always reliable: a connection request that is allowed to
+    // vanish is a connection that never opens.
     void send_p2p(message_type type, const std::string& peer, const std::string& socket, u8 channel,
-                  const std::vector<u8>& data);
+                  const std::vector<u8>& data, bool reliable);
     // Push out everything we held back while the connection was being agreed.
     void flush_delayed(const connection_key& key, connection& entry);
     void remember_filter(EOS_NotificationId id, const EOS_P2P_SocketId* socket_filter);

@@ -290,3 +290,148 @@ TEST_CASE("nothing is sealed or opened before the peer is authenticated") {
     const std::vector<u8> anything(32, 0x7f);
     CHECK_FALSE(dialer.unseal(anything.data(), anything.size(), 0, 0, opened));
 }
+
+TEST_CASE("a datagram opens for the peer it was sealed for, and its sequence is the nonce") {
+    identity alice;
+    identity bob;
+    test::seed_profile(alice, 0xa1);
+    test::seed_profile(bob, 0xb2);
+    const std::vector<u8> prologue = mesh_prologue(game, "", "");
+
+    peer_channel dialer(true, alice.secret_key(), alice.public_key(), prologue);
+    peer_channel accepter(false, bob.secret_key(), bob.public_key(), prologue);
+    REQUIRE(shake_hands(dialer, accepter));
+
+    // Both ends agree on the tag that says which peer a datagram came from, without either having
+    // to write a name in the clear.
+    CHECK(dialer.udp_send_tag() == accepter.udp_recv_tag());
+    CHECK(accepter.udp_send_tag() == dialer.udp_recv_tag());
+
+    const std::vector<u8> plain = bytes("player at 12,40 facing north");
+    u64 seq = 12345;
+    std::vector<u8> sealed;
+    REQUIRE(dialer.seal_datagram("alice", "bob", plain, seq, sealed));
+    CHECK(seq == 0); // the first datagram of the session
+    CHECK(sealed.size() == plain.size() + 16);
+
+    std::vector<u8> opened;
+    REQUIRE(accepter.open_datagram("alice", "bob", seq, sealed.data(), sealed.size(), opened));
+    CHECK(opened == plain);
+}
+
+// An unreliable path has nothing but the replay window between it and a datagram played back at it.
+// Spec: replay window (docs/adr/0001 §7, §11)
+TEST_CASE("a replayed datagram does not open twice") {
+    identity alice;
+    identity bob;
+    test::seed_profile(alice, 0xa1);
+    test::seed_profile(bob, 0xb2);
+    const std::vector<u8> prologue = mesh_prologue(game, "", "");
+
+    peer_channel dialer(true, alice.secret_key(), alice.public_key(), prologue);
+    peer_channel accepter(false, bob.secret_key(), bob.public_key(), prologue);
+    REQUIRE(shake_hands(dialer, accepter));
+
+    u64 seq = 0;
+    std::vector<u8> sealed;
+    REQUIRE(dialer.seal_datagram("alice", "bob", bytes("fire"), seq, sealed));
+
+    std::vector<u8> opened;
+    REQUIRE(accepter.open_datagram("alice", "bob", seq, sealed.data(), sealed.size(), opened));
+    CHECK_FALSE(accepter.open_datagram("alice", "bob", seq, sealed.data(), sealed.size(), opened));
+}
+
+// Reordering is what an unreliable path *does*, so a late datagram is not a replayed one and must
+// still be delivered. It is only once it falls out of the window that we can no longer tell.
+TEST_CASE("a datagram may arrive late, but not from beyond the window") {
+    identity alice;
+    identity bob;
+    test::seed_profile(alice, 0xa1);
+    test::seed_profile(bob, 0xb2);
+    const std::vector<u8> prologue = mesh_prologue(game, "", "");
+
+    peer_channel dialer(true, alice.secret_key(), alice.public_key(), prologue);
+    peer_channel accepter(false, bob.secret_key(), bob.public_key(), prologue);
+    REQUIRE(shake_hands(dialer, accepter));
+
+    // Seal a run of them, then deliver out of order.
+    std::vector<std::vector<u8> > sealed(80);
+    std::vector<u64> seqs(80);
+    for (std::size_t i = 0; i < sealed.size(); i++) {
+        REQUIRE(dialer.seal_datagram("alice", "bob", bytes("tick"), seqs[i], sealed[i]));
+        CHECK(seqs[i] == i);
+    }
+
+    std::vector<u8> opened;
+    // The newest arrives first.
+    REQUIRE(accepter.open_datagram("alice", "bob", seqs[70], sealed[70].data(), sealed[70].size(),
+                                   opened));
+    // One from just behind it was merely late, and is still wanted.
+    CHECK(accepter.open_datagram("alice", "bob", seqs[60], sealed[60].data(), sealed[60].size(),
+                                 opened));
+    // But this one is 70 back, past the window, and we can no longer say whether we have had it.
+    CHECK_FALSE(accepter.open_datagram("alice", "bob", seqs[0], sealed[0].data(), sealed[0].size(),
+                                       opened));
+}
+
+// The window must only be spent on a datagram that authenticated. If a forged sequence could move
+// it, anyone able to send us a packet could shove the window to the far end of the sequence space
+// and take every datagram still in flight down with it.
+TEST_CASE("a forged datagram cannot drag the replay window forward") {
+    identity alice;
+    identity bob;
+    test::seed_profile(alice, 0xa1);
+    test::seed_profile(bob, 0xb2);
+    const std::vector<u8> prologue = mesh_prologue(game, "", "");
+
+    peer_channel dialer(true, alice.secret_key(), alice.public_key(), prologue);
+    peer_channel accepter(false, bob.secret_key(), bob.public_key(), prologue);
+    REQUIRE(shake_hands(dialer, accepter));
+
+    u64 seq = 0;
+    std::vector<u8> real;
+    REQUIRE(dialer.seal_datagram("alice", "bob", bytes("move"), seq, real));
+
+    // Garbage claiming an enormous sequence. It cannot open, so it must leave no trace.
+    const std::vector<u8> junk(32, 0x5a);
+    std::vector<u8> opened;
+    CHECK_FALSE(accepter.open_datagram("alice", "bob", 1000000, junk.data(), junk.size(), opened));
+
+    // The real datagram, which is far "older" than the forged one claimed to be, still lands.
+    CHECK(accepter.open_datagram("alice", "bob", seq, real.data(), real.size(), opened));
+}
+
+TEST_CASE("a datagram bound to another sender, receiver, or sequence does not open") {
+    identity alice;
+    identity bob;
+    test::seed_profile(alice, 0xa1);
+    test::seed_profile(bob, 0xb2);
+    const std::vector<u8> prologue = mesh_prologue(game, "", "");
+
+    peer_channel dialer(true, alice.secret_key(), alice.public_key(), prologue);
+    peer_channel accepter(false, bob.secret_key(), bob.public_key(), prologue);
+    REQUIRE(shake_hands(dialer, accepter));
+
+    u64 seq = 0;
+    std::vector<u8> sealed;
+    REQUIRE(dialer.seal_datagram("alice", "bob", bytes("shoot"), seq, sealed));
+    std::vector<u8> opened;
+
+    SUBCASE("a different sender") {
+        CHECK_FALSE(
+            accepter.open_datagram("carol", "bob", seq, sealed.data(), sealed.size(), opened));
+    }
+    SUBCASE("a different receiver") {
+        CHECK_FALSE(
+            accepter.open_datagram("alice", "carol", seq, sealed.data(), sealed.size(), opened));
+    }
+    SUBCASE("a different sequence") {
+        CHECK_FALSE(
+            accepter.open_datagram("alice", "bob", seq + 1, sealed.data(), sealed.size(), opened));
+    }
+    SUBCASE("a flipped bit") {
+        sealed[0] ^= 0x01;
+        CHECK_FALSE(
+            accepter.open_datagram("alice", "bob", seq, sealed.data(), sealed.size(), opened));
+    }
+}

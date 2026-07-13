@@ -20,6 +20,14 @@ const int self_pipe_accept_timeout_ms = 1000;
 const int mesh_backlog = 16;
 const std::size_t frame_prefix_len = 4;
 
+// What a datagram is. Discovery is in the clear and believed about nothing; P2P data is sealed and
+// is the only thing on this socket that carries any weight. The byte is what tells them apart, so
+// neither has to be guessed at from its shape.
+const u8 datagram_discovery = 0x01;
+const u8 datagram_p2p = 0x02;
+// [kind][u32 tag][u64 sequence], then the sealed body.
+const std::size_t datagram_header_len = 1 + 4 + 8;
+
 // Ten discovery slots, so up to ten instances on one machine can each hold one and still hear
 // the others: this is what lets two copies of a game on the same PC find each other.
 const u16 default_discovery_port_first = 55789;
@@ -48,6 +56,25 @@ void write_be32(u8 out[4], u32 value) {
     out[3] = static_cast<u8>(value & 0xff);
 }
 
+u32 read_be32(const u8* data) {
+    return (static_cast<u32>(data[0]) << 24) | (static_cast<u32>(data[1]) << 16) |
+           (static_cast<u32>(data[2]) << 8) | static_cast<u32>(data[3]);
+}
+
+void write_be64(u8 out[8], u64 value) {
+    for (int i = 0; i < 8; i++) {
+        out[i] = static_cast<u8>((value >> (56 - 8 * i)) & 0xff);
+    }
+}
+
+u64 read_be64(const u8* data) {
+    u64 value = 0;
+    for (int i = 0; i < 8; i++) {
+        value = (value << 8) | data[i];
+    }
+    return value;
+}
+
 } // namespace
 
 net_config::net_config()
@@ -55,7 +82,9 @@ net_config::net_config()
       discovery_port_last(default_discovery_port_last) {
 }
 
-message_router::message_router() : have_profile_(false), mesh_port_(0), running_(false) {
+message_router::message_router()
+    : have_profile_(false), discovery_port_(0), mesh_port_(0), datagrams_sent_(0),
+      datagrams_received_(0), running_(false) {
     std::memset(static_priv_, 0, sizeof(static_priv_));
     std::memset(static_pub_, 0, sizeof(static_pub_));
 }
@@ -106,6 +135,7 @@ bool message_router::open_discovery() {
     // the datagrams sent to it instead of each holding its own slot.
     for (u32 port = config_.discovery_port_first; port <= config_.discovery_port_last; port++) {
         if (udp_.bind(endpoint(ip_any, static_cast<u16>(port)))) {
+            discovery_port_ = static_cast<u16>(port);
             return udp_.set_nonblocking(true);
         }
     }
@@ -204,6 +234,7 @@ void message_router::stop() {
     udp_.close();
     self_buffer_.clear();
     mesh_port_ = 0;
+    discovery_port_ = 0;
     running_ = false;
 }
 
@@ -365,17 +396,13 @@ bool message_router::send_to_self(const net_envelope& msg) {
     return true;
 }
 
-void message_router::advertise() {
-    const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-    if (now - last_advertise_ < advertise_interval) {
-        return;
-    }
-    last_advertise_ = now;
-
+// The message that says who we are, where our mesh listens, and where our datagrams should be sent.
+net_envelope message_router::self_advertisement() const {
     net_advertise infos;
     infos.product_user_id = product_user_id_;
     infos.game_id = game_id_;
     infos.tcp_port = mesh_port_;
+    infos.udp_port = discovery_port_;
     byte_writer payload;
     serialize(payload, infos);
 
@@ -384,9 +411,30 @@ void message_router::advertise() {
     envelope.source_id = product_user_id_;
     envelope.game_id = game_id_;
     envelope.payload = payload.data();
+    return envelope;
+}
+
+void message_router::announce_to(const std::string& id) {
+    net_envelope hello = self_advertisement();
+    hello.dest_id = id;
+    send(hello);
+}
+
+void message_router::advertise() {
+    const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+    if (now - last_advertise_ < advertise_interval) {
+        return;
+    }
+    last_advertise_ = now;
+
+    const net_envelope envelope = self_advertisement();
     byte_writer writer;
     serialize(writer, envelope);
-    const std::vector<u8>& datagram = writer.data();
+
+    // Broadcast, this is in the clear, and it is a hint about where to look and nothing more.
+    std::vector<u8> datagram;
+    datagram.push_back(datagram_discovery);
+    datagram.insert(datagram.end(), writer.data().begin(), writer.data().end());
 
     std::vector<u32> targets = config_.broadcast_addresses;
     if (targets.empty()) {
@@ -400,10 +448,101 @@ void message_router::advertise() {
         }
     }
 
-    // The same announcement goes to every established peer over the sealed mesh. That is what keeps
-    // a quiet peer alive: liveness rests on a frame the peer's key sealed, never on a broadcast
-    // anyone could have sent, so nobody can keep a wedged connection from timing out by shouting.
+    // The same announcement goes to every established peer over the sealed mesh, where it means
+    // something. That is what keeps a quiet peer alive: liveness rests on a frame the peer's key
+    // sealed, never on a broadcast anyone could have sent, so nobody can keep a wedged connection
+    // from timing out by shouting at us.
     send(envelope);
+}
+
+bool message_router::send_datagram(const std::string& peer_id, const std::vector<u8>& payload) {
+    if (!running_) {
+        return false;
+    }
+    std::map<std::string, peer>::iterator it = peers_.find(peer_id);
+    if (it == peers_.end() || it->second.datagram_addr.port == 0 || !it->second.channel) {
+        return false; // no peer, or it has not yet told us where its datagrams go
+    }
+    u64 seq = 0;
+    std::vector<u8> sealed;
+    if (!it->second.channel->seal_datagram(product_user_id_, peer_id, payload, seq, sealed)) {
+        return false;
+    }
+
+    std::vector<u8> datagram;
+    datagram.reserve(datagram_header_len + sealed.size());
+    datagram.push_back(datagram_p2p);
+    u8 header[12];
+    write_be32(header, it->second.channel->udp_send_tag());
+    write_be64(header + 4, seq);
+    datagram.insert(datagram.end(), header, header + sizeof(header));
+    datagram.insert(datagram.end(), sealed.begin(), sealed.end());
+
+    // A datagram that the socket will not take is a datagram that was lost, which is exactly what
+    // the caller signed up for. We do not queue it, because holding it would be the head-of-line
+    // blocking they asked us to avoid.
+    if (udp_.send_to(datagram.data(), datagram.size(), it->second.datagram_addr) <= 0) {
+        return false;
+    }
+    datagrams_sent_++;
+    return true;
+}
+
+void message_router::handle_datagram(const u8* data, std::size_t len) {
+    if (len < datagram_header_len + aead_tag_len) {
+        return;
+    }
+    const u32 tag = read_be32(data + 1);
+    const u64 seq = read_be64(data + 5);
+
+    // The tag says whose key this was sealed with. Only the two ends hold that key, so finding the
+    // peer by it is not trusting anybody: a datagram we cannot then open is simply not from them.
+    std::map<std::string, peer>::iterator it = peers_.begin();
+    for (; it != peers_.end(); ++it) {
+        if (it->second.channel && it->second.channel->udp_recv_tag() == tag) {
+            break;
+        }
+    }
+    if (it == peers_.end()) {
+        return;
+    }
+
+    std::vector<u8> plain;
+    if (!it->second.channel->open_datagram(it->first, product_user_id_, seq,
+                                           data + datagram_header_len,
+                                           len - datagram_header_len, plain)) {
+        // It did not authenticate, or we have already had it. Either way it is dropped, and quietly:
+        // unlike the mesh, an unreliable path has no session to tear down, and a peer that can send
+        // us rubbish over UDP must not be able to end a working connection by doing so.
+        return;
+    }
+
+    // From here it is the same message the mesh would have carried. Who it is from is the key that
+    // opened it, never anything inside it.
+    net_envelope msg;
+    msg.type_tag = static_cast<u16>(message_type::p2p_data);
+    msg.source_id = it->first;
+    msg.dest_id = product_user_id_;
+    msg.game_id = game_id_;
+    msg.payload = plain;
+    it->second.last_seen = std::chrono::steady_clock::now();
+    datagrams_received_++;
+    dispatch(msg);
+}
+
+// A peer's sealed advertisement is the only thing that tells us where to aim a datagram at it. The
+// port comes from a frame its key sealed; the address comes from the connection that key
+// authenticated. Neither is anyone else's to redirect.
+void message_router::learn_datagram_port(const std::string& peer_id, const net_envelope& msg) {
+    net_advertise infos;
+    byte_reader reader(msg.payload.data(), msg.payload.size());
+    if (!deserialize(reader, infos) || infos.udp_port == 0) {
+        return;
+    }
+    std::map<std::string, peer>::iterator it = peers_.find(peer_id);
+    if (it != peers_.end()) {
+        it->second.datagram_addr.port = infos.udp_port;
+    }
 }
 
 void message_router::accept_peers() {
@@ -421,6 +560,7 @@ void message_router::accept_peers() {
         handshaking_peer entry;
         entry.connection = std::move(incoming);
         entry.channel.reset(new peer_channel(false, static_priv_, static_pub_, prologue_));
+        entry.remote = from;
         entry.started_at = std::chrono::steady_clock::now();
         handshaking_.push_back(std::move(entry));
     }
@@ -452,6 +592,7 @@ void message_router::finish_dialing() {
     for (std::size_t i = 0; i < done.size(); i++) {
         std::map<std::string, dialing_peer>::iterator entry = dialing_.find(done[i]);
         socket connection = std::move(entry->second.connection);
+        const endpoint address = entry->second.address;
         dialing_.erase(entry);
 
         // The connection is up, and now the peer has to say who it is. We speak first: the dialer
@@ -460,6 +601,7 @@ void message_router::finish_dialing() {
         shaking.connection = std::move(connection);
         shaking.channel.reset(new peer_channel(true, static_priv_, static_pub_, prologue_));
         shaking.expected_id = done[i];
+        shaking.remote = address;
         shaking.started_at = now;
 
         std::vector<u8> opening;
@@ -545,15 +687,16 @@ void message_router::drain_handshaking() {
         // arrived behind the handshake and any reply the socket would not take yet.
         socket connection = std::move(entry.connection);
         std::unique_ptr<peer_channel> channel = std::move(entry.channel);
+        const endpoint remote = entry.remote;
         const std::vector<u8> leftover = entry.buffer;
         const std::vector<u8> unsent = entry.outbox;
         handshaking_.erase(handshaking_.begin() + i);
-        adopt_peer(proved, std::move(connection), std::move(channel), leftover, unsent);
+        adopt_peer(proved, std::move(connection), std::move(channel), remote, leftover, unsent);
     }
 }
 
 bool message_router::adopt_peer(const std::string& id, socket connection,
-                                std::unique_ptr<peer_channel> channel,
+                                std::unique_ptr<peer_channel> channel, const endpoint& remote,
                                 const std::vector<u8>& leftover, const std::vector<u8>& unsent) {
     if (id.empty() || id == product_user_id_ || !channel) {
         return false;
@@ -571,7 +714,12 @@ bool message_router::adopt_peer(const std::string& id, socket connection,
     entry.channel = std::move(channel);
     entry.buffer = leftover;
     entry.outbox = unsent;
+    // Datagrams go to the address whose handshake we just authenticated -- nobody without the key
+    // could have been at the other end of that connection. The port waits for the peer to tell us,
+    // over the sealed mesh, which it does as soon as it hears from us.
+    entry.datagram_addr = endpoint(remote.ip, 0);
     entry.last_seen = std::chrono::steady_clock::now();
+    announce_to(id);
     dispatch_peer_event(message_type::peer_connected, id);
     return true;
 }
@@ -733,6 +881,12 @@ void message_router::drain_peers() {
             // another even if it says it is.
             msg.source_id = ids[i];
             entry.last_seen = std::chrono::steady_clock::now();
+            if (msg.type_tag == static_cast<u16>(message_type::net_advertise)) {
+                // Sealed, this is the peer telling us where to aim its datagrams. It is also the
+                // keepalive, and it is not for the interfaces.
+                learn_datagram_port(ids[i], msg);
+                continue;
+            }
             if (accept_inbound(msg)) {
                 messages.push_back(msg);
             }
@@ -828,14 +982,28 @@ void message_router::drain_datagrams() {
         if (count <= 0) {
             break;
         }
-        byte_reader reader(temp, static_cast<std::size_t>(count));
+        const std::size_t len = static_cast<std::size_t>(count);
+        if (len < 1) {
+            continue;
+        }
+
+        // A sealed datagram is P2P gameplay data, and the key that opens it is the only thing that
+        // says who sent it.
+        if (temp[0] == datagram_p2p) {
+            handle_datagram(temp, len);
+            continue;
+        }
+        if (temp[0] != datagram_discovery) {
+            continue;
+        }
+
+        // Discovery is the only thing that arrives here in the clear, and it is believed about
+        // nothing: all it can do is start a handshake that decides for itself who is there.
+        byte_reader reader(temp + 1, len - 1);
         net_envelope msg;
         if (!deserialize(reader, msg)) {
             continue;
         }
-        // Discovery is the only thing a datagram is allowed to be. Nothing else arrives unsealed,
-        // so nothing else is believed: an envelope on this socket that is not an advertisement is
-        // simply an envelope from nobody.
         if (msg.type_tag == static_cast<u16>(message_type::net_advertise)) {
             handle_advertise(msg, from);
         }

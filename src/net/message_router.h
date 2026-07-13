@@ -81,12 +81,29 @@ public:
     // flow through the same decode-and-dispatch path as messages from peers.
     bool send_to_self(const net_envelope& msg);
 
+    // Send a P2P payload to `peer` as a datagram: sealed, but unreliable and unordered, and it may
+    // simply not arrive. That is the point. A game that asks for an unreliable packet is also saying
+    // it does not want the next one stuck behind this one, and a reliable stream cannot promise
+    // that -- one lost segment there holds up every packet after it, including the ones that were
+    // still perfectly good.
+    //
+    // False when we do not yet know where to aim a datagram at this peer, which is a moment that
+    // exists between meeting a peer and its first sealed advertisement. The caller falls back to the
+    // mesh, so the packet still arrives; it is only its unreliability that is briefly unavailable.
+    bool send_datagram(const std::string& peer_id, const std::vector<u8>& payload);
+
     // The product user ids of every authenticated peer in the mesh.
     std::vector<std::string> peer_ids() const;
 
     // Bytes we are holding for peers whose send buffer was full. Non-zero means we are under
     // backpressure right now.
     std::size_t pending_output_bytes() const;
+
+    // How much P2P traffic actually took the datagram path. A game whose unreliable packets are all
+    // arriving over the mesh is a game whose reliability setting is not doing anything, and that is
+    // worth being able to see rather than infer.
+    u64 datagrams_sent() const { return datagrams_sent_; }
+    u64 datagrams_received() const { return datagrams_received_; }
 
     // Drain the ready sockets, advertise if it is time, drop timed-out peers, and dispatch
     // whatever decoded. Called once per tick.
@@ -102,6 +119,10 @@ private:
         std::vector<u8> buffer;
         std::vector<u8> outbox;
         std::unique_ptr<peer_channel> channel;
+        // Where this peer's datagrams go. The address comes from the connection whose handshake
+        // authenticated it; the port comes from a sealed advertisement it sent us. Port zero means
+        // it has not told us yet, and datagrams take the mesh until it does.
+        platform::endpoint datagram_addr;
         std::chrono::steady_clock::time_point last_seen;
     };
 
@@ -117,6 +138,9 @@ private:
         // the last word. If it derives a different id, the advertisement was not telling the truth
         // about who lives at that address, and we want no part of the connection.
         std::string expected_id;
+        // The far end of this connection. Once the handshake authenticates it, this is the address
+        // its datagrams may be sent to -- nobody without the key could have been on the other end.
+        platform::endpoint remote;
         std::chrono::steady_clock::time_point started_at;
     };
 
@@ -146,6 +170,8 @@ private:
     bool open_self_pipe();
 
     void advertise();
+    // Who we are, where our mesh listens, and where our datagrams should be sent.
+    net_envelope self_advertisement() const;
     void accept_peers();
     void finish_dialing();
     void drain_handshaking();
@@ -162,8 +188,15 @@ private:
     // drops the connection -- when that id is already connected, so a second socket cannot take over
     // an established peer's identity even if it does hold the key.
     bool adopt_peer(const std::string& id, platform::socket connection,
-                    std::unique_ptr<peer_channel> channel, const std::vector<u8>& leftover,
-                    const std::vector<u8>& unsent);
+                    std::unique_ptr<peer_channel> channel, const platform::endpoint& remote,
+                    const std::vector<u8>& leftover, const std::vector<u8>& unsent);
+    // Tell a peer who we are and where to aim its datagrams, over the sealed mesh.
+    void announce_to(const std::string& id);
+    // A peer's sealed advertisement is where we learn its datagram port.
+    void learn_datagram_port(const std::string& peer_id, const net_envelope& msg);
+    // Take one sealed datagram apart: find whose key it is tagged for, open it, and deliver it as
+    // the same p2p_data envelope the mesh would have carried.
+    void handle_datagram(const u8* data, std::size_t len);
     // Whether an inbound frame from a meshed peer is one we should deliver: not for a different
     // game, and not addressed to a peer other than us.
     bool accept_inbound(const net_envelope& msg) const;
@@ -200,6 +233,7 @@ private:
     std::vector<u8> prologue_;
 
     platform::socket udp_;
+    u16 discovery_port_;
     platform::socket mesh_;
     u16 mesh_port_;
     platform::socket self_send_;
@@ -214,6 +248,8 @@ private:
 
     // Listeners are non-owning and must unregister before they are destroyed.
     std::map<message_type, std::vector<i_run_network*>> listeners_;
+    u64 datagrams_sent_;
+    u64 datagrams_received_;
     bool running_;
 };
 

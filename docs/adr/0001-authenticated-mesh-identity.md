@@ -107,8 +107,12 @@ udp_i2r, udp_r2i    = HKDF( salt = ck_final,                     // the SECRET N
 - TCP framing (Section 6) uses `c_i2r`/`c_r2i` directly (standard Noise transport). UDP uses `udp_i2r`/`udp_r2i` — independent keys under a distinct label, so a UDP sequence starting at 0 can never collide with a TCP counter at 0.
 - **A `session_generation` counter was specified here and then dropped when task 54 landed.** Its job was to make a reconnect derive fresh UDP keys so an old datagram could not be replayed into a new session. `ck_final` already does that: every DH in XX mixes in at least one freshly generated ephemeral, so no two handshakes produce the same chaining key, and therefore no two sessions produce the same UDP keys. A datagram from an old session cannot open under a new session's key regardless. A generation counter would add a value *both sides must agree on* — a synchronization problem — in exchange for a freshness guarantee we already hold. It is left out of the `ikm` and out of the associated data.
 - Each of the four keys has its **own** 64-bit counter/sequence starting at 0; a direction's key is used with a strictly increasing counter and torn down on exhaustion.
-- Each UDP datagram is `AEAD(udp_key_dir, le64(seq), plaintext, ad)`, `ad = enc(` verified sender id, dest id, `u32(channel)`, socket name, `u64(seq)` `)`.
-- A per-peer **replay window** (sliding bitmap) rejects duplicate or too-old sequence numbers.
+- Each UDP datagram is `AEAD(udp_key_dir, le64(seq), plaintext, ad)` with `ad = enc(`verified sender id, dest id, `u64(seq)`)`. **The channel and socket name are not in the `ad`** as originally specified: they live *inside* the sealed plaintext (they are fields of the `p2p_data` message), so they are already unforgeable, and putting them in the `ad` would mean the receiver had to know them *before* decrypting — which it cannot. Keeping them sealed is both simpler and better: a datagram's channel and socket are not visible on the wire at all.
+- On the wire a datagram is `[kind][u32 tag][u64 seq][sealed]`. The **tag** is a digest of the key the sender seals with, which only the two ends hold, so it says which peer a datagram is from without anyone writing a name in the clear — and a datagram tagged for us that will not open is simply not from the peer it claims. The **kind** byte separates a sealed datagram from a plaintext discovery broadcast on the same socket, so neither has to be guessed at from its shape.
+- A per-peer **replay window** (sliding 64-bit bitmap) rejects duplicate or too-old sequence numbers. It is spent **only on a datagram that authenticated** — otherwise anyone able to send us a packet could shove the window to the far end of the sequence space with a forged number and take every datagram still in flight down with it.
+- **Where a peer's datagrams go** is not learned from the broadcast. The address is the far end of the TCP connection whose handshake authenticated the peer (nobody without the key could have been there), and the port comes from an advertisement that peer sealed over the mesh. Neither is anyone else's to redirect.
+- **A datagram never tears down a session.** Unlike a mesh frame, one that fails to authenticate is dropped in silence: a peer who can send us rubbish over UDP must not be able to end a working connection by doing so.
+- **The mesh is the fallback.** Between meeting a peer and its first sealed advertisement we do not yet know where to aim, so an unreliable packet takes the mesh. Arriving reliably when unreliable was asked for is a promise kept too well, never one broken.
 - UDP discovery (`net_advertise`) remains an **untrusted hint**: it only triggers a dial; the authenticated TCP handshake is what establishes identity. (Signing advertisements is a possible later refinement; not required, since discovery grants no trust on its own.)
 
 ## 8. Wire protocol version & interoperability
@@ -172,7 +176,9 @@ The Monocypher header is included **only** inside `src/common/crypto.cpp` (and t
 2. ~~crypto wrapper: X25519, ChaCha20-Poly1305, HKDF + KATs.~~ *(task 51 — done)*
 3. ~~`secure_channel`: Noise XX + Noise vectors + transcript-equality.~~ *(task 52 — done)*
 4. ~~Self-certifying identity + profile key + per-instance slot + export/import.~~ *(task 53 — done; legacy/TOFU dropped, see §9)*
-5. Wire v2: router runs the handshake, frames over the channel, exposes the verified id; authenticated UDP + replay; interfaces consume the verified id; full regression + authenticated-mesh e2e. *(task 54)*
+5. ~~Wire v2: router runs the handshake, frames over the channel, exposes the verified id; authenticated UDP + replay; interfaces consume the verified id; full regression + authenticated-mesh e2e.~~ *(task 54 — done, in two parts: 54a the authenticated TCP mesh, 54b the authenticated UDP data path. `session_generation` dropped, see §7.)*
+
+The milestone is complete. `EOS_EPacketReliability` now selects a transport rather than being ignored, which was the part of this that a game can actually feel.
 
 ## 13. What this does not change
 

@@ -94,6 +94,7 @@ bool version_is_supported(i32 version, i32 latest) {
 // *shorter* struct, so reading a newer field reads whatever happens to sit after it in the game's
 // memory -- and for a pointer field we would then dereference that. These are the cutoffs; the
 // struct histories are in the SDK's versioned headers.
+const i32 sendpacket_with_reliability = 2;
 const i32 sendpacket_with_disable_auto_accept = 3;
 const i32 receivepacket_with_requested_channel = 2;
 const i32 packet_size_with_requested_channel = 2;
@@ -102,6 +103,16 @@ const i32 packet_size_with_requested_channel = 2;
 // from a struct that does not have the field.
 const u8* requested_channel_of(i32 version, i32 introduced, const u8* field) {
     return (version >= introduced) ? field : 0;
+}
+
+// Whether a packet has to arrive. A struct older than the reliability field is from a game that
+// never had the option, so it never asked us to drop anything: we treat it as reliable, which can
+// only ever deliver more than was promised.
+bool packet_must_arrive(const EOS_P2P_SendPacketOptions* options) {
+    if (options->ApiVersion < sendpacket_with_reliability) {
+        return true;
+    }
+    return options->Reliability != EOS_EPacketReliability::EOS_PR_UnreliableUnordered;
 }
 
 } // namespace
@@ -223,43 +234,61 @@ EOS_EResult sdk_p2p::send_packet(const EOS_P2P_SendPacketOptions* options) {
         connection entry;
         entry.state = connection_pending;
         it = connections_.insert(std::make_pair(key, entry)).first;
-        send_p2p(message_type::p2p_connect_request, key.peer, key.socket, 0, std::vector<u8>());
+        send_p2p(message_type::p2p_connect_request, key.peer, key.socket, 0, std::vector<u8>(),
+                 true);
     }
 
     std::vector<u8> data(static_cast<const u8*>(options->Data),
                          static_cast<const u8*>(options->Data) + options->DataLengthBytes);
+    const bool reliable = packet_must_arrive(options);
 
     if (it->second.state != connection_open) {
         // The peer has not agreed yet. Delayed delivery means holding the packet until it does;
         // without it the packet is dropped, which is what the API promises.
         if (options->bAllowDelayedDelivery == EOS_TRUE) {
-            it->second.delayed.push_back(data);
-            it->second.delayed_channels.push_back(options->Channel);
+            delayed_packet held;
+            held.data = data;
+            held.channel = options->Channel;
+            held.reliable = reliable;
+            it->second.delayed.push_back(held);
         }
         return EOS_EResult::EOS_Success;
     }
 
-    send_p2p(message_type::p2p_data, key.peer, key.socket, options->Channel, data);
+    send_p2p(message_type::p2p_data, key.peer, key.socket, options->Channel, data, reliable);
     return EOS_EResult::EOS_Success;
 }
 
 void sdk_p2p::flush_delayed(const connection_key& key, connection& entry) {
     for (std::size_t i = 0; i < entry.delayed.size(); i++) {
-        send_p2p(message_type::p2p_data, key.peer, key.socket, entry.delayed_channels[i],
-                 entry.delayed[i]);
+        const delayed_packet& held = entry.delayed[i];
+        send_p2p(message_type::p2p_data, key.peer, key.socket, held.channel, held.data,
+                 held.reliable);
     }
     entry.delayed.clear();
-    entry.delayed_channels.clear();
 }
 
 void sdk_p2p::send_p2p(message_type type, const std::string& peer, const std::string& socket,
-                       u8 channel, const std::vector<u8>& data) {
+                       u8 channel, const std::vector<u8>& data, bool reliable) {
     p2p_data payload;
     payload.socket_name = socket;
     payload.channel = static_cast<i32>(channel);
     payload.data = data;
     byte_writer writer;
     serialize(writer, payload);
+
+    // A game that asked for an unreliable packet is not only saying it can live without this one --
+    // it is saying it does not want the *next* one stuck behind it. A reliable stream cannot promise
+    // that: one lost segment there holds up every packet after it, including the ones that arrived
+    // perfectly well. So this goes as a datagram, and if it is lost it is lost.
+    //
+    // The mesh still carries it when the datagram path cannot yet -- we have met the peer but it has
+    // not told us where its datagrams go. Arriving reliably when unreliable was asked for is a
+    // promise kept too well, never one broken, so the fallback is always safe.
+    if (!reliable && type == message_type::p2p_data &&
+        network_.send_datagram(peer, writer.data())) {
+        return;
+    }
 
     net_envelope envelope;
     envelope.type_tag = static_cast<u16>(type);
@@ -347,7 +376,8 @@ EOS_EResult sdk_p2p::accept_connection(const EOS_P2P_AcceptConnectionOptions* op
         // The peer asked and the game has now said yes, so both sides have agreed: the connection
         // is open, and telling the peer completes it on its side too.
         it->second.state = connection_open;
-        send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>());
+        send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>(),
+                 true);
         queue_event(pending_event::established, key.peer, key.socket,
                     EOS_EConnectionClosedReason::EOS_CCR_Unknown);
         flush_delayed(key, it->second);
@@ -360,7 +390,8 @@ EOS_EResult sdk_p2p::accept_connection(const EOS_P2P_AcceptConnectionOptions* op
         entry.state = connection_pending;
         connections_.insert(std::make_pair(key, entry));
     }
-    send_p2p(message_type::p2p_connect_request, key.peer, key.socket, 0, std::vector<u8>());
+    send_p2p(message_type::p2p_connect_request, key.peer, key.socket, 0, std::vector<u8>(),
+             true);
     return EOS_EResult::EOS_Success;
 }
 
@@ -385,7 +416,7 @@ EOS_EResult sdk_p2p::close_connection(const EOS_P2P_CloseConnectionOptions* opti
     while (it != connections_.end()) {
         if (it->first.peer == peer && (socket.empty() || it->first.socket == socket)) {
             send_p2p(message_type::p2p_connection_close, peer, it->first.socket, 0,
-                     std::vector<u8>());
+                     std::vector<u8>(), true);
             queue_event(pending_event::closed, peer, it->first.socket,
                         EOS_EConnectionClosedReason::EOS_CCR_ClosedByLocalUser);
             connections_.erase(it++);
@@ -413,7 +444,7 @@ EOS_EResult sdk_p2p::close_connections(const EOS_P2P_CloseConnectionsOptions* op
     while (it != connections_.end()) {
         if (it->first.socket == socket) {
             const std::string peer = it->first.peer;
-            send_p2p(message_type::p2p_connection_close, peer, socket, 0, std::vector<u8>());
+            send_p2p(message_type::p2p_connection_close, peer, socket, 0, std::vector<u8>(), true);
             queue_event(pending_event::closed, peer, socket,
                         EOS_EConnectionClosedReason::EOS_CCR_ClosedByLocalUser);
             connections_.erase(it++);
@@ -803,7 +834,8 @@ bool sdk_p2p::on_network_message(const net_envelope& message) {
             // We both reached for the connection at once. Each side already wants it, so agreeing
             // is all that is left.
             it->second.state = connection_open;
-            send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>());
+            send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>(),
+                 true);
             queue_event(pending_event::established, key.peer, key.socket,
                         EOS_EConnectionClosedReason::EOS_CCR_Unknown);
             flush_delayed(key, it->second);
@@ -811,7 +843,8 @@ bool sdk_p2p::on_network_message(const net_envelope& message) {
         }
         if (it->second.state == connection_open) {
             // It asked again for one we have already opened; confirm so its side settles too.
-            send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>());
+            send_p2p(message_type::p2p_connect_response, key.peer, key.socket, 0, std::vector<u8>(),
+                 true);
         }
         return true;
     }

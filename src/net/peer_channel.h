@@ -17,6 +17,22 @@ namespace eosr {
 std::vector<u8> mesh_prologue(const std::string& product_id, const std::string& sandbox_id,
                               const std::string& deployment_id);
 
+// Remembers which datagram sequences we have already opened, over a sliding window of the 64 most
+// recent. An unreliable path is allowed to reorder within that; a sequence older than the window is
+// not late, it is a replay, and one we have already seen is a replay whether it is late or not.
+// Spec: replay window (docs/adr/0001 §7)
+class replay_window {
+public:
+    replay_window();
+    // True when `seq` is new, and it is now remembered. False for a duplicate, or for one so old we
+    // can no longer say.
+    bool accept(u64 seq);
+
+private:
+    u64 highest_;
+    u64 seen_; // a bit per sequence at or below highest_, bit 0 being highest_ itself
+};
+
 // The authenticated channel to one peer.
 //
 // It runs Noise XX over the connection, and once that completes it is the only thing that turns an
@@ -61,10 +77,23 @@ public:
     bool unseal(const u8* cipher, std::size_t len, const u8* ad, std::size_t ad_len,
                 std::vector<u8>& plain);
 
-    // The P2P data path's keys, derived from the handshake's secret chaining key and independent of
-    // the two above. Valid once established().
-    const u8* udp_send_key() const { return udp_send_; }
-    const u8* udp_recv_key() const { return udp_recv_; }
+    // Seal a datagram for the P2P data path, under keys derived from the handshake's secret chaining
+    // key and independent of the two above. The sequence is ours and strictly increasing, and it is
+    // also the nonce, so a datagram only ever opens in the place it was sealed for.
+    bool seal_datagram(const std::string& sender_id, const std::string& dest_id,
+                       const std::vector<u8>& plain, u64& out_seq, std::vector<u8>& out);
+    // Open one. False when it does not authenticate, and false for a sequence we have already seen
+    // or can no longer place -- an unreliable path has nothing but the replay window between it and
+    // a datagram played back at it.
+    bool open_datagram(const std::string& sender_id, const std::string& dest_id, u64 seq,
+                       const u8* cipher, std::size_t len, std::vector<u8>& plain);
+
+    // Which peer a datagram is from. The tag is derived from the key it was sealed with, and only
+    // the two ends hold that key, so a peer is recognized without anyone naming themselves in the
+    // clear -- and a datagram tagged for us that we cannot open is simply not from the peer it
+    // claims. Valid once established().
+    u32 udp_send_tag() const { return udp_send_tag_; }
+    u32 udp_recv_tag() const { return udp_recv_tag_; }
 
 private:
     std::unique_ptr<noise_handshake> handshake_;
@@ -73,6 +102,10 @@ private:
     u8 remote_static_[32];
     u8 udp_send_[32];
     u8 udp_recv_[32];
+    u32 udp_send_tag_;
+    u32 udp_recv_tag_;
+    u64 udp_seq_;
+    replay_window udp_replay_;
     bool initiator_;
     bool established_;
     int message_index_;
