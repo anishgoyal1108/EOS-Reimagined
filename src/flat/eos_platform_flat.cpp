@@ -238,13 +238,22 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetActiveLocaleCode(EOS_HPlatform Han
     return copy_out(locale, OutBuffer, InOutBufferLength);
 }
 
-// Desktop crossplay is the Epic overlay bootstrapper, and the header says plainly that this is
-// Windows only and answers EOS_NotImplemented anywhere else. Answering Success on Linux would tell a
-// Linux game the probe ran and came back with a Windows bootstrap state, which is an answer to a
-// question it never asked -- and one it may well act on.
+// The header says plainly that this is Windows only and answers EOS_NotImplemented anywhere else.
+// Answering Success on Linux would hand a Linux game a Windows bootstrap state, which is an answer
+// to a question it never asked, and one it may act on.
 //
-// On Windows there is still no overlay and nothing to bootstrap, and a game asking is asking whether
-// it may show the social overlay. The answer is no, in the word the SDK's own enum already has.
+// On Windows we say the prerequisites are met, and that is a deliberate lie of the same kind as
+// every other one this library tells. The header is explicit that desktop crossplay "is required to
+// use Epic accounts login with applications that are distributed outside the Epic Games Store" --
+// and a game that has had our library dropped into it is, by definition, distributed outside the
+// Epic Games Store. Reporting ApplicationNotBootstrapped would be the descriptively honest answer
+// about a bootstrapper we do not have, and it is a documented way for a game to gate the player out
+// of Epic login and so out of multiplayer altogether: the exact thing this library exists to keep
+// working. The prerequisites it is really asking after are "can I go online", and with us, it can.
+//
+// This is the same call CheckForLauncherAndRestart makes a few lines up: we are never launched by
+// the Epic launcher either, and we say so in the way that lets the game carry on rather than the way
+// that makes it quit.
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetDesktopCrossplayStatus(
     EOS_HPlatform Handle, const EOS_Platform_GetDesktopCrossplayStatusOptions* Options,
     EOS_Platform_DesktopCrossplayStatusInfo* OutDesktopCrossplayStatusInfo) {
@@ -257,8 +266,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetDesktopCrossplayStatus(
         return EOS_EResult::EOS_IncompatibleVersion;
     }
 #if defined(_WIN32)
-    OutDesktopCrossplayStatusInfo->Status =
-        EOS_EDesktopCrossplayStatus::EOS_DCS_ApplicationNotBootstrapped;
+    OutDesktopCrossplayStatusInfo->Status = EOS_EDesktopCrossplayStatus::EOS_DCS_OK;
     return EOS_EResult::EOS_Success;
 #else
     return EOS_EResult::EOS_NotImplemented;
