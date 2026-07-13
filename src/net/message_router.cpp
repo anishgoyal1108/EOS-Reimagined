@@ -26,6 +26,14 @@ const u16 default_discovery_port_last = 55798;
 const std::chrono::milliseconds advertise_interval(2000);
 const std::chrono::milliseconds peer_timeout(10000);
 
+// How long we keep trying to reach a peer that answered our game before giving up on the dial.
+const std::chrono::milliseconds dial_timeout(5000);
+
+// A peer that will not take its bytes eventually has to go: if it lets this much pile up it is not
+// keeping up with us, and buffering more would only postpone the same conclusion while growing
+// without bound.
+const std::size_t max_outbox_bytes = 4 * 1024 * 1024;
+
 } // namespace
 
 net_config::net_config()
@@ -143,7 +151,12 @@ bool message_router::start() {
 }
 
 void message_router::stop() {
+    // Every socket goes, including the connections we accepted but have not named yet and the
+    // ones we are still dialing: leaving those open would let a stale frame arrive after a
+    // restart, and would hold their descriptors for the life of the process.
     peers_.clear();
+    pending_.clear();
+    dialing_.clear();
     self_send_.close();
     self_recv_.close();
     mesh_.close();
@@ -192,16 +205,38 @@ std::vector<std::string> message_router::peer_ids() const {
     return out;
 }
 
-bool message_router::send_framed(socket& sock, const std::vector<u8>& framed) {
-    std::size_t sent = 0;
-    while (sent < framed.size()) {
-        const int count = sock.send(framed.data() + sent, framed.size() - sent);
-        if (count <= 0) {
-            return false;
+std::size_t message_router::pending_output_bytes() const {
+    std::size_t total = 0;
+    std::map<std::string, peer>::const_iterator it = peers_.begin();
+    for (; it != peers_.end(); ++it) {
+        total += it->second.outbox.size();
+    }
+    return total;
+}
+
+bool message_router::flush_outbox(peer& entry) {
+    while (!entry.outbox.empty()) {
+        const int count = entry.connection.send(entry.outbox.data(), entry.outbox.size());
+        if (count > 0) {
+            entry.outbox.erase(entry.outbox.begin(), entry.outbox.begin() + count);
+            continue;
         }
-        sent += static_cast<std::size_t>(count);
+        // The kernel buffer is full. That is the peer reading slower than we are writing, not a
+        // broken connection, so we keep what is left and try again as the socket drains.
+        if (count < 0 && entry.connection.last_error() == sock_error::would_block) {
+            return true;
+        }
+        return false;
     }
     return true;
+}
+
+bool message_router::queue_and_flush(peer& entry, const std::vector<u8>& framed) {
+    if (entry.outbox.size() + framed.size() > max_outbox_bytes) {
+        return false;
+    }
+    entry.outbox.insert(entry.outbox.end(), framed.begin(), framed.end());
+    return flush_outbox(entry);
 }
 
 bool message_router::send(const net_envelope& msg) {
@@ -217,8 +252,8 @@ bool message_router::send(const net_envelope& msg) {
         if (it == peers_.end()) {
             return false;
         }
-        if (!send_framed(it->second.connection, framed)) {
-            // The peer's connection is gone; drop it so the interfaces learn it left.
+        if (!queue_and_flush(it->second, framed)) {
+            // The connection is genuinely broken; drop it so the interfaces learn the peer left.
             drop_peer(msg.dest_id, true);
             return false;
         }
@@ -230,7 +265,7 @@ bool message_router::send(const net_envelope& msg) {
     std::vector<std::string> dead;
     std::map<std::string, peer>::iterator it = peers_.begin();
     for (; it != peers_.end(); ++it) {
-        if (!send_framed(it->second.connection, framed)) {
+        if (!queue_and_flush(it->second, framed)) {
             dead.push_back(it->first);
         }
     }
@@ -243,7 +278,20 @@ bool message_router::send(const net_envelope& msg) {
 bool message_router::send_to_self(const net_envelope& msg) {
     byte_writer writer;
     serialize(writer, msg);
-    return send_framed(self_send_, frame_message(writer.data()));
+    const std::vector<u8> framed = frame_message(writer.data());
+    std::size_t sent = 0;
+    while (sent < framed.size()) {
+        const int count = self_send_.send(framed.data() + sent, framed.size() - sent);
+        if (count > 0) {
+            sent += static_cast<std::size_t>(count);
+            continue;
+        }
+        if (count < 0 && self_send_.last_error() == sock_error::would_block) {
+            continue; // the loopback pair drains immediately; keep offering the rest
+        }
+        return false;
+    }
+    return true;
 }
 
 void message_router::advertise() {
@@ -305,7 +353,8 @@ void message_router::drain_pending() {
     std::size_t i = 0;
     while (i < pending_.size()) {
         std::vector<net_envelope> messages;
-        drain_stream(pending_[i].connection, pending_[i].buffer, messages);
+        const stream_health health =
+            drain_stream(pending_[i].connection, pending_[i].buffer, messages);
 
         // The first envelope names the peer, which promotes the connection into the mesh.
         std::string id;
@@ -317,8 +366,8 @@ void message_router::drain_pending() {
         }
         const bool stale = std::chrono::steady_clock::now() - pending_[i].accepted_at > peer_timeout;
         if (id.empty()) {
-            // Nothing identifying yet. Give up on a connection that never says who it is.
-            if (stale) {
+            // Nothing identifying yet. Give up on one that hung up or never says who it is.
+            if (health == stream_closed || stale) {
                 pending_.erase(pending_.begin() + i);
             } else {
                 i++;
@@ -380,32 +429,81 @@ void message_router::handle_advertise(const net_envelope& msg, const endpoint& f
         return;
     }
 
+    if (dialing_.find(infos.product_user_id) != dialing_.end()) {
+        return; // already on our way there
+    }
+
     socket connection;
     if (!connection.open_tcp()) {
         return;
     }
-    // The peer advertised a moment ago, so this connect resolves promptly; we switch the socket
-    // to non-blocking only once it is established.
-    if (!connection.connect(endpoint(from.ip, infos.tcp_port))) {
-        return;
-    }
+    // Non-blocking before we dial, so a peer whose advertised port is stale or filtered cannot
+    // stall the game inside connect() for however long the OS takes to give up. The connect is
+    // finished on a later tick instead.
     if (!connection.set_nonblocking(true)) {
         return;
     }
 
-    adopt_peer(infos.product_user_id, std::move(connection));
+    dialing_peer dial;
+    dial.address = endpoint(from.ip, infos.tcp_port);
+    dial.started_at = std::chrono::steady_clock::now();
+    dial.connection = std::move(connection);
+    const bool done = dial.connection.connect(dial.address) &&
+                      dial.connection.last_error() != sock_error::would_block &&
+                      dial.connection.last_error() != sock_error::in_progress;
+    if (done) {
+        adopt_peer(infos.product_user_id, std::move(dial.connection));
+        announce_to(infos.product_user_id);
+        return;
+    }
+    dialing_[infos.product_user_id] = std::move(dial);
+}
 
-    // Name ourselves to the peer that just accepted us, so it can key the connection.
+void message_router::finish_dialing() {
+    std::vector<std::string> done;
+    std::vector<std::string> failed;
+    const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+
+    std::map<std::string, dialing_peer>::iterator it = dialing_.begin();
+    for (; it != dialing_.end(); ++it) {
+        // Offering the address again is how a non-blocking connect reports itself finished: once
+        // it lands, the socket answers that it is already connected.
+        const bool ok = it->second.connection.connect(it->second.address);
+        const sock_error error = it->second.connection.last_error();
+        if (ok && (error == sock_error::none || error == sock_error::is_connected)) {
+            done.push_back(it->first);
+        } else if (!ok && error != sock_error::would_block && error != sock_error::in_progress) {
+            failed.push_back(it->first);
+        } else if (now - it->second.started_at > dial_timeout) {
+            failed.push_back(it->first);
+        }
+    }
+
+    for (std::size_t i = 0; i < failed.size(); i++) {
+        dialing_.erase(failed[i]); // the peer's next advertisement starts a fresh attempt
+    }
+    for (std::size_t i = 0; i < done.size(); i++) {
+        std::map<std::string, dialing_peer>::iterator entry = dialing_.find(done[i]);
+        socket connection = std::move(entry->second.connection);
+        dialing_.erase(entry);
+        adopt_peer(done[i], std::move(connection));
+        announce_to(done[i]);
+    }
+}
+
+// Name ourselves to a peer that just accepted our connection, so it can key it to us.
+void message_router::announce_to(const std::string& id) {
     net_advertise self;
     self.product_user_id = product_user_id_;
     self.game_id = game_id_;
     self.tcp_port = mesh_port_;
     byte_writer payload;
     serialize(payload, self);
+
     net_envelope hello;
     hello.type_tag = static_cast<u16>(message_type::net_advertise);
     hello.source_id = product_user_id_;
-    hello.dest_id = infos.product_user_id;
+    hello.dest_id = id;
     hello.game_id = game_id_;
     hello.payload = payload.data();
     send(hello);
@@ -442,24 +540,33 @@ void message_router::cb_run_frame() {
     }
     advertise();
     accept_peers();
+    finish_dialing();
     drain_datagrams();
     drain_pending();
 
-    // Drain each peer in turn. A peer whose connection died is dropped after the pass so the
-    // traversal is never invalidated by an erase, and its envelopes are dispatched afterwards so
-    // a listener cannot invalidate the peer table underneath us.
+    // Drain each peer in turn, and push out anything a full send buffer made us hold back. A peer
+    // whose connection died is dropped after the pass so the traversal is never invalidated by an
+    // erase, and its envelopes are dispatched afterwards so a listener cannot invalidate the peer
+    // table underneath us.
     const std::vector<std::string> ids = peer_ids();
     std::vector<net_envelope> messages;
+    std::vector<std::string> dead;
     for (std::size_t i = 0; i < ids.size(); i++) {
         std::map<std::string, peer>::iterator it = peers_.find(ids[i]);
         if (it == peers_.end()) {
             continue;
         }
         const std::size_t before = messages.size();
-        drain_stream(it->second.connection, it->second.buffer, messages);
+        const stream_health health = drain_stream(it->second.connection, it->second.buffer, messages);
         if (messages.size() > before) {
             it->second.last_seen = std::chrono::steady_clock::now();
         }
+        if (health == stream_closed || !flush_outbox(it->second)) {
+            dead.push_back(ids[i]);
+        }
+    }
+    for (std::size_t i = 0; i < dead.size(); i++) {
+        drop_peer(dead[i], true);
     }
 
     drain_stream(self_recv_, self_buffer_, messages);
@@ -499,17 +606,28 @@ bool message_router::decode_frames(std::vector<u8>& buffer, std::vector<net_enve
     return true;
 }
 
-void message_router::drain_stream(socket& sock, std::vector<u8>& buffer,
-                                  std::vector<net_envelope>& out) {
+message_router::stream_health message_router::drain_stream(socket& sock, std::vector<u8>& buffer,
+                                                           std::vector<net_envelope>& out) {
+    stream_health health = stream_alive;
     u8 temp[stream_chunk];
     while (true) {
         const int count = sock.recv(temp, sizeof(temp));
-        if (count <= 0) {
-            break;
+        if (count > 0) {
+            buffer.insert(buffer.end(), temp, temp + count);
+            continue;
         }
-        buffer.insert(buffer.end(), temp, temp + count);
+        // Zero is an orderly hangup, and any error other than "nothing to read yet" means the
+        // connection is finished. Either way the peer is gone and we should not wait out its
+        // advertisement timeout to notice.
+        if (count == 0 || sock.last_error() != sock_error::would_block) {
+            health = stream_closed;
+        }
+        break;
     }
-    decode_frames(buffer, out);
+    if (!decode_frames(buffer, out)) {
+        health = stream_closed; // it sent a frame we refuse to buffer
+    }
+    return health;
 }
 
 void message_router::drain_datagrams() {

@@ -68,15 +68,23 @@ public:
     // The product user ids of every peer currently in the mesh.
     std::vector<std::string> peer_ids() const;
 
+    // Bytes we are holding for peers whose send buffer was full. Non-zero means we are under
+    // backpressure right now.
+    std::size_t pending_output_bytes() const;
+
     // Drain the ready sockets, advertise if it is time, drop timed-out peers, and dispatch
     // whatever decoded. Called once per tick.
     void cb_run_frame();
 
 private:
-    // One peer in the mesh: the connection we exchange envelopes over and when we last heard it.
+    // One peer in the mesh. `outbox` holds bytes the socket would not take yet: a send that fills
+    // the kernel buffer is backpressure, not a dead peer, and abandoning a half-written frame
+    // would desynchronize the peer's stream. We keep the remainder and push it out as the socket
+    // drains.
     struct peer {
         platform::socket connection;
         std::vector<u8> buffer;
+        std::vector<u8> outbox;
         std::chrono::steady_clock::time_point last_seen;
     };
 
@@ -88,6 +96,20 @@ private:
         std::chrono::steady_clock::time_point accepted_at;
     };
 
+    // A peer we are dialing. The socket is non-blocking, so the connect is still in flight and we
+    // finish it on a later tick rather than stalling the game inside connect().
+    struct dialing_peer {
+        platform::socket connection;
+        platform::endpoint address;
+        std::chrono::steady_clock::time_point started_at;
+    };
+
+    // What a read told us about the far end.
+    enum stream_health {
+        stream_alive,  // nothing more to read for now
+        stream_closed  // the peer hung up or the connection failed
+    };
+
     bool open_discovery();
     bool open_mesh();
     bool open_self_pipe();
@@ -95,20 +117,26 @@ private:
     void advertise();
     void accept_peers();
     void drain_pending();
+    void finish_dialing();
     void handle_advertise(const net_envelope& msg, const platform::endpoint& from);
     void adopt_peer(const std::string& id, platform::socket connection);
+    void announce_to(const std::string& id);
     void drop_peer(const std::string& id, bool notify);
     void expire_peers();
 
-    // Decode every whole frame in `buffer`, handing each to `sink`. Returns false when the peer
+    // Decode every whole frame in `buffer`, handing each to `out`. Returns false when the peer
     // sent a frame we refuse to buffer.
     bool decode_frames(std::vector<u8>& buffer, std::vector<net_envelope>& out);
-    void drain_stream(platform::socket& sock, std::vector<u8>& buffer,
-                      std::vector<net_envelope>& out);
+    stream_health drain_stream(platform::socket& sock, std::vector<u8>& buffer,
+                               std::vector<net_envelope>& out);
     void drain_datagrams();
     void dispatch(const net_envelope& msg);
     void dispatch_peer_event(message_type type, const std::string& peer_id);
-    bool send_framed(platform::socket& sock, const std::vector<u8>& framed);
+
+    // Queue `framed` for `entry` and push out as much as the socket will take. Returns false only
+    // when the connection is genuinely broken, never for mere backpressure.
+    bool queue_and_flush(peer& entry, const std::vector<u8>& framed);
+    bool flush_outbox(peer& entry);
 
     net_config config_;
     std::string product_user_id_;
@@ -124,6 +152,7 @@ private:
     // Peers are keyed by product user id. A peer is only ever in the mesh once.
     std::map<std::string, peer> peers_;
     std::vector<pending_peer> pending_;
+    std::map<std::string, dialing_peer> dialing_;
     std::chrono::steady_clock::time_point last_advertise_;
 
     // Listeners are non-owning and must unregister before they are destroyed.
