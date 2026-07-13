@@ -34,6 +34,12 @@ public:
 
     void set_username(const std::string& username);
 
+    // The game may override the country and locale it is treated as being in, at any time. Neither
+    // reaches anything -- there is no service to send them to -- but the game can set one and read
+    // it back, and a game that cannot is a game that thinks the SDK is broken.
+    void set_override_country(const std::string& country) { override_country_ = country; }
+    void set_override_locale(const std::string& locale) { override_locale_ = locale; }
+
     const std::string& username() const { return username_; }
     // 32 lowercase hex characters, derived from the profile key (and, for the product user id, the
     // title), so the same profile is the same player on every run.

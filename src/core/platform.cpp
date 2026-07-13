@@ -15,6 +15,10 @@ sdk_platform::sdk_platform()
       sessions_(settings_, cb_manager_, network_, connect_),
       presence_(settings_, cb_manager_, network_),
       lobby_(settings_, cb_manager_, network_, connect_),
+      // A game that never says otherwise is in the foreground with a working network, which is the
+      // only state an emulator running beside it could be in.
+      application_status_(EOS_EApplicationStatus::EOS_AS_Foreground),
+      network_status_(EOS_ENetworkStatus::EOS_NS_Online),
       created_(false) {
     for (int i = 0; i < if_count; i++) {
         interfaces_[i].id = static_cast<interface_id>(i);
@@ -92,6 +96,31 @@ void sdk_platform::tick() {
     // precise frame/network interleave is revisited when the RX path lands.
     network_.cb_run_frame();
     cb_manager_.tick();
+}
+
+EOS_EResult sdk_platform::set_application_status(EOS_EApplicationStatus status) {
+    if (
+        status != EOS_EApplicationStatus::EOS_AS_BackgroundConstrained &&
+        status != EOS_EApplicationStatus::EOS_AS_BackgroundUnconstrained &&
+        status != EOS_EApplicationStatus::EOS_AS_BackgroundSuspended &&
+        status != EOS_EApplicationStatus::EOS_AS_Foreground
+    ) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    application_status_ = status;
+    return EOS_EResult::EOS_Success;
+}
+
+EOS_EResult sdk_platform::set_network_status(EOS_ENetworkStatus status) {
+    if (
+        status != EOS_ENetworkStatus::EOS_NS_Disabled &&
+        status != EOS_ENetworkStatus::EOS_NS_Offline &&
+        status != EOS_ENetworkStatus::EOS_NS_Online
+    ) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    network_status_ = status;
+    return EOS_EResult::EOS_Success;
 }
 
 void* sdk_platform::interface_handle(interface_id id) {

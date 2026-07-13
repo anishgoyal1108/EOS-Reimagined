@@ -1,5 +1,8 @@
 // Flat C ABI trampolines for the platform: lifecycle, the tick pump, and the interface
 // getters. Each forwards to the one process-global sdk_platform after validating the handle.
+#include <cstring>
+#include <string>
+
 #include "eos_sdk.h"
 
 #include "core/platform.h"
@@ -18,6 +21,22 @@ eosr::sdk_platform* checked_platform(EOS_HPlatform handle) {
         return 0;
     }
     return platform;
+}
+
+// The EOS out-buffer contract for a plain string: a buffer too small is LimitExceeded with the
+// length it would have needed, never a truncation the caller cannot detect.
+EOS_EResult copy_out(const std::string& text, char* out_buffer, int32_t* in_out_length) {
+    if (out_buffer == 0 || in_out_length == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    const int32_t needed = static_cast<int32_t>(text.size()) + 1; // room for the null
+    if (*in_out_length < needed) {
+        *in_out_length = needed;
+        return EOS_EResult::EOS_LimitExceeded;
+    }
+    std::memcpy(out_buffer, text.c_str(), static_cast<std::size_t>(needed));
+    *in_out_length = needed;
+    return EOS_EResult::EOS_Success;
 }
 
 } // namespace
@@ -99,3 +118,138 @@ EOSR_INTERFACE_GETTER(EOS_Platform_GetCustomInvitesInterface, EOS_HCustomInvites
 EOSR_INTERFACE_GETTER(EOS_Platform_GetIntegratedPlatformInterface, EOS_HIntegratedPlatform, eosr::if_integratedplatform)
 
 #undef EOSR_INTERFACE_GETTER
+
+// --- Application and network state ---
+//
+// A game tells the SDK when it is backgrounded or has lost the network, so the SDK can throttle what
+// it sends to Epic. There is nothing to throttle here, but the game reads these values back, and one
+// that suspends itself and sees no change has reason to think the SDK is not listening.
+
+EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_SetApplicationStatus(EOS_HPlatform Handle,
+                                                                const EOS_EApplicationStatus NewStatus) {
+    eosr::sdk_platform* platform = checked_platform(Handle);
+    return (platform != 0) ? platform->set_application_status(NewStatus)
+                           : EOS_EResult::EOS_InvalidParameters;
+}
+
+EOS_DECLARE_FUNC(EOS_EApplicationStatus) EOS_Platform_GetApplicationStatus(EOS_HPlatform Handle) {
+    eosr::sdk_platform* platform = checked_platform(Handle);
+    return (platform != 0) ? platform->application_status()
+                           : EOS_EApplicationStatus::EOS_AS_Foreground;
+}
+
+EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_SetNetworkStatus(EOS_HPlatform Handle,
+                                                            const EOS_ENetworkStatus NewStatus) {
+    eosr::sdk_platform* platform = checked_platform(Handle);
+    return (platform != 0) ? platform->set_network_status(NewStatus)
+                           : EOS_EResult::EOS_InvalidParameters;
+}
+
+EOS_DECLARE_FUNC(EOS_ENetworkStatus) EOS_Platform_GetNetworkStatus(EOS_HPlatform Handle) {
+    eosr::sdk_platform* platform = checked_platform(Handle);
+    return (platform != 0) ? platform->network_status() : EOS_ENetworkStatus::EOS_NS_Online;
+}
+
+// --- Country and locale ---
+//
+// These exist to be sent to services that localize a storefront. We have no storefront and no
+// service, so they are only ever what the game itself put there. The header says so too: "This is
+// not currently used for anything internally."
+
+EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_SetOverrideCountryCode(EOS_HPlatform Handle,
+                                                                  const char* NewCountryCode) {
+    eosr::sdk_platform* platform = checked_platform(Handle);
+    if (platform == 0 || NewCountryCode == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (std::strlen(NewCountryCode) >= EOS_COUNTRYCODE_MAX_LENGTH) {
+        return EOS_EResult::EOS_LimitExceeded;
+    }
+    platform->settings().set_override_country(NewCountryCode);
+    return EOS_EResult::EOS_Success;
+}
+
+EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetOverrideCountryCode(EOS_HPlatform Handle,
+                                                                  char* OutBuffer,
+                                                                  int32_t* InOutBufferLength) {
+    eosr::sdk_platform* platform = checked_platform(Handle);
+    if (platform == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    return copy_out(platform->settings().override_country(), OutBuffer, InOutBufferLength);
+}
+
+EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_SetOverrideLocaleCode(EOS_HPlatform Handle,
+                                                                 const char* NewLocaleCode) {
+    eosr::sdk_platform* platform = checked_platform(Handle);
+    if (platform == 0 || NewLocaleCode == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (std::strlen(NewLocaleCode) >= EOS_LOCALECODE_MAX_LENGTH) {
+        return EOS_EResult::EOS_LimitExceeded;
+    }
+    platform->settings().set_override_locale(NewLocaleCode);
+    return EOS_EResult::EOS_Success;
+}
+
+EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetOverrideLocaleCode(EOS_HPlatform Handle,
+                                                                 char* OutBuffer,
+                                                                 int32_t* InOutBufferLength) {
+    eosr::sdk_platform* platform = checked_platform(Handle);
+    if (platform == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    return copy_out(platform->settings().override_locale(), OutBuffer, InOutBufferLength);
+}
+
+// The active code is the override, and there is nothing else it could be: an account we could look
+// one up from is exactly the thing an emulator does not have. The header already says NotFound is
+// the answer when there is no override, so it is the honest one here.
+EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetActiveCountryCode(EOS_HPlatform Handle,
+                                                                EOS_EpicAccountId /*LocalUserId*/,
+                                                                char* OutBuffer,
+                                                                int32_t* InOutBufferLength) {
+    eosr::sdk_platform* platform = checked_platform(Handle);
+    if (platform == 0 || OutBuffer == 0 || InOutBufferLength == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    const std::string& country = platform->settings().override_country();
+    if (country.empty()) {
+        return EOS_EResult::EOS_NotFound;
+    }
+    return copy_out(country, OutBuffer, InOutBufferLength);
+}
+
+EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetActiveLocaleCode(EOS_HPlatform Handle,
+                                                               EOS_EpicAccountId /*LocalUserId*/,
+                                                               char* OutBuffer,
+                                                               int32_t* InOutBufferLength) {
+    eosr::sdk_platform* platform = checked_platform(Handle);
+    if (platform == 0 || OutBuffer == 0 || InOutBufferLength == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    const std::string& locale = platform->settings().override_locale();
+    if (locale.empty()) {
+        return EOS_EResult::EOS_NotFound;
+    }
+    return copy_out(locale, OutBuffer, InOutBufferLength);
+}
+
+// Desktop crossplay is the Epic overlay bootstrapper. There is no overlay and nothing to bootstrap,
+// and a game that asks is asking whether it may show the social overlay -- to which the answer is
+// no, for the reason the SDK's own enum already has a name for.
+EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetDesktopCrossplayStatus(
+    EOS_HPlatform Handle, const EOS_Platform_GetDesktopCrossplayStatusOptions* Options,
+    EOS_Platform_DesktopCrossplayStatusInfo* OutDesktopCrossplayStatusInfo) {
+    eosr::sdk_platform* platform = checked_platform(Handle);
+    if (platform == 0 || Options == 0 || OutDesktopCrossplayStatusInfo == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (Options->ApiVersion <= 0 ||
+        Options->ApiVersion > EOS_PLATFORM_GETDESKTOPCROSSPLAYSTATUS_API_LATEST) {
+        return EOS_EResult::EOS_IncompatibleVersion;
+    }
+    OutDesktopCrossplayStatusInfo->Status =
+        EOS_EDesktopCrossplayStatus::EOS_DCS_ApplicationNotBootstrapped;
+    return EOS_EResult::EOS_Success;
+}

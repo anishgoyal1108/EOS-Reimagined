@@ -10,6 +10,7 @@
 #include "eos_auth.h"
 #include "eos_lobby.h"
 #include "eos_p2p.h"
+#include "eos_version.h"
 
 #include <cstring>
 
@@ -718,4 +719,149 @@ TEST_CASE("the dynamic library wrapper handles failures and repeated cleanup") {
     lib.close();
     CHECK_FALSE(lib.is_open());
     CHECK((lib.symbol("EOS_Initialize") == nullptr));
+}
+
+// A game resolves every EOS_* symbol it imports when the library loads. One it cannot find kills the
+// process in the loader, before the SDK has run a single line -- so an export we simply do not have
+// is not a feature we are missing, it is a game that never starts. These are the handle-free helpers
+// a game reaches for outside any interface.
+TEST_CASE("the built SDK library exposes the version, result and byte-array helpers") {
+    REQUIRE_FALSE(g_library_path.empty());
+    dynamic_library lib;
+    REQUIRE(lib.open(g_library_path.c_str()));
+
+    RESOLVE(fn_get_version, EOS_GetVersion);
+    RESOLVE(fn_is_complete, EOS_EResult_IsOperationComplete);
+    RESOLVE(fn_bytes_to_string, EOS_ByteArray_ToString);
+    RESOLVE(fn_app_status_to_string, EOS_EApplicationStatus_ToString);
+    RESOLVE(fn_net_status_to_string, EOS_ENetworkStatus_ToString);
+
+    // We answer as the SDK whose headers we are built against, because that is what a game asking
+    // the question actually wants to know: which API it may expect.
+    CHECK(std::string(fn_get_version()) == std::string(EOS_VERSION_STRING));
+
+    // A result is final unless the callback that carried it is going to be called again.
+    CHECK(fn_is_complete(EOS_EResult::EOS_Success) == EOS_TRUE);
+    CHECK(fn_is_complete(EOS_EResult::EOS_NotFound) == EOS_TRUE);
+    CHECK(fn_is_complete(EOS_EResult::EOS_OperationWillRetry) == EOS_FALSE);
+    CHECK(fn_is_complete(EOS_EResult::EOS_Auth_PinGrantCode) == EOS_FALSE);
+    CHECK(fn_is_complete(EOS_EResult::EOS_Auth_MFARequired) == EOS_FALSE);
+
+    // Hex, uppercase -- the encoding the header's own example spells out.
+    const uint8_t bytes[] = {0xfa, 0x87, 0x09, 0x7a, 0x00};
+    char buffer[32];
+    uint32_t length = static_cast<uint32_t>(sizeof(buffer));
+    CHECK(fn_bytes_to_string(bytes, 5, buffer, &length) == EOS_EResult::EOS_Success);
+    CHECK(std::string(buffer) == "FA87097A00");
+    CHECK(length == 11); // ten characters plus the null
+
+    // A buffer too small is LimitExceeded with the length it would have needed, never a silent
+    // truncation the caller cannot detect.
+    uint32_t small = 4;
+    CHECK(fn_bytes_to_string(bytes, 5, buffer, &small) == EOS_EResult::EOS_LimitExceeded);
+    CHECK(small == 11);
+
+    uint32_t empty = static_cast<uint32_t>(sizeof(buffer));
+    CHECK(fn_bytes_to_string(bytes, 0, buffer, &empty) == EOS_EResult::EOS_Success);
+    CHECK(std::string(buffer).empty());
+
+    CHECK(std::string(fn_app_status_to_string(EOS_EApplicationStatus::EOS_AS_Foreground)) ==
+          "EOS_AS_Foreground");
+    CHECK(std::string(fn_net_status_to_string(EOS_ENetworkStatus::EOS_NS_Offline)) ==
+          "EOS_NS_Offline");
+}
+
+// A game tells the SDK when it is backgrounded or loses the network, and reads country and locale
+// back. None of it reaches a service -- there is none -- but a game that sets a value and does not
+// see it again has every reason to think the SDK is not listening to it.
+TEST_CASE("the built SDK library carries application, network, country and locale state") {
+    REQUIRE_FALSE(g_library_path.empty());
+    dynamic_library lib;
+    REQUIRE(lib.open(g_library_path.c_str()));
+
+    RESOLVE(fn_initialize, EOS_Initialize);
+    RESOLVE(fn_shutdown, EOS_Shutdown);
+    RESOLVE(fn_create, EOS_Platform_Create);
+    RESOLVE(fn_release, EOS_Platform_Release);
+    RESOLVE(fn_set_app, EOS_Platform_SetApplicationStatus);
+    RESOLVE(fn_get_app, EOS_Platform_GetApplicationStatus);
+    RESOLVE(fn_set_net, EOS_Platform_SetNetworkStatus);
+    RESOLVE(fn_get_net, EOS_Platform_GetNetworkStatus);
+    RESOLVE(fn_set_country, EOS_Platform_SetOverrideCountryCode);
+    RESOLVE(fn_get_country, EOS_Platform_GetOverrideCountryCode);
+    RESOLVE(fn_get_active_country, EOS_Platform_GetActiveCountryCode);
+    RESOLVE(fn_set_locale, EOS_Platform_SetOverrideLocaleCode);
+    RESOLVE(fn_get_locale, EOS_Platform_GetOverrideLocaleCode);
+    RESOLVE(fn_get_active_locale, EOS_Platform_GetActiveLocaleCode);
+    RESOLVE(fn_crossplay, EOS_Platform_GetDesktopCrossplayStatus);
+
+    EOS_InitializeOptions iopts = {};
+    iopts.ApiVersion = EOS_INITIALIZE_API_LATEST;
+    iopts.ProductName = "StatusTest";
+    iopts.ProductVersion = "1.0.0";
+    REQUIRE(fn_initialize(&iopts) == EOS_EResult::EOS_Success);
+
+    EOS_Platform_Options popts = {};
+    popts.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    popts.ProductId = "prod-abc";
+    popts.SandboxId = "sandbox-1";
+    popts.DeploymentId = "deploy-2";
+    popts.ClientCredentials.ClientId = "client";
+    popts.ClientCredentials.ClientSecret = "secret";
+    EOS_HPlatform platform = fn_create(&popts);
+    REQUIRE((platform != nullptr));
+
+    // A game that never says otherwise is in the foreground with a working network.
+    CHECK(fn_get_app(platform) == EOS_EApplicationStatus::EOS_AS_Foreground);
+    CHECK(fn_get_net(platform) == EOS_ENetworkStatus::EOS_NS_Online);
+
+    CHECK(fn_set_app(platform, EOS_EApplicationStatus::EOS_AS_BackgroundSuspended) ==
+          EOS_EResult::EOS_Success);
+    CHECK(fn_get_app(platform) == EOS_EApplicationStatus::EOS_AS_BackgroundSuspended);
+    CHECK(fn_set_net(platform, EOS_ENetworkStatus::EOS_NS_Offline) == EOS_EResult::EOS_Success);
+    CHECK(fn_get_net(platform) == EOS_ENetworkStatus::EOS_NS_Offline);
+
+    char buffer[32];
+    int32_t length = static_cast<int32_t>(sizeof(buffer));
+
+    // With no override there is nothing to be active: an account we could look one up from is
+    // exactly the thing we do not have.
+    CHECK(fn_get_active_country(platform, nullptr, buffer, &length) == EOS_EResult::EOS_NotFound);
+
+    CHECK(fn_set_country(platform, "US") == EOS_EResult::EOS_Success);
+    length = static_cast<int32_t>(sizeof(buffer));
+    CHECK(fn_get_country(platform, buffer, &length) == EOS_EResult::EOS_Success);
+    CHECK(std::string(buffer) == "US");
+    length = static_cast<int32_t>(sizeof(buffer));
+    CHECK(fn_get_active_country(platform, nullptr, buffer, &length) == EOS_EResult::EOS_Success);
+    CHECK(std::string(buffer) == "US");
+
+    CHECK(fn_set_locale(platform, "en-US") == EOS_EResult::EOS_Success);
+    length = static_cast<int32_t>(sizeof(buffer));
+    CHECK(fn_get_locale(platform, buffer, &length) == EOS_EResult::EOS_Success);
+    CHECK(std::string(buffer) == "en-US");
+    length = static_cast<int32_t>(sizeof(buffer));
+    CHECK(fn_get_active_locale(platform, nullptr, buffer, &length) == EOS_EResult::EOS_Success);
+    CHECK(std::string(buffer) == "en-US");
+
+    // A code longer than the SDK allows is refused rather than stored and handed back truncated.
+    CHECK(fn_set_country(platform, "TOOLONG") == EOS_EResult::EOS_LimitExceeded);
+    length = static_cast<int32_t>(sizeof(buffer));
+    CHECK(fn_get_country(platform, buffer, &length) == EOS_EResult::EOS_Success);
+    CHECK(std::string(buffer) == "US"); // and the one it had is still there
+
+    // A buffer too small reports the length it would have needed.
+    int32_t small = 1;
+    CHECK(fn_get_country(platform, buffer, &small) == EOS_EResult::EOS_LimitExceeded);
+    CHECK(small == 3); // "US" plus the null
+
+    // There is no overlay to bootstrap, and a game asking is asking whether it may show one.
+    EOS_Platform_GetDesktopCrossplayStatusOptions crossplay = {};
+    crossplay.ApiVersion = EOS_PLATFORM_GETDESKTOPCROSSPLAYSTATUS_API_LATEST;
+    EOS_Platform_DesktopCrossplayStatusInfo info = {};
+    CHECK(fn_crossplay(platform, &crossplay, &info) == EOS_EResult::EOS_Success);
+    CHECK(info.Status == EOS_EDesktopCrossplayStatus::EOS_DCS_ApplicationNotBootstrapped);
+
+    fn_release(platform);
+    CHECK(fn_shutdown() == EOS_EResult::EOS_Success);
 }

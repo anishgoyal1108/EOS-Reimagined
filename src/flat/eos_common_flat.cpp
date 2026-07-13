@@ -5,6 +5,8 @@
 #include <string>
 
 #include "eos_common.h"
+#include "eos_types.h"
+#include "eos_version.h"
 
 #include "common/ids.h"
 
@@ -75,4 +77,87 @@ EOS_DECLARE_FUNC(EOS_ProductUserId) EOS_ProductUserId_FromString(const char* Pro
         return 0;
     }
     return eosr::id_registry::instance().get_product_user_id(ProductUserIdString);
+}
+
+// A result says the operation is finished unless the callback that carried it is going to be called
+// again -- which is only ever the retry and the two interactive-login continuations.
+EOS_DECLARE_FUNC(EOS_Bool) EOS_EResult_IsOperationComplete(EOS_EResult Result) {
+    switch (Result) {
+        case EOS_EResult::EOS_OperationWillRetry:
+        case EOS_EResult::EOS_Auth_PinGrantCode:
+        case EOS_EResult::EOS_Auth_MFARequired:
+            return EOS_FALSE;
+        default:
+            return EOS_TRUE;
+    }
+}
+
+// Hex, uppercase, null-terminated -- the encoding the header's own example spells out ("FA87097A..").
+// A buffer too small is LimitExceeded with the length it would have needed, not a truncation.
+EOS_DECLARE_FUNC(EOS_EResult) EOS_ByteArray_ToString(const uint8_t* ByteArray, const uint32_t Length,
+                                                     char* OutBuffer,
+                                                     uint32_t* InOutBufferLength) {
+    if (OutBuffer == 0 || InOutBufferLength == 0 || (Length != 0 && ByteArray == 0)) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    const uint32_t needed = (Length * 2) + 1; // two characters a byte, and room for the null
+    if (*InOutBufferLength < needed) {
+        *InOutBufferLength = needed;
+        return EOS_EResult::EOS_LimitExceeded;
+    }
+    static const char digits[] = "0123456789ABCDEF";
+    for (uint32_t i = 0; i < Length; i++) {
+        OutBuffer[i * 2] = digits[(ByteArray[i] >> 4) & 0xf];
+        OutBuffer[(i * 2) + 1] = digits[ByteArray[i] & 0xf];
+    }
+    OutBuffer[Length * 2] = '\0';
+    *InOutBufferLength = needed;
+    return EOS_EResult::EOS_Success;
+}
+
+// A continuance token is minted by an interactive login continuation, and there is nothing here to
+// continue: an emulator has no account portal to send anyone to.
+EOS_DECLARE_FUNC(EOS_EResult) EOS_ContinuanceToken_ToString(EOS_ContinuanceToken ContinuanceToken,
+                                                            char* OutBuffer,
+                                                            int32_t* InOutBufferLength) {
+    if (OutBuffer == 0 || InOutBufferLength == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (ContinuanceToken == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    return EOS_EResult::EOS_NotFound;
+}
+
+EOS_DECLARE_FUNC(const char*) EOS_EApplicationStatus_ToString(EOS_EApplicationStatus Status) {
+    switch (Status) {
+        case EOS_EApplicationStatus::EOS_AS_BackgroundConstrained:
+            return "EOS_AS_BackgroundConstrained";
+        case EOS_EApplicationStatus::EOS_AS_BackgroundUnconstrained:
+            return "EOS_AS_BackgroundUnconstrained";
+        case EOS_EApplicationStatus::EOS_AS_BackgroundSuspended:
+            return "EOS_AS_BackgroundSuspended";
+        case EOS_EApplicationStatus::EOS_AS_Foreground:
+            return "EOS_AS_Foreground";
+    }
+    return "EOS_AS_Foreground";
+}
+
+EOS_DECLARE_FUNC(const char*) EOS_ENetworkStatus_ToString(EOS_ENetworkStatus Status) {
+    switch (Status) {
+        case EOS_ENetworkStatus::EOS_NS_Disabled:
+            return "EOS_NS_Disabled";
+        case EOS_ENetworkStatus::EOS_NS_Offline:
+            return "EOS_NS_Offline";
+        case EOS_ENetworkStatus::EOS_NS_Online:
+            return "EOS_NS_Online";
+    }
+    return "EOS_NS_Online";
+}
+
+// The version of the SDK we answer as. A game asking this is asking what API it may expect, so we
+// name the headers we are built against -- the version string the real SDK would have produced from
+// the very same header.
+EOS_DECLARE_FUNC(const char*) EOS_GetVersion(void) {
+    return EOS_VERSION_STRING;
 }

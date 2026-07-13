@@ -82,6 +82,14 @@ public:
     // is this pointer reinterpret_cast to the matching EOS_H<X> type.
     void* interface_handle(interface_id id);
 
+    // The application and network state a game tells us it is in. Nothing here reaches a service --
+    // there is none -- but a game sets these and reads them back, and one that suspends itself and
+    // sees no change has reason to think the SDK is broken. So we remember what it told us.
+    EOS_EApplicationStatus application_status() const { return application_status_; }
+    EOS_EResult set_application_status(EOS_EApplicationStatus status);
+    EOS_ENetworkStatus network_status() const { return network_status_; }
+    EOS_EResult set_network_status(EOS_ENetworkStatus status);
+
     sdk_settings& settings() { return settings_; }
     callback_manager& callbacks() { return cb_manager_; }
     message_router& network() { return network_; }
@@ -105,6 +113,8 @@ private:
     sdk_presence presence_;
     sdk_lobby lobby_;
     stub_interface interfaces_[if_count];
+    EOS_EApplicationStatus application_status_;
+    EOS_ENetworkStatus network_status_;
     bool created_;
 };
 
