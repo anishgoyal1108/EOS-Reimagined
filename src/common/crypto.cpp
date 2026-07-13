@@ -2,6 +2,8 @@
 
 #include <cstring>
 
+#include "monocypher.h"
+
 namespace eosr {
 
 namespace {
@@ -95,7 +97,9 @@ std::vector<u8> hmac_sha256(const u8* key, std::size_t key_len, const u8* messag
     if (key_len > sha256_block_size) {
         const std::vector<u8> hashed = sha256(key, key_len);
         std::memcpy(block_key, hashed.data(), hashed.size());
-    } else {
+    } else if (key_len != 0) {
+        // A zero-length key (e.g. HKDF with an empty salt) leaves the block all-zero; copying from a
+        // possibly-null pointer, even zero bytes, is undefined, so we skip it.
         std::memcpy(block_key, key, key_len);
     }
 
@@ -145,6 +149,70 @@ std::string base64url_encode(const u8* data, std::size_t len) {
 
 std::string base64url_encode(const std::string& text) {
     return base64url_encode(reinterpret_cast<const u8*>(text.data()), text.size());
+}
+
+// --- Authenticated-mesh primitives, over the vendored Monocypher (docs/adr/0001) ---
+
+void x25519_public_key(u8 out_public[x25519_key_len], const u8 secret[x25519_key_len]) {
+    crypto_x25519_public_key(out_public, secret);
+}
+
+bool x25519_shared(u8 out_shared[x25519_key_len], const u8 secret[x25519_key_len],
+                   const u8 peer_public[x25519_key_len]) {
+    crypto_x25519(out_shared, secret, peer_public);
+    // A low-order peer public key yields the all-zero shared secret; reject it rather than key a
+    // session off a value the peer forced. (Constant-time-ish: we always do the DH first.)
+    u8 zero[x25519_key_len] = {0};
+    return crypto_verify32(out_shared, zero) != 0; // verify32 returns 0 when equal
+}
+
+void aead_encrypt(u8* cipher, u8 mac[aead_tag_len], const u8 key[aead_key_len],
+                  const u8 nonce[aead_nonce_len], const u8* ad, std::size_t ad_len,
+                  const u8* plain, std::size_t len) {
+    crypto_aead_ctx ctx;
+    crypto_aead_init_ietf(&ctx, key, nonce);
+    crypto_aead_write(&ctx, cipher, mac, ad, ad_len, plain, len);
+    crypto_wipe(&ctx, sizeof(ctx));
+}
+
+bool aead_decrypt(u8* plain, const u8 key[aead_key_len], const u8 nonce[aead_nonce_len],
+                  const u8 mac[aead_tag_len], const u8* ad, std::size_t ad_len, const u8* cipher,
+                  std::size_t len) {
+    crypto_aead_ctx ctx;
+    crypto_aead_init_ietf(&ctx, key, nonce);
+    const int ok = crypto_aead_read(&ctx, plain, mac, ad, ad_len, cipher, len);
+    crypto_wipe(&ctx, sizeof(ctx));
+    if (ok != 0) {
+        // Never expose unverified plaintext.
+        if (plain != 0 && len != 0) {
+            crypto_wipe(plain, len);
+        }
+        return false;
+    }
+    return true;
+}
+
+void hkdf_sha256(const u8* salt, std::size_t salt_len, const u8* ikm, std::size_t ikm_len,
+                 std::size_t num_outputs, std::vector<std::vector<u8> >& out) {
+    // RFC 5869 with an empty info, which is exactly Noise's HKDF: extract, then chain
+    // T(i) = HMAC(prk, T(i-1) || i) with a one-byte counter starting at 1.
+    out.clear();
+    if (num_outputs < 1 || num_outputs > 3) {
+        return;
+    }
+    const std::vector<u8> prk = hmac_sha256(salt, salt_len, ikm, ikm_len);
+    std::vector<u8> previous;
+    for (std::size_t i = 0; i < num_outputs; i++) {
+        std::vector<u8> message = previous;
+        message.push_back(static_cast<u8>(i + 1));
+        std::vector<u8> block = hmac_sha256(prk.data(), prk.size(), message.data(), message.size());
+        previous = block;
+        out.push_back(block);
+    }
+}
+
+void secure_wipe(void* secret, std::size_t size) {
+    crypto_wipe(secret, size);
 }
 
 } // namespace eosr

@@ -9,6 +9,7 @@ add_executable(unit_tests
     unit/test_callback_manager.cpp
     unit/test_ids.cpp
     unit/test_handle_store.cpp
+    unit/test_crypto.cpp
     unit/test_wire.cpp
     unit/test_socket.cpp
     unit/test_message_router.cpp
