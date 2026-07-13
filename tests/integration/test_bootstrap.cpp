@@ -928,3 +928,50 @@ TEST_CASE("the built SDK library carries application, network, country and local
     fn_release(platform);
     CHECK(fn_shutdown() == EOS_EResult::EOS_Success);
 }
+
+// Directional compatibility test: on Windows the bootstrap probe now (correctly, and matching the
+// reference emulator) says the social prerequisites are ready. A game may consequently enter its UI
+// path, while a game that imports these functions resolves them before it reaches the probe at all.
+// Missing UI exports are therefore a loader/runtime boundary, not merely a disabled visual feature.
+// Keep this red until the headless UI compatibility shell lands; the companion can later replace the
+// AcknowledgeEventId stub with its real event lifecycle without changing this surface contract.
+TEST_CASE("the built SDK library exposes the complete social UI compatibility surface") {
+    REQUIRE_FALSE(g_library_path.empty());
+    dynamic_library lib;
+    REQUIRE(lib.open(g_library_path.c_str()));
+
+    const char* const ui_symbols[] = {
+        "EOS_UI_ShowFriends",
+        "EOS_UI_HideFriends",
+        "EOS_UI_GetFriendsVisible",
+        "EOS_UI_GetFriendsExclusiveInput",
+        "EOS_UI_AddNotifyDisplaySettingsUpdated",
+        "EOS_UI_RemoveNotifyDisplaySettingsUpdated",
+        "EOS_UI_SetToggleFriendsKey",
+        "EOS_UI_GetToggleFriendsKey",
+        "EOS_UI_IsValidKeyCombination",
+        "EOS_UI_SetToggleFriendsButton",
+        "EOS_UI_GetToggleFriendsButton",
+        "EOS_UI_IsValidButtonCombination",
+        "EOS_UI_SetDisplayPreference",
+        "EOS_UI_GetNotificationLocationPreference",
+        "EOS_UI_AcknowledgeEventId",
+        "EOS_UI_ReportInputState",
+        "EOS_UI_PrePresent",
+        "EOS_UI_ShowBlockPlayer",
+        "EOS_UI_ShowReportPlayer",
+        "EOS_UI_PauseSocialOverlay",
+        "EOS_UI_IsSocialOverlayPaused",
+        "EOS_UI_AddNotifyMemoryMonitor",
+        "EOS_UI_RemoveNotifyMemoryMonitor",
+        "EOS_UI_ShowNativeProfile",
+        "EOS_UI_ConfigureOnScreenKeyboard",
+        "EOS_UI_AddNotifyOnScreenKeyboardRequested",
+        "EOS_UI_RemoveNotifyOnScreenKeyboardRequested"
+    };
+    const std::size_t ui_symbol_count = sizeof(ui_symbols) / sizeof(ui_symbols[0]);
+    for (std::size_t i = 0; i < ui_symbol_count; i++) {
+        CHECK_MESSAGE((lib.symbol(ui_symbols[i]) != nullptr),
+                      (std::string("missing export: ") + ui_symbols[i]));
+    }
+}

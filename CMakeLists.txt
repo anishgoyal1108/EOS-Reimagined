@@ -38,6 +38,7 @@ add_library(eosr_core STATIC
     src/interfaces/sessions.cpp
     src/interfaces/presence.cpp
     src/interfaces/lobby.cpp
+    src/interfaces/ui.cpp
     src/net/wire.cpp
     src/net/secure_channel.cpp
     src/net/peer_channel.cpp
@@ -101,6 +102,7 @@ add_library(eos_shared SHARED
     src/flat/eos_sessions_flat.cpp
     src/flat/eos_presence_flat.cpp
     src/flat/eos_lobby_flat.cpp
+    src/flat/eos_ui_flat.cpp
 )
 target_link_libraries(eos_shared PRIVATE eosr_core)
 set_target_properties(eos_shared PROPERTIES

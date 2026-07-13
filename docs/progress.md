@@ -66,7 +66,7 @@ Tier A = source-assisted (2020 GPL source). Tier B = binary + 1.19 headers only.
 | EOSSDK_IntegratedPlatform | 8 | B | ✅ | ◑ | ✅ (integratedplatform-ui-overlay.md) |
 | &nbsp;&nbsp;EOSSDK_IntegratedPlatformContainer | 4 | B | ✅ | ◑ | ✅ (integratedplatform-ui-overlay.md) |
 | EOSSDK_ProgressionSnapshot | 7 | B | ✅ | ◑ | ✅ (misc-services.md) |
-| EOSSDK_UI | 26 | B | ✅ | ◑ | ✅ (integratedplatform-ui-overlay.md) |
+| EOSSDK_UI | 27 | B | ✅ | ◑ | ✅ (integratedplatform-ui-overlay.md) |
 | (Overlay) | — | B | | | ◑ (integratedplatform-ui-overlay.md; render out of scope) |
 
 Total: **42 classes, 705 methods named.**

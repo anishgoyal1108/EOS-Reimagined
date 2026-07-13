@@ -8,6 +8,7 @@
 #include "interfaces/auth.h"
 #include "interfaces/connect.h"
 #include "interfaces/lobby.h"
+#include "interfaces/ui.h"
 #include "interfaces/p2p.h"
 #include "interfaces/presence.h"
 #include "interfaces/sessions.h"
@@ -99,6 +100,7 @@ public:
     sdk_sessions& sessions() { return sessions_; }
     sdk_presence& presence() { return presence_; }
     sdk_lobby& lobby() { return lobby_; }
+    sdk_ui& ui() { return ui_; }
 
 private:
     sdk_settings settings_;
@@ -112,6 +114,7 @@ private:
     sdk_sessions sessions_;
     sdk_presence presence_;
     sdk_lobby lobby_;
+    sdk_ui ui_;
     stub_interface interfaces_[if_count];
     EOS_EApplicationStatus application_status_;
     EOS_ENetworkStatus network_status_;
