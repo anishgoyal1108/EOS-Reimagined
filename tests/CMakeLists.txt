@@ -27,6 +27,14 @@ add_executable(unit_tests
 )
 target_link_libraries(unit_tests PRIVATE eosr_core doctest)
 
+# The authenticated-mesh ADR requires secret HKDF intermediates to be wiped.  GNU-compatible
+# linkers can interpose the vendored wipe primitive so the unit test observes that contract without
+# reading freed storage.  Both supported build targets (Linux and MinGW) use this linker facility.
+if((UNIX AND NOT APPLE) OR MINGW)
+    target_link_options(unit_tests PRIVATE "-Wl,--wrap=crypto_wipe")
+    target_compile_definitions(unit_tests PRIVATE EOSR_TEST_WRAP_CRYPTO_WIPE=1)
+endif()
+
 add_test(NAME unit_tests COMMAND unit_tests)
 
 # Integration tests load the real built library through the C ABI, exactly like a game would,

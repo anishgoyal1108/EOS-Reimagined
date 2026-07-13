@@ -11,6 +11,10 @@ using namespace eosr;
 
 namespace {
 
+#if defined(EOSR_TEST_WRAP_CRYPTO_WIPE)
+std::size_t observed_wiped_bytes = 0;
+#endif
+
 std::vector<u8> unhex(const std::string& hex) {
     std::vector<u8> out;
     out.reserve(hex.size() / 2);
@@ -36,6 +40,15 @@ std::string tohex(const u8* data, std::size_t len) {
 }
 
 } // namespace
+
+#if defined(EOSR_TEST_WRAP_CRYPTO_WIPE)
+extern "C" void __real_crypto_wipe(void* secret, std::size_t size);
+
+extern "C" void __wrap_crypto_wipe(void* secret, std::size_t size) {
+    observed_wiped_bytes += size;
+    __real_crypto_wipe(secret, size);
+}
+#endif
 
 // RFC 7748 section 6.1: the Curve25519 Diffie-Hellman known-answer.
 TEST_CASE("X25519 matches the RFC 7748 test vector") {
@@ -123,6 +136,47 @@ TEST_CASE("HKDF-SHA256 matches the RFC 5869 (empty salt/info) vector") {
     // The two outputs chain distinctly.
     CHECK(tohex(out[1].data(), out[1].size()) != tohex(out[0].data(), out[0].size()));
 }
+
+#if defined(EOSR_TEST_WRAP_CRYPTO_WIPE)
+TEST_CASE("HMAC-SHA256 wipes its secret intermediate material") {
+    const std::vector<u8> key(32, 0x5a);
+    const std::vector<u8> message(32, 0xa5);
+
+    observed_wiped_bytes = 0;
+    const std::vector<u8> mac = hmac_sha256(key.data(), key.size(), message.data(), message.size());
+    REQUIRE(mac.size() == 32);
+
+    // The padded HMAC key alone is 64 bytes; inner/outer buffers and their digest contain more
+    // secret-derived material that should also be erased.
+    CHECK(observed_wiped_bytes >= 64);
+}
+
+TEST_CASE("HKDF-SHA256 wipes its secret intermediate material") {
+    const std::vector<u8> chaining_key(32, 0x5a);
+    const std::vector<u8> input_key_material(32, 0xa5);
+    std::vector<std::vector<u8> > out;
+
+    // Measure the wipe work performed by the three HMAC calls HKDF requires, using the same inputs
+    // and message sizes.  HKDF must erase at least its 32-byte extract PRK in addition to that work.
+    observed_wiped_bytes = 0;
+    const std::vector<u8> prk = hmac_sha256(chaining_key.data(), chaining_key.size(),
+                                            input_key_material.data(), input_key_material.size());
+    const u8 first_counter = 1;
+    const std::vector<u8> first = hmac_sha256(prk.data(), prk.size(), &first_counter, 1);
+    std::vector<u8> second_message = first;
+    second_message.push_back(2);
+    const std::vector<u8> second = hmac_sha256(prk.data(), prk.size(), second_message.data(),
+                                               second_message.size());
+    REQUIRE(second.size() == 32);
+    const std::size_t hmac_wiped_bytes = observed_wiped_bytes;
+
+    observed_wiped_bytes = 0;
+    hkdf_sha256(chaining_key.data(), chaining_key.size(), input_key_material.data(),
+                input_key_material.size(), 2, out);
+
+    CHECK(observed_wiped_bytes >= hmac_wiped_bytes + 32);
+}
+#endif
 
 TEST_CASE("a generated X25519 keypair agrees on a shared secret") {
     // Two fresh keypairs Diffie-Hellman to the same secret -- the property the handshake relies on.

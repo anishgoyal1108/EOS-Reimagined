@@ -109,7 +109,7 @@ std::vector<u8> hmac_sha256(const u8* key, std::size_t key_len, const u8* messag
         inner.push_back(block_key[i] ^ 0x36);
     }
     inner.insert(inner.end(), message, message + message_len);
-    const std::vector<u8> inner_hash = sha256(inner.data(), inner.size());
+    std::vector<u8> inner_hash = sha256(inner.data(), inner.size());
 
     std::vector<u8> outer;
     outer.reserve(sha256_block_size + sha256_digest_size);
@@ -117,7 +117,21 @@ std::vector<u8> hmac_sha256(const u8* key, std::size_t key_len, const u8* messag
         outer.push_back(block_key[i] ^ 0x5c);
     }
     outer.insert(outer.end(), inner_hash.begin(), inner_hash.end());
-    return sha256(outer.data(), outer.size());
+    std::vector<u8> result = sha256(outer.data(), outer.size());
+
+    // The padded key and the intermediate hash are derived from the key, so they are wiped rather
+    // than left in freed memory. The result is the MAC and is the caller's to keep.
+    secure_wipe(block_key, sizeof(block_key));
+    if (!inner.empty()) {
+        secure_wipe(inner.data(), inner.size());
+    }
+    if (!inner_hash.empty()) {
+        secure_wipe(inner_hash.data(), inner_hash.size());
+    }
+    if (!outer.empty()) {
+        secure_wipe(outer.data(), outer.size());
+    }
+    return result;
 }
 
 std::string base64url_encode(const u8* data, std::size_t len) {
@@ -200,7 +214,7 @@ void hkdf_sha256(const u8* salt, std::size_t salt_len, const u8* ikm, std::size_
     if (num_outputs < 1 || num_outputs > 3) {
         return;
     }
-    const std::vector<u8> prk = hmac_sha256(salt, salt_len, ikm, ikm_len);
+    std::vector<u8> prk = hmac_sha256(salt, salt_len, ikm, ikm_len);
     std::vector<u8> previous;
     for (std::size_t i = 0; i < num_outputs; i++) {
         std::vector<u8> message = previous;
@@ -208,6 +222,20 @@ void hkdf_sha256(const u8* salt, std::size_t salt_len, const u8* ikm, std::size_
         std::vector<u8> block = hmac_sha256(prk.data(), prk.size(), message.data(), message.size());
         previous = block;
         out.push_back(block);
+        // `block` and `message` are copies of key material now held in `out`/`previous`; wipe these.
+        if (!block.empty()) {
+            secure_wipe(block.data(), block.size());
+        }
+        if (!message.empty()) {
+            secure_wipe(message.data(), message.size());
+        }
+    }
+    // The extract key and the last chaining block are secret; the outputs belong to the caller.
+    if (!prk.empty()) {
+        secure_wipe(prk.data(), prk.size());
+    }
+    if (!previous.empty()) {
+        secure_wipe(previous.data(), previous.size());
     }
 }
 

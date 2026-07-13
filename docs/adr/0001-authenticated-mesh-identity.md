@@ -26,23 +26,32 @@ Honest end-state wording (for README/docs once shipped):
 - **Handshake: standards-exact `Noise_XX_25519_ChaChaPoly_SHA256`.** Not a "Noise-style" approximation — the real transcript, checked against the published Noise test vectors. Rationale for **XX**: peers know neither the other's static key at first contact (so a pre-shared-key or known-responder pattern does not fit), and XX transmits both static keys *encrypted* and proves possession of both, producing mutually-authenticated transport keys with forward secrecy.
 - **Self-certifying identities:** `ProductUserId` and `EpicAccountId` are *derived from the peer's static X25519 public key*. The receiver **recomputes** them from the key it authenticated in the handshake and never trusts a claimed id. Ed25519 is **not** needed initially — the X25519 static key already is the persistent identity, and Noise proves possession of its private half.
 - **The router exposes ONE verified transport identity.** After this milestone, no interface decides who sent a frame from an envelope string; it reads the verified id the secure channel provides.
-- **The existing `EncryptionKey`** (a per-game secret every client knows) MAY be mixed into the handshake as an optional Noise **PSK** to gate a game's mesh, but it can **never** be the identity root — every copy of the game holds it, so it cannot distinguish players.
+- **The existing `EncryptionKey`** (a per-game secret every client knows) can gate a game's mesh but can **never** be the identity root — every copy of the game holds it, so it cannot distinguish players. When gating is enabled the protocol is exactly **`Noise_XXpsk0_25519_ChaChaPoly_SHA256`**: `psk0` places a `MixKeyAndHash(psk)` before the first message and adds a `MixKey` on every `e` token, per the Noise spec's PSK rules. The `psk` is the 32 bytes decoded from the `EncryptionKey`, which is validated as **exactly 64 lowercase hex characters** (→ 32 bytes); any other value is rejected with a clear error rather than silently truncated or ignored. **Phase 1 ships plain `Noise_XX` (no PSK)**; enabling gating is a later opt-in that changes the protocol name, so a psk and a non-psk peer simply fail to handshake (different protocol name in the transcript) rather than interoperate insecurely.
 
 ## 4. Identity derivation
 
 A profile is a persistent X25519 keypair `(s_priv, s_pub)`. Ids are derived so the **format is unchanged** from today (32 lowercase hex = 16 bytes), which means `id_registry`, the wire, and every interface are untouched by the *format*; only the *source* of the bytes changes.
 
-```
-profile = SHA256("eosr-profile-v1" || s_pub)                    // 32 bytes, domain-separated
+Every hashed input is a **canonical length-prefixed encoding**, never a raw concatenation of variable-length fields — otherwise `(product,sandbox,deployment) = ("ab","c","")` and `("a","bc","")` would hash to the same PUID. Define:
 
-EAID = hex( first_16_bytes( SHA256("eosr-eaid-v1" || profile) ) )
-PUID = hex( first_16_bytes( SHA256("eosr-puid-v1" || profile
-                                    || product_id || sandbox_id || deployment_id) ) )
+```
+lp(x)          = u32_be( byte_length(x) ) || x            // one length-prefixed field
+enc(a, b, ...) = lp(a) || lp(b) || ...                    // unambiguous ordered concatenation
 ```
 
-- `PUID` folds in product/sandbox/deployment so the same profile is a distinct product-user across titles/deployments, matching EOS semantics.
+so `enc("ab","c","")` = `00000002 "ab" 00000001 "c" 00000000` differs from `enc("a","bc","")`. Then:
+
+```
+profile = SHA256( enc("eosr-profile-v1", s_pub) )                 // 32 bytes, domain-separated
+
+EAID = hex( first_16_bytes( SHA256( enc("eosr-eaid-v1", profile) ) ) )
+PUID = hex( first_16_bytes( SHA256( enc("eosr-puid-v1", profile,
+                                        product_id, sandbox_id, deployment_id) ) ) )
+```
+
+- `PUID` folds in product/sandbox/deployment (each its own length-prefixed field) so the same profile is a distinct product-user across titles/deployments, matching EOS semantics.
 - `EAID` is product-independent (one Epic-account-like identity per profile), matching how Presence keys on it.
-- Domain-separation strings (`eosr-*-v1`) keep the three hashes independent and versioned; a future change bumps the suffix.
+- The `eosr-*-v1` domain strings keep the three hashes independent and versioned; a future change bumps the suffix. `enc()` is the single canonical encoder used everywhere an id or the prologue (Section 5) is derived.
 - SHA-256 is our from-scratch implementation; the derivation is pure and identical on every platform.
 
 The private key lives in a profile file under the platform config dir (`platform/paths`), never on the wire. Losing it loses the identity (there is no recovery authority — that is inherent).
@@ -60,13 +69,14 @@ XX:
 
 We implement the full `SymmetricState`/`HandshakeState`: `MixHash`, `MixKey`, `MixKeyAndHash` (for the optional PSK), `EncryptAndHash`, `DecryptAndHash`, `Split`. The concrete function map:
 
-- **DH:** X25519 (Monocypher `crypto_x25519`).
-- **Cipher:** ChaCha20-Poly1305, IETF/RFC 8439 construction with the 96-bit nonce = `0^32 || le64(counter)` exactly as Noise specifies (Monocypher `crypto_aead_lock`/`unlock`).
-- **Hash:** SHA-256 (ours). HKDF is `HMAC-SHA256`-based, matching Noise's `HKDF`.
+- **DH:** X25519, via the `crypto` wrapper's `x25519_shared` (which rejects the all-zero low-order result), never raw Monocypher.
+- **Cipher:** IETF ChaCha20-Poly1305 (RFC 8439) with the 96-bit nonce = `0x00000000 || le64(counter)` exactly as Noise specifies, via the wrapper's `aead_encrypt`/`aead_decrypt` (built on Monocypher's `crypto_aead_init_ietf` + `crypto_aead_write`/`read`). **Not** `crypto_aead_lock`/`unlock` — those are the 24-byte-nonce XChaCha20 construction and would misread a 12-byte Noise nonce. The wrapper is KAT-verified against RFC 8439 §2.8.2.
+- **Hash:** SHA-256 (ours). HKDF is `HMAC-SHA256`-based (the wrapper's `hkdf_sha256`), matching Noise's `HKDF`.
 
-**Prologue** (bound into the transcript via the initial `MixHash`, so any disagreement makes the handshake fail closed):
+**Prologue** (bound into the transcript via the initial `MixHash`, so any disagreement makes the handshake fail closed). It uses the same canonical `enc()` from Section 4, with the wire version as a fixed `u8`, so no two distinct contexts share a transcript:
 ```
-prologue = "eosr-noise-v1" || wire_protocol_version(=2) || product_id || sandbox_id || deployment_id
+prologue = enc("eosr-noise-v1") || u8(wire_protocol_version = 2)
+           || enc(product_id, sandbox_id, deployment_id)
 ```
 This ties the session to the game and the protocol version; a peer of a different game or version cannot complete the handshake.
 
@@ -85,9 +95,18 @@ Post-handshake, every mesh frame is `AEAD(key_dir, counter++, plaintext=serializ
 
 ## 7. Transport framing (UDP / P2P)
 
-The P2P data path uses UDP and is currently unauthenticated. After the TCP handshake establishes per-peer keys, UDP packets to that peer are protected too:
+The P2P data path uses UDP and is currently unauthenticated. After the TCP handshake completes, UDP packets to that peer are protected with keys **derived separately from the TCP transport keys**, so the two transports never share a `(key, nonce)`:
 
-- Each UDP datagram is `AEAD(udp_key_dir, seq, plaintext, ad)`, `ad =` verified sender id, dest id, channel, socket name, session generation, and the 64-bit sequence number.
+```
+(c_i2r, c_r2i)      = Split()                                    // the two Noise cipher states — TCP ONLY
+udp_i2r, udp_r2i    = HKDF( salt = handshake_hash,
+                            ikm  = enc("eosr-udp-subkey-v1", u64_be(session_generation)), 2 )
+```
+
+- TCP framing (Section 6) uses `c_i2r`/`c_r2i` directly (standard Noise transport). UDP uses `udp_i2r`/`udp_r2i` — independent keys under a distinct label, so a UDP sequence starting at 0 can never collide with a TCP counter at 0.
+- `session_generation` (folded into the UDP `ikm`) increments on every reconnect, so a fresh session derives fresh UDP keys and an old datagram cannot be replayed into a new one.
+- Each of the four keys has its **own** 64-bit counter/sequence starting at 0; a direction's key is used with a strictly increasing counter and torn down on exhaustion.
+- Each UDP datagram is `AEAD(udp_key_dir, le64(seq), plaintext, ad)`, `ad = enc(` verified sender id, dest id, `u32(channel)`, socket name, `u64(session_generation)`, `u64(seq)` `)`.
 - A per-peer **replay window** (sliding bitmap) rejects duplicate or too-old sequence numbers.
 - UDP discovery (`net_advertise`) remains an **untrusted hint**: it only triggers a dial; the authenticated TCP handshake is what establishes identity. (Signing advertisements is a possible later refinement; not required, since discovery grants no trust on its own.)
 
@@ -133,8 +152,11 @@ The Monocypher header is included **only** inside `src/common/crypto.cpp` (and t
 - **Router invariant:** the id an interface sees always comes from the secure channel, never the envelope.
 - **Nonce discipline:** counters never repeat across directions or reconnects; exhaustion tears down.
 - **Cross-platform:** Linux and Windows produce identical transcript/derivation vectors.
+- **Encoding non-ambiguity:** `enc("ab","c","")` and `enc("a","bc","")` produce **different** PUIDs and different prologues (the length-prefix regression from the review).
+- **Transport-key separation:** the TCP counter-0 and UDP sequence-0 tuples never share a `(key, nonce)` — the UDP keys are derived under their own label and differ from the Split outputs.
+- **PSK (when gating is enabled):** the `Noise_XXpsk0_25519_ChaChaPoly_SHA256` path matches its official vectors, and a non-64-hex or otherwise malformed `EncryptionKey` is rejected explicitly, not silently ignored.
 - **Legacy:** in authenticated mode a v1/legacy peer is refused without downgrade; in legacy mode it is accepted and surfaced unverified.
-- **Sanitizers + fuzz:** ASan/UBSan across the suite; a malformed-frame fuzz target on the channel decoder.
+- **Sanitizers + fuzz:** ASan/UBSan across the suite; a malformed-frame fuzz target on the channel decoder. (Note: the integration/dynamic-library LSan tier has a **pre-existing** process-lifetime leak in the load/unload path, present since `foundation-frozen` and unrelated to crypto — tracked separately; the unit tier is leak-clean.)
 
 ## 12. Implementation phases (each committed green on both targets, ASan-clean)
 
