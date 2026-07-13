@@ -193,13 +193,28 @@ void sdk_p2p::queue_event(pending_event::kind type, const std::string& peer,
     pending_events_.push_back(event);
 }
 
+// An empty peer or socket means every one of them, so this is both "drop what this peer sent" and
+// "drop everything the game asked us to clear".
 void sdk_p2p::flush_packets(const std::string& peer, const std::string& socket) {
     std::deque<received_packet>::iterator it = receive_queue_.begin();
     while (it != receive_queue_.end()) {
-        if (it->peer == peer && (socket.empty() || it->socket == socket)) {
+        const bool same_peer = peer.empty() || it->peer == peer;
+        const bool same_socket = socket.empty() || it->socket == socket;
+        if (same_peer && same_socket) {
             it = receive_queue_.erase(it);
         } else {
             ++it;
+        }
+    }
+}
+
+void sdk_p2p::discard_delayed(const std::string& peer, const std::string& socket) {
+    std::map<connection_key, connection>::iterator it = connections_.begin();
+    for (; it != connections_.end(); ++it) {
+        const bool same_peer = peer.empty() || it->first.peer == peer;
+        const bool same_socket = socket.empty() || it->first.socket == socket;
+        if (same_peer && same_socket) {
+            it->second.delayed.clear();
         }
     }
 }
@@ -250,13 +265,15 @@ EOS_EResult sdk_p2p::send_packet(const EOS_P2P_SendPacketOptions* options) {
             return EOS_EResult::EOS_Success;
         }
         // What we hold for a peer that has not agreed is the outgoing queue, and the game's limit
-        // applies to it. A packet we have no room for is dropped exactly as an undelayed one is.
+        // applies to it. A packet we have no room for is not sent -- and saying otherwise would be
+        // worse than dropping it, because EOS_Success means we accepted the packet for sending, so
+        // a game may throw away its own copy of one we never had room for.
         const u64 held = outgoing_queued_bytes();
         if (
             outgoing_queue_max_bytes_ != EOS_P2P_MAX_QUEUE_SIZE_UNLIMITED &&
             held + static_cast<u64>(data.size()) > outgoing_queue_max_bytes_
         ) {
-            return EOS_EResult::EOS_Success;
+            return EOS_EResult::EOS_LimitExceeded;
         }
         delayed_packet waiting;
         waiting.data = data;
@@ -683,15 +700,20 @@ EOS_EResult sdk_p2p::clear_packet_queue(const EOS_P2P_ClearPacketQueueOptions* o
     if (!version_is_supported(options->ApiVersion, EOS_P2P_CLEARPACKETQUEUE_API_LATEST)) {
         return EOS_EResult::EOS_IncompatibleVersion;
     }
-    // With no peer named we clear everything; otherwise we clear that peer's packets, limited to
-    // one socket when a socket is named.
-    if (options->RemoteUserId == 0) {
-        receive_queue_.clear();
-        return EOS_EResult::EOS_Success;
+    if (!is_local_user(options->LocalUserId)) {
+        return EOS_EResult::EOS_InvalidUser;
     }
+    // Both queues go. The packets we are holding for the game to receive, and the ones we are
+    // holding to send once a peer agrees -- a game that clears its queues and then watches an
+    // obsolete packet go out anyway has not cleared the thing it was worried about.
+    //
+    // No peer named means every peer, and no socket named means every socket.
+    const std::string peer =
+        (options->RemoteUserId != 0) ? options->RemoteUserId->id_str : std::string();
     const std::string socket =
         (options->SocketId != 0) ? socket_name_of(options->SocketId) : std::string();
-    flush_packets(options->RemoteUserId->id_str, socket);
+    flush_packets(peer, socket);
+    discard_delayed(peer, socket);
     return EOS_EResult::EOS_Success;
 }
 
@@ -784,7 +806,10 @@ void sdk_p2p::fire_queue_full_notifications() {
             }
             EOS_P2P_OnIncomingPacketQueueFullInfo* info =
                 note->get_callback<EOS_P2P_OnIncomingPacketQueueFullInfo>();
-            info->PacketQueueMaxSizeBytes = incoming_queue_max_bytes_;
+            // The limit that turned this packet away, not whatever the limit is by the time the
+            // game hears about it -- a game that raised it in between would otherwise be handed an
+            // event describing a packet that would have fit.
+            info->PacketQueueMaxSizeBytes = dropped[i].queue_max_bytes;
             info->PacketQueueCurrentSizeBytes = dropped[i].queue_size_bytes;
             info->OverflowPacketLocalUserId = local;
             info->OverflowPacketChannel = dropped[i].channel;
@@ -894,6 +919,7 @@ bool sdk_p2p::on_network_message(const net_envelope& message) {
             dropped.channel = static_cast<u8>(payload.channel);
             dropped.size_bytes = static_cast<u32>(payload.data.size());
             dropped.queue_size_bytes = held;
+            dropped.queue_max_bytes = incoming_queue_max_bytes_;
             overflows_.push_back(dropped);
             return true;
         }

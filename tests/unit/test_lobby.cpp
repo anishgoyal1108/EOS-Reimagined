@@ -713,3 +713,43 @@ TEST_CASE("an older CreateLobby struct is not read past its end") {
         CHECK(g_lobby_id == "pinned-lobby-id-not-ours-to-read");
     }
 }
+
+// Historical SDK headers close two of the conservative gaps: LobbyId is already present in
+// CreateLobby v7, and bEnableJoinById is present in v8. Those versions must not lose fields their
+// own callers genuinely supplied merely because later numbered headers are scarce.
+TEST_CASE("CreateLobby honors fields proved present by the version-7 and version-8 headers") {
+    lobby_fixture fx;
+    EOS_Lobby_CreateLobbyOptions options = {};
+    options.LocalUserId = fx.me();
+    options.MaxLobbyMembers = 4;
+    options.PermissionLevel = EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED;
+    options.bAllowInvites = EOS_TRUE;
+    options.LobbyId = "version-seven-lobby";
+
+    SUBCASE("version 7 honors its lobby id") {
+        options.ApiVersion = 7;
+        g_lobby_id.clear();
+        fx.lobby.create_lobby(&options, 0, on_create);
+        fx.callbacks.tick();
+        REQUIRE(g_create_result == EOS_EResult::EOS_Success);
+        CHECK(g_lobby_id == "version-seven-lobby");
+    }
+
+    SUBCASE("version 8 honors its join-by-id flag") {
+        options.ApiVersion = 8;
+        options.bEnableJoinById = EOS_TRUE;
+        g_lobby_id.clear();
+        fx.lobby.create_lobby(&options, 0, on_create);
+        fx.callbacks.tick();
+        REQUIRE(g_create_result == EOS_EResult::EOS_Success);
+
+        EOS_HLobbyDetails details = fx.details_for(g_lobby_id);
+        REQUIRE(details != 0);
+        EOS_LobbyDetails_Info* info = 0;
+        REQUIRE(fx.lobby.details_copy_info(details, &info) == EOS_EResult::EOS_Success);
+        REQUIRE(info != 0);
+        CHECK(info->bAllowJoinById == EOS_TRUE);
+        release_lobby_details_info(info);
+        fx.lobby.details_release(details);
+    }
+}

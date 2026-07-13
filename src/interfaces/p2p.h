@@ -144,12 +144,15 @@ private:
         EOS_EConnectionClosedReason reason;
     };
 
-    // A packet the incoming queue had no room for. The game is told which packet it lost, so we
-    // keep what it needs to know until the notification fires on the tick.
+    // A packet the incoming queue had no room for. The game is told which packet it lost, so we keep
+    // what it needs to know until the notification fires on the tick -- including the limit that
+    // turned it away. The game may raise the limit before then, and reporting the new one would
+    // describe a packet that would have fit.
     struct overflow_packet {
         u8 channel;
         u32 size_bytes;
         u64 queue_size_bytes; // what the queue held at the moment we turned this one away
+        u64 queue_max_bytes;  // and the limit it was measured against
     };
 
     // A registered connection notification, with the socket it is limited to (empty = any).
@@ -165,6 +168,8 @@ private:
                   const std::vector<u8>& data, bool reliable);
     // Push out everything we held back while the connection was being agreed.
     void flush_delayed(const connection_key& key, connection& entry);
+    // Throw away what we are holding to send. An empty peer or socket means every one of them.
+    void discard_delayed(const std::string& peer, const std::string& socket);
     void remember_filter(EOS_NotificationId id, const EOS_P2P_SocketId* socket_filter);
     void queue_event(pending_event::kind type, const std::string& peer, const std::string& socket,
                      EOS_EConnectionClosedReason reason);

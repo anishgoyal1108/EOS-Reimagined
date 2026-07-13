@@ -90,23 +90,23 @@ bool version_ok(i32 version, i32 latest) {
     return version > 0 && version <= latest;
 }
 
-// The ApiVersion at which each EOS_Lobby_CreateLobbyOptions field is first guaranteed to be inside
-// the caller's struct. A game built against an older SDK passes a *shorter* struct, so reading a
-// field it does not have reads the game's own memory -- and BucketId and LobbyId are pointers we
-// would then build a std::string from.
+// The ApiVersion at which each EOS_Lobby_CreateLobbyOptions field arrived. A game built against an
+// older SDK passes a *shorter* struct, so reading a field it does not have reads the game's own
+// memory -- and BucketId and LobbyId are pointers we would then build a std::string from.
 //
-// The version each field actually arrived in is published nowhere: Epic's headers carry only
-// _API_LATEST, and the numbered structs stop at SDK 1.8, which knew only versions 1 and 2. What we
-// can prove is that EOS only ever appends fields, at least one per version, so the field at ordinal
-// position P is inside any struct whose version has reached P - 3 (version 1 had four fields). That
-// is the strongest bound available, and it errs the right way: a field we ignore costs an old caller
-// a feature its SDK predates anyway, where a field we read too eagerly costs it a crash.
+// Epic's current headers carry only _API_LATEST, so these come from the struct as it stood in the
+// SDKs that shipped each version: 4 fields at v1 and 5 at v2 (the numbered structs, which stop at
+// SDK 1.8), 11 at v7, and 13 at v8. That pins every field we read.
+//
+// Note v6 added *two* fields at once (bEnableRTCRoom and its LocalRTCOptions), which is why the
+// count and the version part ways from there -- and why guessing a cutoff from a field's position
+// gets LobbyId and bEnableJoinById wrong by one.
 const i32 createlobby_with_allow_invites = 3;          // field 6
 const i32 createlobby_with_bucket_id = 4;              // field 7
 const i32 createlobby_with_disable_host_migration = 5; // field 8
-const i32 createlobby_with_rtc_room = 6;               // field 9
-const i32 createlobby_with_lobby_id = 8;               // field 11
-const i32 createlobby_with_join_by_id = 9;             // field 12
+const i32 createlobby_with_rtc_room = 6;               // fields 9 and 10
+const i32 createlobby_with_lobby_id = 7;               // field 11
+const i32 createlobby_with_join_by_id = 8;             // fields 12 and 13
 
 template <class T>
 bool compare_ordered(const T& mine, const T& theirs, i32 op) {

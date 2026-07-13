@@ -650,6 +650,104 @@ TEST_CASE("the incoming packet limit rejects overflow and fires the queue-full n
     CHECK(g_queue_full_packet_size >= 3);
 }
 
+// The notification describes the overflow that already happened. A limit changed after arrival but
+// before the next tick must not rewrite that event into one under which the packet would have fit.
+TEST_CASE("a queue-full notification keeps the limit that rejected its packet") {
+    p2p_fixture fx;
+    fx.open_connection("game");
+    REQUIRE(fx.p2p.add_notify_incoming_packet_queue_full(0, on_queue_full) !=
+            EOS_INVALID_NOTIFICATIONID);
+
+    EOS_P2P_SetPacketQueueSizeOptions limit = {};
+    limit.ApiVersion = EOS_P2P_SETPACKETQUEUESIZE_API_LATEST;
+    limit.IncomingPacketQueueMaxSizeBytes = 5;
+    REQUIRE(fx.p2p.set_packet_queue_size(&limit) == EOS_EResult::EOS_Success);
+
+    fx.p2p.on_network_message(
+        make_p2p_envelope(message_type::p2p_data, peer_id, "game", 4, {1, 2, 3}));
+    fx.p2p.on_network_message(
+        make_p2p_envelope(message_type::p2p_data, peer_id, "game", 7, {4, 5, 6}));
+
+    limit.IncomingPacketQueueMaxSizeBytes = 10;
+    REQUIRE(fx.p2p.set_packet_queue_size(&limit) == EOS_EResult::EOS_Success);
+    fx.callbacks.tick();
+
+    REQUIRE(g_queue_full_count == 1);
+    CHECK(g_queue_full_max == 5);
+    CHECK(g_queue_full_current == 3);
+    CHECK(g_queue_full_channel == 7);
+}
+
+// SendPacket documents LimitExceeded when the outgoing queue is full. Success means EOS accepted
+// the packet for sending, so it cannot be returned for a packet the configured limit discarded.
+TEST_CASE("a full outgoing packet queue returns LimitExceeded") {
+    p2p_fixture fx;
+    EOS_P2P_SetPacketQueueSizeOptions limit = {};
+    limit.ApiVersion = EOS_P2P_SETPACKETQUEUESIZE_API_LATEST;
+    limit.OutgoingPacketQueueMaxSizeBytes = 3;
+    REQUIRE(fx.p2p.set_packet_queue_size(&limit) == EOS_EResult::EOS_Success);
+
+    EOS_P2P_SocketId socket = make_socket("game");
+    const u8 first[] = {1, 2, 3};
+    EOS_P2P_SendPacketOptions send = {};
+    send.ApiVersion = EOS_P2P_SENDPACKET_API_LATEST;
+    send.LocalUserId = fx.local();
+    send.RemoteUserId = fx.remote();
+    send.SocketId = &socket;
+    send.DataLengthBytes = sizeof(first);
+    send.Data = first;
+    send.bAllowDelayedDelivery = EOS_TRUE;
+    send.Reliability = EOS_EPacketReliability::EOS_PR_ReliableOrdered;
+    REQUIRE(fx.p2p.send_packet(&send) == EOS_EResult::EOS_Success);
+
+    const u8 overflow[] = {4};
+    send.DataLengthBytes = sizeof(overflow);
+    send.Data = overflow;
+    CHECK(fx.p2p.send_packet(&send) == EOS_EResult::EOS_LimitExceeded);
+}
+
+// ClearPacketQueue covers incoming and outgoing packets. Delayed delivery is the outgoing queue
+// this implementation owns, so a matching clear must remove it from the reported queue state.
+TEST_CASE("clearing a peer packet queue removes its delayed outgoing packets") {
+    p2p_fixture fx;
+    EOS_P2P_SocketId socket = make_socket("game");
+    const u8 payload[] = {1, 2, 3};
+    EOS_P2P_SendPacketOptions send = {};
+    send.ApiVersion = EOS_P2P_SENDPACKET_API_LATEST;
+    send.LocalUserId = fx.local();
+    send.RemoteUserId = fx.remote();
+    send.SocketId = &socket;
+    send.DataLengthBytes = sizeof(payload);
+    send.Data = payload;
+    send.bAllowDelayedDelivery = EOS_TRUE;
+    send.Reliability = EOS_EPacketReliability::EOS_PR_ReliableOrdered;
+    REQUIRE(fx.p2p.send_packet(&send) == EOS_EResult::EOS_Success);
+
+    EOS_P2P_PacketQueueInfo queue = {};
+    REQUIRE(fx.p2p.get_packet_queue_info(&queue) == EOS_EResult::EOS_Success);
+    REQUIRE(queue.OutgoingPacketQueueCurrentPacketCount == 1);
+
+    EOS_P2P_ClearPacketQueueOptions clear = {};
+    clear.ApiVersion = EOS_P2P_CLEARPACKETQUEUE_API_LATEST;
+    clear.LocalUserId = fx.local();
+    clear.RemoteUserId = fx.remote();
+    clear.SocketId = &socket;
+    REQUIRE(fx.p2p.clear_packet_queue(&clear) == EOS_EResult::EOS_Success);
+
+    REQUIRE(fx.p2p.get_packet_queue_info(&queue) == EOS_EResult::EOS_Success);
+    CHECK(queue.OutgoingPacketQueueCurrentSizeBytes == 0);
+    CHECK(queue.OutgoingPacketQueueCurrentPacketCount == 0);
+}
+
+TEST_CASE("clearing packet queues rejects a non-local user") {
+    p2p_fixture fx;
+    EOS_P2P_ClearPacketQueueOptions clear = {};
+    clear.ApiVersion = EOS_P2P_CLEARPACKETQUEUE_API_LATEST;
+    clear.LocalUserId = fx.remote();
+    clear.RemoteUserId = fx.remote();
+    CHECK(fx.p2p.clear_packet_queue(&clear) == EOS_EResult::EOS_InvalidUser);
+}
+
 TEST_CASE("a p2p notification that removes another while firing is memory-safe") {
     static sdk_p2p* remover = 0;
     static EOS_NotificationId target = 0;
