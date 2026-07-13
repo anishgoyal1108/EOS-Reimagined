@@ -14,6 +14,10 @@ option(BUILD_TESTING "Build the test suite" ON)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/compiler_warnings.cmake)
 
+# Vendored, audited crypto primitives (X25519, ChaCha20-Poly1305) for the authenticated mesh. Built
+# in its own target so project warnings do not apply to third-party source. See docs/adr/0001.
+add_subdirectory(third_party/monocypher)
+
 # Portable, OS-agnostic core. Platform-specific code will live under src/platform/ and be
 # added per-OS in a later commit; nothing here touches an OS API directly.
 add_library(eosr_core STATIC
@@ -43,6 +47,10 @@ target_include_directories(eosr_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/eos
 )
 target_compile_definitions(eosr_core PUBLIC EOS_BUILDING_SDK=1)
+
+# The crypto wrapper (src/common/crypto.cpp) is the only place the Monocypher API is used; link it
+# privately so the vendor header does not leak to the core's own consumers.
+target_link_libraries(eosr_core PRIVATE monocypher)
 
 # All OS-specific code lives behind src/platform/; select the right implementation here.
 if(WIN32)
