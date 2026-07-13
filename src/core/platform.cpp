@@ -43,9 +43,11 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
     cb_manager_.set_max_tick_budget(std::chrono::milliseconds(settings_.tick_budget_ms()));
 
     // Discovery advertises who we are and which game we are running, so only peers running the
-    // same product mesh with us. A platform still works with no network: peers simply never
-    // appear, and everything local keeps functioning.
-    network_.set_identity(settings_.product_user_id(), settings_.product_id());
+    // same product mesh with us -- and only after each has proved it holds the key its identity is
+    // derived from. A platform still works with no network: peers simply never appear, and
+    // everything local keeps functioning.
+    network_.set_identity(settings_.profile(), settings_.product_id(), settings_.sandbox_id(),
+                          settings_.deployment_id());
     if (!network_.start()) {
         log_warn("platform: peer discovery unavailable; running without peers");
     }

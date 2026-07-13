@@ -40,6 +40,7 @@ add_library(eosr_core STATIC
     src/interfaces/lobby.cpp
     src/net/wire.cpp
     src/net/secure_channel.cpp
+    src/net/peer_channel.cpp
     src/net/message_router.cpp
 )
 

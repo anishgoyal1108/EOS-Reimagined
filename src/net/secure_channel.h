@@ -67,9 +67,17 @@ public:
     bool done() const { return done_; }
 
     // After done(), and exactly once: key our sending and receiving transport cipher states,
-    // oriented to this side. Returns false before the handshake completes or on a repeat call, and
-    // leaves the passed states untouched -- so it can never hand out transport keys before the peer
-    // is authenticated, nor reset a live transport back to nonce zero.
+    // oriented to this side, and derive the two directional UDP keys the P2P data path uses.
+    // Returns false before the handshake completes or on a repeat call, and leaves the passed states
+    // untouched -- so it can never hand out transport keys before the peer is authenticated, nor
+    // reset a live transport back to nonce zero.
+    //
+    // The UDP keys come out of here rather than from the caller because they are derived from the
+    // secret chaining key, which this object holds and discards. They are independent of the two
+    // transport keys, so a UDP sequence starting at zero can never collide with a TCP counter at
+    // zero. Spec: docs/adr/0001 §7
+    bool split(cipher_state& send, cipher_state& recv, u8 udp_send[32], u8 udp_recv[32]);
+    // The transport keys alone, for a caller with no UDP path to key.
     bool split(cipher_state& send, cipher_state& recv);
     // 32-byte final handshake hash (valid once done()); channel-binding value.
     const u8* handshake_hash() const { return handshake_hash_; }

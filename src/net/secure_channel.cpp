@@ -12,6 +12,11 @@ namespace {
 // Noise_XX_25519_ChaChaPoly_SHA256 is exactly 32 bytes, so the initial hash is the name itself
 // (no padding, no pre-hash), per Noise's InitializeSymmetric.
 const char* const protocol_name = "Noise_XX_25519_ChaChaPoly_SHA256";
+
+// The label the P2P data path's keys are derived under, keeping them independent of the two
+// transport keys Split hands back. Spec: docs/adr/0001 §7
+const char* const udp_subkey_domain = "eosr-udp-subkey-v1";
+
 const std::size_t hash_len = 32;
 const std::size_t dh_len = 32;
 const std::size_t tag_len = 16;
@@ -356,31 +361,63 @@ bool noise_handshake::read_message(const u8* message, std::size_t message_len,
     return true;
 }
 
-bool noise_handshake::split(cipher_state& send, cipher_state& recv) {
+bool noise_handshake::split(cipher_state& send, cipher_state& recv, u8 udp_send[32],
+                            u8 udp_recv[32]) {
     // Only after the peer is authenticated, and only once -- a second call must not re-key a live
     // transport back to nonce zero, and a call before done() must not hand out any key at all. The
     // passed states are left untouched on refusal.
     if (!done_ || split_done_) {
         return false;
     }
+
+    // The UDP keys are derived from ck_, the secret chaining key, and never from the handshake hash:
+    // that hash is a digest of transcript data anyone watching the wire can see, so a key derived
+    // from it would be a key an eavesdropper could rebuild. ck_ has every DH secret mixed into it
+    // and never leaves this process. Its own label keeps these two keys clear of the transport pair
+    // below, so a UDP sequence opening at zero can never meet a TCP counter at zero under one key.
+    canonical_encoder subkey_input;
+    subkey_input.field(udp_subkey_domain);
+    std::vector<std::vector<u8> > udp;
+    hkdf_sha256(ck_, hash_len, subkey_input.data().data(), subkey_input.data().size(), 2, udp);
+    if (udp.size() != 2) {
+        return false;
+    }
+
     std::vector<std::vector<u8> > out;
     hkdf_sha256(ck_, hash_len, 0, 0, 2, out);
     if (out.size() != 2) {
+        eosr::secure_wipe(udp[0].data(), udp[0].size());
+        eosr::secure_wipe(udp[1].data(), udp[1].size());
         return false;
     }
     // The initiator sends with the first key and receives with the second; the responder is the
-    // mirror. Both sides agree on which key is which.
+    // mirror. Both sides agree on which key is which, on both transports.
     if (initiator_) {
         send.init_key(out[0].data());
         recv.init_key(out[1].data());
+        std::memcpy(udp_send, udp[0].data(), dh_len);
+        std::memcpy(udp_recv, udp[1].data(), dh_len);
     } else {
         send.init_key(out[1].data());
         recv.init_key(out[0].data());
+        std::memcpy(udp_send, udp[1].data(), dh_len);
+        std::memcpy(udp_recv, udp[0].data(), dh_len);
     }
     eosr::secure_wipe(out[0].data(), out[0].size());
     eosr::secure_wipe(out[1].data(), out[1].size());
+    eosr::secure_wipe(udp[0].data(), udp[0].size());
+    eosr::secure_wipe(udp[1].data(), udp[1].size());
     split_done_ = true;
     return true;
+}
+
+bool noise_handshake::split(cipher_state& send, cipher_state& recv) {
+    u8 udp_send[32];
+    u8 udp_recv[32];
+    const bool ok = split(send, recv, udp_send, udp_recv);
+    eosr::secure_wipe(udp_send, sizeof(udp_send));
+    eosr::secure_wipe(udp_recv, sizeof(udp_recv));
+    return ok;
 }
 
 } // namespace eosr

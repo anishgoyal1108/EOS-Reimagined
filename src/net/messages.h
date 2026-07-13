@@ -8,8 +8,11 @@
 
 namespace eosr {
 
-// Bumped when the envelope or message layout changes in an incompatible way.
-constexpr u8 wire_protocol_version = 1;
+// Bumped when the envelope or message layout changes in an incompatible way. Version 2 is the
+// authenticated mesh: a peer runs the Noise handshake before it is anything to us, and every frame
+// after it is sealed. It is pinned into the handshake transcript, so a peer of another version
+// cannot complete one -- there is no downgrade to refuse, only a handshake that does not finish.
+constexpr u8 wire_protocol_version = 2;
 
 // Largest message body we accept from a peer; a larger declared frame is treated as
 // malformed rather than buffered, so a peer cannot exhaust memory.

@@ -12,6 +12,7 @@ add_executable(unit_tests
     unit/test_crypto.cpp
     unit/test_secure_channel.cpp
     unit/test_identity.cpp
+    unit/test_peer_channel.cpp
     unit/test_wire.cpp
     unit/test_socket.cpp
     unit/test_message_router.cpp

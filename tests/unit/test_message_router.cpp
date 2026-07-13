@@ -11,6 +11,8 @@
 #include "net/wire.h"
 #include "platform/socket.h"
 
+#include "fixed_profile.h"
+
 using namespace eosr;
 
 namespace {
@@ -94,9 +96,13 @@ net_config test_config(u16 first) {
     return config;
 }
 
-// Bring a router up on its own discovery range with a distinct identity.
-bool start_router(message_router& router, const std::string& id, u16 first) {
-    router.set_identity(id, "test-game");
+// Bring a router up on its own discovery range. These tests only exercise the self-pipe, so the
+// profile is a fixed one: the router still needs a key -- it will not start without one it could
+// authenticate a peer with -- but no peer ever turns up to be authenticated.
+bool start_router(message_router& router, u16 first) {
+    identity profile;
+    test::seed_profile(profile, 0x51);
+    router.set_identity(profile, "test-game", "", "");
     router.set_config(test_config(first));
     return router.start();
 }
@@ -106,7 +112,7 @@ bool start_router(message_router& router, const std::string& id, u16 first) {
 TEST_CASE("the router delivers a self-sent message to its registered listener") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(start_router(router, "self", 45700));
+    REQUIRE(start_router(router, 45700));
 
     capture_listener listener;
     router.register_listener(message_type::emu_infos_response, &listener);
@@ -124,7 +130,7 @@ TEST_CASE("the router delivers a self-sent message to its registered listener") 
 TEST_CASE("the router does not deliver a message of an unregistered type") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(start_router(router, "self", 45700));
+    REQUIRE(start_router(router, 45700));
 
     capture_listener listener;
     router.register_listener(message_type::emu_infos_response, &listener);
@@ -144,7 +150,7 @@ TEST_CASE("the router does not deliver a message of an unregistered type") {
 TEST_CASE("an unregistered listener stops receiving") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(start_router(router, "self", 45700));
+    REQUIRE(start_router(router, 45700));
 
     capture_listener listener;
     router.register_listener(message_type::emu_infos_response, &listener);
@@ -164,7 +170,7 @@ TEST_CASE("an unregistered listener stops receiving") {
 TEST_CASE("listener mutation during dispatch takes effect on the next message") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(start_router(router, "self", 45700));
+    REQUIRE(start_router(router, 45700));
 
     unregistering_listener removes_itself(router);
     capture_listener stable;
@@ -188,7 +194,7 @@ TEST_CASE("listener mutation during dispatch takes effect on the next message") 
 TEST_CASE("a listener registered during dispatch does not receive the current message") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(start_router(router, "self", 45700));
+    REQUIRE(start_router(router, 45700));
 
     capture_listener added;
     registering_listener registrar(router, added);
@@ -211,7 +217,7 @@ TEST_CASE("a listener registered during dispatch does not receive the current me
 TEST_CASE("duplicate and null listener registrations are ignored") {
     REQUIRE(platform::net_init());
     message_router router;
-    REQUIRE(start_router(router, "self", 45700));
+    REQUIRE(start_router(router, 45700));
 
     capture_listener listener;
     router.register_listener(message_type::emu_infos_response, &listener);
@@ -233,10 +239,10 @@ TEST_CASE("the router can stop and restart while retaining registrations") {
     router.register_listener(message_type::emu_infos_response, &listener);
 
     CHECK_FALSE(router.send_to_self(make_envelope(message_type::emu_infos_response, "stopped")));
-    REQUIRE(start_router(router, "self", 45700));
+    REQUIRE(start_router(router, 45700));
     router.stop();
     router.stop();
-    REQUIRE(start_router(router, "self", 45700));
+    REQUIRE(start_router(router, 45700));
 
     REQUIRE(router.send_to_self(make_envelope(message_type::emu_infos_response, "restarted")));
     pump_until(router, [&]() { return listener.count == 1; });

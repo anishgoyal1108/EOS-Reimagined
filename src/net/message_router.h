@@ -3,12 +3,15 @@
 
 #include <chrono>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "common/types.h"
 #include "core/i_run_network.h"
+#include "core/identity.h"
 #include "net/messages.h"
+#include "net/peer_channel.h"
 #include "platform/socket.h"
 
 namespace eosr {
@@ -30,12 +33,15 @@ struct net_config {
 // Moves envelopes between this instance and its peers, and hands each decoded envelope to the
 // interface that registered for its type.
 //
-// Discovery is a UDP advertisement broadcast on a timer; a peer that answers our game id gets a
-// TCP connection in the mesh, and every envelope after that travels the mesh with a length
-// prefix. Locally-originated envelopes go through a loopback self-pipe so they take the same
-// decode-and-dispatch path as a peer's. A peer appearing or timing out is dispatched to the
-// interfaces as a synthetic peer_connected / peer_disconnected envelope.
-// Spec: Network (docs/protocol.md)
+// Discovery is a UDP advertisement broadcast on a timer. An advertisement is only ever a hint: it
+// says where to look, and it is believed about nothing else. A peer that answers there runs a Noise
+// handshake first, and only when that completes -- proving it holds the key its identity is derived
+// from -- does it become a peer at all. Every frame afterwards is sealed under that handshake, so a
+// frame cannot be forged, replayed, reordered, or read off the wire. Locally-originated envelopes
+// go through a loopback self-pipe, in the clear, so they take the same decode-and-dispatch path
+// without pretending to be a peer. A peer appearing or timing out is dispatched to the interfaces
+// as a synthetic peer_connected / peer_disconnected envelope.
+// Spec: Network (docs/protocol.md), authenticated mesh (docs/adr/0001)
 class message_router {
 public:
     message_router();
@@ -44,28 +50,38 @@ public:
     message_router(const message_router&) = delete;
     message_router& operator=(const message_router&) = delete;
 
-    // Who we advertise as. Set before start; peers only mesh with us when the game id matches.
-    void set_identity(const std::string& product_user_id, const std::string& game_id);
+    // Who we are on the mesh. The profile's key is what proves this identity to a peer, and what a
+    // peer's key proves to us: we recompute the id it answers to rather than believe the one it
+    // claims. The title is bound into every handshake, so an instance of another game cannot finish
+    // one. Our own id is derived here by the same formula a peer will use on us -- there is no other
+    // id we could answer to. Set before start.
+    void set_identity(const identity& profile, const std::string& product_id,
+                      const std::string& sandbox_id, const std::string& deployment_id);
     void set_config(const net_config& config);
 
     // Bind a discovery slot, open the mesh listener, and establish the loopback self-pipe.
-    // Returns false if no discovery port in the range is free or a socket step fails.
+    // Returns false without a profile key, if no discovery port in the range is free, or if a
+    // socket step fails.
     bool start();
     void stop();
     bool is_running() const { return running_; }
 
+    // The id our key derives, and the one peers will recompute for us.
+    const std::string& product_user_id() const { return product_user_id_; }
+
     void register_listener(message_type type, i_run_network* listener);
     void unregister_listener(message_type type, i_run_network* listener);
 
-    // Route an envelope: an empty dest_id goes to every peer, otherwise to that one peer. The
-    // envelope is not looped back to us; use send_to_self for that.
+    // Route an envelope: an empty dest_id goes to every peer, otherwise to that one peer. Each peer
+    // gets its own sealed copy -- they hold different keys -- so one set of bytes never goes to two.
+    // The envelope is not looped back to us; use send_to_self for that.
     bool send(const net_envelope& msg);
 
     // Deliver an envelope to ourselves through the self-pipe, so locally-originated messages
     // flow through the same decode-and-dispatch path as messages from peers.
     bool send_to_self(const net_envelope& msg);
 
-    // The product user ids of every peer currently in the mesh.
+    // The product user ids of every authenticated peer in the mesh.
     std::vector<std::string> peer_ids() const;
 
     // Bytes we are holding for peers whose send buffer was full. Non-zero means we are under
@@ -77,23 +93,31 @@ public:
     void cb_run_frame();
 
 private:
-    // One peer in the mesh. `outbox` holds bytes the socket would not take yet: a send that fills
+    // One authenticated peer. `outbox` holds bytes the socket would not take yet: a send that fills
     // the kernel buffer is backpressure, not a dead peer, and abandoning a half-written frame
     // would desynchronize the peer's stream. We keep the remainder and push it out as the socket
-    // drains.
+    // drains. `channel` is the only thing that turns an envelope into bytes for this peer.
     struct peer {
         platform::socket connection;
         std::vector<u8> buffer;
         std::vector<u8> outbox;
+        std::unique_ptr<peer_channel> channel;
         std::chrono::steady_clock::time_point last_seen;
     };
 
-    // A connection we accepted but cannot name yet: the peer identifies itself in the first
-    // envelope it sends, and only then does it join the peer table.
-    struct pending_peer {
+    // A connection whose far end has not proved who it is yet. It is deliberately not a peer: an
+    // unauthenticated socket has no identity to key it by, so it waits here -- out of the peer
+    // table, invisible to every interface -- until the handshake says who it is.
+    struct handshaking_peer {
         platform::socket connection;
         std::vector<u8> buffer;
-        std::chrono::steady_clock::time_point accepted_at;
+        std::vector<u8> outbox;
+        std::unique_ptr<peer_channel> channel;
+        // For a connection we dialed: the id the advertisement promised would answer. The key has
+        // the last word. If it derives a different id, the advertisement was not telling the truth
+        // about who lives at that address, and we want no part of the connection.
+        std::string expected_id;
+        std::chrono::steady_clock::time_point started_at;
     };
 
     // A peer we are dialing. The socket is non-blocking, so the connect is still in flight and we
@@ -110,46 +134,70 @@ private:
         stream_closed  // the peer hung up or the connection failed
     };
 
+    // What pulling one frame off a stream found.
+    enum frame_state {
+        frame_none,    // not a whole frame yet
+        frame_ready,   // one frame taken
+        frame_refused  // the peer declared a frame we will not buffer
+    };
+
     bool open_discovery();
     bool open_mesh();
     bool open_self_pipe();
 
     void advertise();
     void accept_peers();
-    void drain_pending();
     void finish_dialing();
+    void drain_handshaking();
+    void drain_peers();
+    void drain_datagrams();
     void handle_advertise(const net_envelope& msg, const platform::endpoint& from);
-    // Bring a connection into the mesh under `id`. Refuses -- and drops the connection -- when `id`
-    // is already connected, so a second socket cannot take over an established peer's identity.
-    // Returns true only when the connection was adopted.
-    bool adopt_peer(const std::string& id, platform::socket connection);
-    // The id a first-frame identity handshake names, verified to agree with the envelope and our
-    // game, or empty if the frames do not identify the peer.
-    std::string identify_peer(const std::vector<net_envelope>& frames) const;
+
+    // The id a static public key certifies, by the same formula every peer applies to ours.
+    std::string id_of_key(const u8* public_key) const;
+    // Are we already on our way to this peer, dialing it or shaking hands with it?
+    bool is_connecting_to(const std::string& id) const;
+
+    // Bring an authenticated connection into the mesh under the id its key derived. Refuses -- and
+    // drops the connection -- when that id is already connected, so a second socket cannot take over
+    // an established peer's identity even if it does hold the key.
+    bool adopt_peer(const std::string& id, platform::socket connection,
+                    std::unique_ptr<peer_channel> channel, const std::vector<u8>& leftover,
+                    const std::vector<u8>& unsent);
     // Whether an inbound frame from a meshed peer is one we should deliver: not for a different
     // game, and not addressed to a peer other than us.
     bool accept_inbound(const net_envelope& msg) const;
-    void announce_to(const std::string& id);
     void drop_peer(const std::string& id, bool notify);
     void expire_peers();
+    void expire_handshaking();
 
-    // Decode every whole frame in `buffer`, handing each to `out`. Returns false when the peer
-    // sent a frame we refuse to buffer.
-    bool decode_frames(std::vector<u8>& buffer, std::vector<net_envelope>& out);
-    stream_health drain_stream(platform::socket& sock, std::vector<u8>& buffer,
-                               std::vector<net_envelope>& out);
-    void drain_datagrams();
+    // Pull one whole [u32 BE length][body] frame off the front of `buffer`.
+    frame_state take_frame(std::vector<u8>& buffer, std::vector<u8>& body) const;
+    // Read whatever the socket has into `buffer`. What the bytes mean is the caller's business: a
+    // handshaking connection reads them as handshake messages, an established one as sealed frames.
+    stream_health read_stream(platform::socket& sock, std::vector<u8>& buffer);
+
+    bool seal_frame(peer_channel& channel, const std::vector<u8>& plain,
+                    std::vector<u8>& framed) const;
     void dispatch(const net_envelope& msg);
     void dispatch_peer_event(message_type type, const std::string& peer_id);
 
     // Queue `framed` for `entry` and push out as much as the socket will take. Returns false only
     // when the connection is genuinely broken, never for mere backpressure.
     bool queue_and_flush(peer& entry, const std::vector<u8>& framed);
-    bool flush_outbox(peer& entry);
+    bool flush_outbox(platform::socket& connection, std::vector<u8>& outbox);
 
     net_config config_;
     std::string product_user_id_;
     std::string game_id_;
+    std::string sandbox_id_;
+    std::string deployment_id_;
+
+    // Our profile key: the secret half proves this identity to a peer, and never leaves the process.
+    u8 static_priv_[profile_key_len];
+    u8 static_pub_[profile_key_len];
+    bool have_profile_;
+    std::vector<u8> prologue_;
 
     platform::socket udp_;
     platform::socket mesh_;
@@ -160,7 +208,7 @@ private:
 
     // Peers are keyed by product user id. A peer is only ever in the mesh once.
     std::map<std::string, peer> peers_;
-    std::vector<pending_peer> pending_;
+    std::vector<handshaking_peer> handshaking_;
     std::map<std::string, dialing_peer> dialing_;
     std::chrono::steady_clock::time_point last_advertise_;
 

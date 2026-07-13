@@ -100,14 +100,14 @@ The P2P data path uses UDP and is currently unauthenticated. After the TCP hands
 ```
 (c_i2r, c_r2i)      = Split()                                    // the two Noise cipher states — TCP ONLY
 udp_i2r, udp_r2i    = HKDF( salt = ck_final,                     // the SECRET Noise chaining key
-                            ikm  = enc("eosr-udp-subkey-v1", u64_be(session_generation)), 2 )
+                            ikm  = enc("eosr-udp-subkey-v1"), 2 )
 ```
 
 - **The UDP keys are derived from `ck_final`, the secret Noise chaining key at the end of the handshake — never from `handshake_hash`.** `handshake_hash` is a hash of *observable* transcript data (public keys and ciphertext), so an eavesdropper could reproduce any key derived from it; the chaining key mixes in every DH shared secret and is never transmitted. `secure_channel` derives these inside `split()` (which holds `ck_`) before the handshake state is discarded, alongside the two TCP cipher states.
 - TCP framing (Section 6) uses `c_i2r`/`c_r2i` directly (standard Noise transport). UDP uses `udp_i2r`/`udp_r2i` — independent keys under a distinct label, so a UDP sequence starting at 0 can never collide with a TCP counter at 0.
-- `session_generation` (folded into the UDP `ikm`) increments on every reconnect, so a fresh session derives fresh UDP keys and an old datagram cannot be replayed into a new one.
+- **A `session_generation` counter was specified here and then dropped when task 54 landed.** Its job was to make a reconnect derive fresh UDP keys so an old datagram could not be replayed into a new session. `ck_final` already does that: every DH in XX mixes in at least one freshly generated ephemeral, so no two handshakes produce the same chaining key, and therefore no two sessions produce the same UDP keys. A datagram from an old session cannot open under a new session's key regardless. A generation counter would add a value *both sides must agree on* — a synchronization problem — in exchange for a freshness guarantee we already hold. It is left out of the `ikm` and out of the associated data.
 - Each of the four keys has its **own** 64-bit counter/sequence starting at 0; a direction's key is used with a strictly increasing counter and torn down on exhaustion.
-- Each UDP datagram is `AEAD(udp_key_dir, le64(seq), plaintext, ad)`, `ad = enc(` verified sender id, dest id, `u32(channel)`, socket name, `u64(session_generation)`, `u64(seq)` `)`.
+- Each UDP datagram is `AEAD(udp_key_dir, le64(seq), plaintext, ad)`, `ad = enc(` verified sender id, dest id, `u32(channel)`, socket name, `u64(seq)` `)`.
 - A per-peer **replay window** (sliding bitmap) rejects duplicate or too-old sequence numbers.
 - UDP discovery (`net_advertise`) remains an **untrusted hint**: it only triggers a dial; the authenticated TCP handshake is what establishes identity. (Signing advertisements is a possible later refinement; not required, since discovery grants no trust on its own.)
 

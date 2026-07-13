@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -352,4 +353,51 @@ TEST_CASE("Noise transport counter never wraps to zero") {
 
     const bool stopped_before_wrap = !state.has_key() || state.nonce_ == ~static_cast<u64>(0);
     CHECK(stopped_before_wrap);
+}
+
+// The P2P data path gets its own keys, derived under their own label from the secret chaining key.
+// If it reused the transport keys, a UDP sequence opening at zero and a TCP counter at zero would
+// be the same (key, nonce) -- two different plaintexts under one keystream, which is the one thing
+// a stream cipher must never do.
+// Spec: transport-key separation (docs/adr/0001 §7, §11)
+TEST_CASE("the UDP keys are independent of the transport keys") {
+    u8 a_s[32];
+    u8 b_s[32];
+    for (int i = 0; i < 32; i++) {
+        a_s[i] = static_cast<u8>(0x21 + i);
+        b_s[i] = static_cast<u8>(0x90 - i);
+    }
+    u8 a_pub[32];
+    u8 b_pub[32];
+    x25519_public_key(a_pub, a_s);
+    x25519_public_key(b_pub, b_s);
+    const std::vector<u8> prologue = {'e', 'o', 's', 'r'};
+
+    noise_handshake a(true, a_s, a_pub, prologue.data(), prologue.size());
+    noise_handshake b(false, b_s, b_pub, prologue.data(), prologue.size());
+    std::vector<u8> m, p;
+    const u8 nothing = 0;
+    REQUIRE(a.write_message(&nothing, 0, m));
+    REQUIRE(b.read_message(m.data(), m.size(), p));
+    REQUIRE(b.write_message(&nothing, 0, m));
+    REQUIRE(a.read_message(m.data(), m.size(), p));
+    REQUIRE(a.write_message(&nothing, 0, m));
+    REQUIRE(b.read_message(m.data(), m.size(), p));
+
+    cipher_state a_send, a_recv, b_send, b_recv;
+    u8 a_udp_send[32], a_udp_recv[32], b_udp_send[32], b_udp_recv[32];
+    REQUIRE(a.split(a_send, a_recv, a_udp_send, a_udp_recv));
+    REQUIRE(b.split(b_send, b_recv, b_udp_send, b_udp_recv));
+
+    // Both sides agree on which UDP key is which, exactly as they do on the transport pair.
+    CHECK(std::memcmp(a_udp_send, b_udp_recv, 32) == 0);
+    CHECK(std::memcmp(a_udp_recv, b_udp_send, 32) == 0);
+    // The two directions are not the same key.
+    CHECK(std::memcmp(a_udp_send, a_udp_recv, 32) != 0);
+
+    // And no UDP key is any transport key, in either direction.
+    CHECK(std::memcmp(a_udp_send, a_send.key_, 32) != 0);
+    CHECK(std::memcmp(a_udp_send, a_recv.key_, 32) != 0);
+    CHECK(std::memcmp(a_udp_recv, a_send.key_, 32) != 0);
+    CHECK(std::memcmp(a_udp_recv, a_recv.key_, 32) != 0);
 }

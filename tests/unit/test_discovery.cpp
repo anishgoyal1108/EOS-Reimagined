@@ -24,12 +24,35 @@
 #include "net/wire.h"
 #include "platform/socket.h"
 
+#include "fixed_profile.h"
+
 using namespace eosr;
 
 namespace {
 
-const char* const alice_id = "1111111111111111111111111111111a";
-const char* const bob_id = "2222222222222222222222222222222b";
+// The game most of these tests mesh under. It is part of the id, because the product user id folds
+// in the title, so an id only means anything alongside the game it was derived for.
+const char* const test_game = "same-game";
+
+// An id is derived from a profile key now, so a test can no more pick one than a game can. It keeps
+// a profile with a fixed key and asks what id that profile answers to -- which is exactly what the
+// peer on the other end will recompute from the key the handshake proves to it.
+identity& alice_profile() {
+    static identity profile;
+    static const bool ready = (test::seed_profile(profile, 0xa1), true);
+    (void)ready;
+    return profile;
+}
+
+identity& bob_profile() {
+    static identity profile;
+    static const bool ready = (test::seed_profile(profile, 0xb2), true);
+    (void)ready;
+    return profile;
+}
+
+std::string alice_id() { return test::id_in(alice_profile(), test_game); }
+std::string bob_id() { return test::id_in(bob_profile(), test_game); }
 
 // Records the peer-lifecycle envelopes the router synthesizes, and any payload it carries.
 struct event_listener : i_run_network {
@@ -81,8 +104,12 @@ net_config discovery_config(u16 first) {
     return config;
 }
 
-bool start_router(message_router& router, const std::string& id, const std::string& game, u16 first) {
-    router.set_identity(id, game);
+// Bring a router up under a profile. It derives the id it answers to from that profile's key -- the
+// same derivation the peer on the other end applies to the key the handshake proves to it -- so a
+// caller does not pick an id, it brings a key.
+bool start_router(message_router& router, const identity& profile, const std::string& game,
+                  u16 first) {
+    router.set_identity(profile, game, "", "");
     router.set_config(discovery_config(first));
     return router.start();
 }
@@ -120,8 +147,8 @@ TEST_CASE("two instances discover each other and mesh over loopback") {
     REQUIRE(platform::net_init());
     message_router alice;
     message_router bob;
-    REQUIRE(start_router(alice, alice_id, "same-game", 45710));
-    REQUIRE(start_router(bob, bob_id, "same-game", 45710));
+    REQUIRE(start_router(alice, alice_profile(), "same-game", 45710));
+    REQUIRE(start_router(bob, bob_profile(), "same-game", 45710));
 
     event_listener alice_events;
     event_listener bob_events;
@@ -134,14 +161,14 @@ TEST_CASE("two instances discover each other and mesh over loopback") {
 
     REQUIRE(alice.peer_ids().size() == 1);
     REQUIRE(bob.peer_ids().size() == 1);
-    CHECK(alice.peer_ids()[0] == bob_id);
-    CHECK(bob.peer_ids()[0] == alice_id);
+    CHECK(alice.peer_ids()[0] == bob_id());
+    CHECK(bob.peer_ids()[0] == alice_id());
 
     // Each side was told its peer arrived.
     REQUIRE(alice_events.connected.size() == 1);
-    CHECK(alice_events.connected[0] == bob_id);
+    CHECK(alice_events.connected[0] == bob_id());
     REQUIRE(bob_events.connected.size() == 1);
-    CHECK(bob_events.connected[0] == alice_id);
+    CHECK(bob_events.connected[0] == alice_id());
 
     alice.stop();
     bob.stop();
@@ -152,8 +179,8 @@ TEST_CASE("a meshed peer receives a directly addressed message") {
     REQUIRE(platform::net_init());
     message_router alice;
     message_router bob;
-    REQUIRE(start_router(alice, alice_id, "same-game", 45720));
-    REQUIRE(start_router(bob, bob_id, "same-game", 45720));
+    REQUIRE(start_router(alice, alice_profile(), "same-game", 45720));
+    REQUIRE(start_router(bob, bob_profile(), "same-game", 45720));
 
     event_listener bob_events;
     bob.register_listener(message_type::emu_infos_response, &bob_events);
@@ -162,7 +189,7 @@ TEST_CASE("a meshed peer receives a directly addressed message") {
     REQUIRE(alice.peer_ids().size() == 1);
 
     // The whole point of the milestone: a message crosses the wire to the other instance.
-    CHECK(alice.send(make_hello(alice_id, bob_id, "InfernusHawk")));
+    CHECK(alice.send(make_hello(alice_id(), bob_id(), "InfernusHawk")));
     pump(alice, bob, [&]() { return !bob_events.messages.empty(); });
 
     REQUIRE(bob_events.messages.size() == 1);
@@ -177,8 +204,8 @@ TEST_CASE("a broadcast with no destination reaches every peer") {
     REQUIRE(platform::net_init());
     message_router alice;
     message_router bob;
-    REQUIRE(start_router(alice, alice_id, "same-game", 45730));
-    REQUIRE(start_router(bob, bob_id, "same-game", 45730));
+    REQUIRE(start_router(alice, alice_profile(), "same-game", 45730));
+    REQUIRE(start_router(bob, bob_profile(), "same-game", 45730));
 
     event_listener bob_events;
     bob.register_listener(message_type::emu_infos_response, &bob_events);
@@ -186,7 +213,7 @@ TEST_CASE("a broadcast with no destination reaches every peer") {
     pump(alice, bob, [&]() { return !alice.peer_ids().empty(); });
     REQUIRE(alice.peer_ids().size() == 1);
 
-    CHECK(alice.send(make_hello(alice_id, std::string(), "Broadcaster")));
+    CHECK(alice.send(make_hello(alice_id(), std::string(), "Broadcaster")));
     pump(alice, bob, [&]() { return !bob_events.messages.empty(); });
 
     REQUIRE(bob_events.messages.size() == 1);
@@ -201,8 +228,8 @@ TEST_CASE("instances running a different game never mesh") {
     REQUIRE(platform::net_init());
     message_router alice;
     message_router stranger;
-    REQUIRE(start_router(alice, alice_id, "game-one", 45740));
-    REQUIRE(start_router(stranger, bob_id, "game-two", 45740));
+    REQUIRE(start_router(alice, alice_profile(), "game-one", 45740));
+    REQUIRE(start_router(stranger, bob_profile(), "game-two", 45740));
 
     // Both advertise into the same range, but the game ids differ, so neither adopts the other.
     pump(alice, stranger, [&]() { return false; }, 1500);
@@ -218,9 +245,9 @@ TEST_CASE("instances running a different game never mesh") {
 TEST_CASE("sending to an unknown peer fails rather than going nowhere quietly") {
     REQUIRE(platform::net_init());
     message_router alice;
-    REQUIRE(start_router(alice, alice_id, "same-game", 45750));
+    REQUIRE(start_router(alice, alice_profile(), "same-game", 45750));
 
-    CHECK_FALSE(alice.send(make_hello(alice_id, bob_id, "Nobody")));
+    CHECK_FALSE(alice.send(make_hello(alice_id(), bob_id(), "Nobody")));
 
     alice.stop();
     platform::net_shutdown();
@@ -232,8 +259,8 @@ TEST_CASE("a peer that hangs up is dropped promptly") {
     REQUIRE(platform::net_init());
     message_router alice;
     message_router bob;
-    REQUIRE(start_router(alice, alice_id, "same-game", 45770));
-    REQUIRE(start_router(bob, bob_id, "same-game", 45770));
+    REQUIRE(start_router(alice, alice_profile(), "same-game", 45770));
+    REQUIRE(start_router(bob, bob_profile(), "same-game", 45770));
 
     event_listener alice_events;
     alice.register_listener(message_type::peer_disconnected, &alice_events);
@@ -250,7 +277,7 @@ TEST_CASE("a peer that hangs up is dropped promptly") {
     }
     CHECK(alice.peer_ids().empty());
     REQUIRE(alice_events.disconnected.size() == 1);
-    CHECK(alice_events.disconnected[0] == bob_id);
+    CHECK(alice_events.disconnected[0] == bob_id());
 
     alice.stop();
     platform::net_shutdown();
@@ -263,8 +290,8 @@ TEST_CASE("a burst that fills the send buffer neither drops the peer nor corrupt
     REQUIRE(platform::net_init());
     message_router alice;
     message_router bob;
-    REQUIRE(start_router(alice, alice_id, "same-game", 45780));
-    REQUIRE(start_router(bob, bob_id, "same-game", 45780));
+    REQUIRE(start_router(alice, alice_profile(), "same-game", 45780));
+    REQUIRE(start_router(bob, bob_profile(), "same-game", 45780));
 
     counting_listener bob_counts;
     bob.register_listener(message_type::emu_infos_response, &bob_counts);
@@ -278,7 +305,7 @@ TEST_CASE("a burst that fills the send buffer neither drops the peer nor corrupt
     const std::string big(4000, 'x');
     int sent = 0;
     while (sent < max_messages && alice.pending_output_bytes() == 0) {
-        CHECK(alice.send(make_hello(alice_id, bob_id, big)));
+        CHECK(alice.send(make_hello(alice_id(), bob_id(), big)));
         sent++;
     }
     // If this fails the test proved nothing: we never actually filled the buffer.
@@ -352,9 +379,9 @@ TEST_CASE("two ordinary instances negotiate a connection and exchange a packet")
     alice.emu_init();
     bob.emu_init();
 
-    REQUIRE(start_router(alice_net, alice_settings.product_user_id(),
+    REQUIRE(start_router(alice_net, alice_settings.profile(),
                          alice_settings.product_id(), 45760));
-    REQUIRE(start_router(bob_net, bob_settings.product_user_id(),
+    REQUIRE(start_router(bob_net, bob_settings.profile(),
                          bob_settings.product_id(), 45760));
 
     EOS_ProductUserId alice_id_h =
@@ -482,9 +509,9 @@ TEST_CASE("connect learns about a peer that joins the mesh") {
     alice.emu_init();
     bob.emu_init();
 
-    REQUIRE(start_router(alice_net, alice_settings.product_user_id(),
+    REQUIRE(start_router(alice_net, alice_settings.profile(),
                          alice_settings.product_id(), 45790));
-    REQUIRE(start_router(bob_net, bob_settings.product_user_id(),
+    REQUIRE(start_router(bob_net, bob_settings.profile(),
                          bob_settings.product_id(), 45790));
 
     // Both log in, which is what makes them willing to introduce themselves.
@@ -571,8 +598,8 @@ TEST_CASE("one instance hosts a game and another finds it and joins") {
     host.emu_init();
     guest.emu_init();
 
-    REQUIRE(start_router(host_net, host_settings.product_user_id(), host_settings.product_id(), 45800));
-    REQUIRE(start_router(guest_net, guest_settings.product_user_id(), guest_settings.product_id(), 45800));
+    REQUIRE(start_router(host_net, host_settings.profile(), host_settings.product_id(), 45800));
+    REQUIRE(start_router(guest_net, guest_settings.profile(), guest_settings.product_id(), 45800));
 
     // Both log in, so each learns the other is a real player it has met.
     EOS_Connect_Credentials credentials = {};
@@ -850,8 +877,8 @@ TEST_CASE("one instance sets rich presence and another sees it over the mesh") {
     host.emu_init();
     guest.emu_init();
 
-    REQUIRE(start_router(host_net, host_settings.product_user_id(), host_settings.product_id(), 45810));
-    REQUIRE(start_router(guest_net, guest_settings.product_user_id(), guest_settings.product_id(), 45810));
+    REQUIRE(start_router(host_net, host_settings.profile(), host_settings.product_id(), 45810));
+    REQUIRE(start_router(guest_net, guest_settings.profile(), guest_settings.product_id(), 45810));
 
     pump(host_net, guest_net, [&]() {
         return !host_net.peer_ids().empty() && !guest_net.peer_ids().empty();
@@ -979,7 +1006,7 @@ struct mesh_node {
         settings.apply_platform_options(&options);
         connect.emu_init();
         sessions.emu_init();
-        REQUIRE(start_router(net, settings.product_user_id(), settings.product_id(), port));
+        REQUIRE(start_router(net, settings.profile(), settings.product_id(), port));
 
         EOS_Connect_Credentials credentials = {};
         credentials.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
@@ -1138,8 +1165,8 @@ TEST_CASE("a peer cannot present a frame under another peer's id") {
     REQUIRE(platform::net_init());
     message_router alice;
     message_router bob;
-    REQUIRE(start_router(alice, alice_id, "same-game", 45760));
-    REQUIRE(start_router(bob, bob_id, "same-game", 45760));
+    REQUIRE(start_router(alice, alice_profile(), "same-game", 45760));
+    REQUIRE(start_router(bob, bob_profile(), "same-game", 45760));
 
     source_listener seen;
     alice.register_listener(message_type::emu_infos_response, &seen);
@@ -1148,12 +1175,12 @@ TEST_CASE("a peer cannot present a frame under another peer's id") {
 
     // Bob sends a frame that claims to come from a third identity.
     const std::string spoofed = "9999999999999999999999999999999c";
-    CHECK(bob.send(make_hello(spoofed, alice_id, "Impostor")));
+    CHECK(bob.send(make_hello(spoofed, alice_id(), "Impostor")));
     pump(alice, bob, [&]() { return !seen.sources.empty(); });
 
     REQUIRE(seen.sources.size() == 1);
     // Alice sees it as from bob -- the socket it came on -- not the id bob wrote into it.
-    CHECK(seen.sources[0] == bob_id);
+    CHECK(seen.sources[0] == bob_id());
     CHECK(seen.sources[0] != spoofed);
 
     alice.stop();
@@ -1165,8 +1192,8 @@ TEST_CASE("a frame tagged for a different game is not delivered") {
     REQUIRE(platform::net_init());
     message_router alice;
     message_router bob;
-    REQUIRE(start_router(alice, alice_id, "same-game", 45770));
-    REQUIRE(start_router(bob, bob_id, "same-game", 45770));
+    REQUIRE(start_router(alice, alice_profile(), "same-game", 45770));
+    REQUIRE(start_router(bob, bob_profile(), "same-game", 45770));
 
     source_listener seen;
     alice.register_listener(message_type::emu_infos_response, &seen);
@@ -1174,17 +1201,17 @@ TEST_CASE("a frame tagged for a different game is not delivered") {
     REQUIRE(!bob.peer_ids().empty());
 
     // Bob sends alice a frame stamped as a different game, then one for the game they share.
-    net_envelope wrong_game = make_hello(bob_id, alice_id, "WrongGame");
+    net_envelope wrong_game = make_hello(bob_id(), alice_id(), "WrongGame");
     wrong_game.game_id = "some-other-game";
     CHECK(bob.send(wrong_game));
-    net_envelope right_game = make_hello(bob_id, alice_id, "RightGame");
+    net_envelope right_game = make_hello(bob_id(), alice_id(), "RightGame");
     right_game.game_id = "same-game";
     CHECK(bob.send(right_game));
     pump(alice, bob, [&]() { return !seen.sources.empty(); });
 
     // Only the frame for the shared game arrived; the other was dropped before dispatch.
     REQUIRE(seen.sources.size() == 1);
-    CHECK(seen.sources[0] == bob_id);
+    CHECK(seen.sources[0] == bob_id());
 
     alice.stop();
     bob.stop();
@@ -1274,8 +1301,8 @@ TEST_CASE("one instance opens a lobby and another finds it and joins") {
     host.emu_init();
     guest.emu_init();
 
-    REQUIRE(start_router(host_net, host_settings.product_user_id(), host_settings.product_id(), 45830));
-    REQUIRE(start_router(guest_net, guest_settings.product_user_id(), guest_settings.product_id(), 45830));
+    REQUIRE(start_router(host_net, host_settings.profile(), host_settings.product_id(), 45830));
+    REQUIRE(start_router(guest_net, guest_settings.profile(), guest_settings.product_id(), 45830));
 
     EOS_Connect_Credentials credentials = {};
     credentials.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
@@ -1432,11 +1459,14 @@ TEST_CASE("an awaited lobby search peer cannot return a lobby owned by somebody 
     connect.emu_init();
     lobby.emu_init();
 
-    const std::string responder_id(32, 'e');
+    identity responder_profile;
+    test::seed_profile(responder_profile, 0xc3);
+    const std::string responder_id =
+        test::id_in(responder_profile, search_settings.product_id());
     const std::string unrelated_owner(32, 'f');
-    REQUIRE(start_router(search_router, search_settings.product_user_id(),
+    REQUIRE(start_router(search_router, search_settings.profile(),
                          search_settings.product_id(), 45840));
-    REQUIRE(start_router(responder_router, responder_id, search_settings.product_id(), 45840));
+    REQUIRE(start_router(responder_router, responder_profile, search_settings.product_id(), 45840));
     pump(search_router, responder_router, [&]() {
         return !search_router.peer_ids().empty() && !responder_router.peer_ids().empty();
     });
