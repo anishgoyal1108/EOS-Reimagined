@@ -173,25 +173,171 @@ TEST_CASE("p2p_data rejects channels outside the i32 range") {
     }
 }
 
-TEST_CASE("session_infos round-trips a repeated field") {
+TEST_CASE("session_infos round-trips its lists and every attribute type") {
     session_infos a;
     a.session_id = "S1";
+    a.owner_id = "0123456789abcdef0123456789abcdef";
     a.bucket_id = "B1";
-    a.max_players = 4;
     a.host_address = "1.2.3.4:7777";
-    a.players.push_back("p1");
-    a.players.push_back("p2");
+    a.max_players = 4;
+    a.open_slots = 2;
+    a.permission_level = 1;
+    a.state = 4;
+    a.allow_join_in_progress = true;
+    a.invites_allowed = true;
+    a.sanctions_enabled = false;
+    a.registered_players.push_back("p1");
+    a.registered_players.push_back("p2");
+
+    // One of every attribute type, since the value on the wire is chosen by the type tag.
+    session_attribute flag;
+    flag.key = "hardcore";
+    flag.value_type = 0;
+    flag.as_bool = true;
+    session_attribute level;
+    level.key = "level";
+    level.value_type = 1;
+    level.as_int64 = -42;
+    session_attribute ratio;
+    ratio.key = "ratio";
+    ratio.value_type = 2;
+    ratio.as_double = 0.5;
+    session_attribute map_name;
+    map_name.key = "map";
+    map_name.value_type = 3;
+    map_name.as_string = "crab-island";
+    map_name.advertisement = 1;
+    a.attributes.push_back(flag);
+    a.attributes.push_back(level);
+    a.attributes.push_back(ratio);
+    a.attributes.push_back(map_name);
 
     byte_writer w;
     serialize(w, a);
     byte_reader r(w.data().data(), w.size());
     session_infos b;
     REQUIRE(deserialize(r, b));
+
     CHECK(b.session_id == "S1");
+    CHECK(b.owner_id == a.owner_id);
     CHECK(b.max_players == 4);
-    REQUIRE(b.players.size() == 2);
-    CHECK(b.players[0] == "p1");
-    CHECK(b.players[1] == "p2");
+    CHECK(b.open_slots == 2);
+    CHECK(b.permission_level == 1);
+    CHECK(b.state == 4);
+    CHECK(b.allow_join_in_progress);
+    CHECK(b.invites_allowed);
+    CHECK_FALSE(b.sanctions_enabled);
+    REQUIRE(b.registered_players.size() == 2);
+    CHECK(b.registered_players[0] == "p1");
+    CHECK(b.registered_players[1] == "p2");
+
+    REQUIRE(b.attributes.size() == 4);
+    CHECK(b.attributes[0].key == "hardcore");
+    CHECK(b.attributes[0].as_bool);
+    CHECK(b.attributes[1].as_int64 == -42);
+    CHECK(b.attributes[2].as_double == 0.5);
+    CHECK(b.attributes[3].as_string == "crab-island");
+    CHECK(b.attributes[3].advertisement == 1);
+    CHECK(r.at_end());
+}
+
+TEST_CASE("an attribute with an unknown type is rejected rather than guessed") {
+    byte_writer w;
+    w.put_string("key");
+    w.put_svar(99); // not one of the four EOS attribute types
+    w.put_svar(0);
+    w.put_string("value");
+
+    byte_reader r(w.data().data(), w.size());
+    session_attribute out;
+    CHECK_FALSE(deserialize(r, out));
+}
+
+TEST_CASE("a session search and its answer round-trip") {
+    session_search a;
+    a.search_id = "q1";
+    a.session_id = "";
+    a.target_user_id = "0123456789abcdef0123456789abcdef";
+    a.max_results = 10;
+
+    search_parameter parameter;
+    parameter.attribute.key = "map";
+    parameter.attribute.value_type = 3;
+    parameter.attribute.as_string = "crab-island";
+    parameter.comparison_op = 0; // EOS_CO_EQUAL
+    a.parameters.push_back(parameter);
+
+    byte_writer w;
+    serialize(w, a);
+    byte_reader r(w.data().data(), w.size());
+    session_search b;
+    REQUIRE(deserialize(r, b));
+    CHECK(b.search_id == "q1");
+    CHECK(b.target_user_id == a.target_user_id);
+    CHECK(b.max_results == 10);
+    REQUIRE(b.parameters.size() == 1);
+    CHECK(b.parameters[0].attribute.key == "map");
+    CHECK(b.parameters[0].attribute.as_string == "crab-island");
+    CHECK(b.parameters[0].comparison_op == 0);
+
+    session_search_response answer;
+    answer.search_id = "q1";
+    session_infos first;
+    first.session_id = "S9";
+    first.max_players = 8;
+    session_infos second;
+    second.session_id = "S10";
+    second.max_players = 2;
+    answer.sessions.push_back(first);
+    answer.sessions.push_back(second);
+    byte_writer w2;
+    serialize(w2, answer);
+    byte_reader r2(w2.data().data(), w2.size());
+    session_search_response decoded;
+    REQUIRE(deserialize(r2, decoded));
+    CHECK(decoded.search_id == "q1");
+    // Both of a peer's matching sessions ride back in one reply, so none can be lost.
+    REQUIRE(decoded.sessions.size() == 2);
+    CHECK(decoded.sessions[0].session_id == "S9");
+    CHECK(decoded.sessions[0].max_players == 8);
+    CHECK(decoded.sessions[1].session_id == "S10");
+}
+
+TEST_CASE("a session roster longer than the ABI allows is rejected, not reserved") {
+    // The count fits the bytes left, but far exceeds EOS_SESSIONS_MAXREGISTEREDPLAYERS. Without the
+    // element cap this would reserve room for millions of strings; with it, the frame is refused.
+    byte_writer w;
+    w.put_string("S1");
+    w.put_string("owner");
+    w.put_string("bucket");
+    w.put_string("addr");
+    w.put_u32(4);        // max_players
+    w.put_u32(0);        // open_slots
+    w.put_svar(0);       // permission
+    w.put_svar(0);       // state
+    w.put_bool(false);
+    w.put_bool(false);
+    w.put_bool(false);
+    w.put_var(static_cast<u64>(50000)); // registered_players count, well past the 1000 cap
+    for (int i = 0; i < 50000; i++) {
+        w.put_string("x"); // enough bytes that the count passes the byte-bound
+    }
+    byte_reader r(w.data().data(), w.size());
+    session_infos decoded;
+    CHECK_FALSE(deserialize(r, decoded));
+}
+
+TEST_CASE("a search with an absurd parameter count is rejected") {
+    byte_writer w;
+    w.put_string("q");
+    w.put_string("");
+    w.put_string("");
+    w.put_u32(10);
+    w.put_var(0xffffffffull); // far more parameters than there are bytes left
+
+    byte_reader r(w.data().data(), w.size());
+    session_search out;
+    CHECK_FALSE(deserialize(r, out));
 }
 
 TEST_CASE("an envelope wraps a payload and round-trips") {

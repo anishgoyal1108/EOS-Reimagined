@@ -2,6 +2,7 @@
 /build/
 /build-linux/
 /build-win/
+/build-asan/
 /out/
 *.o
 *.obj

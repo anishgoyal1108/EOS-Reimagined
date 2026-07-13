@@ -24,6 +24,9 @@ public:
 
     void put_bool(bool value);
 
+    // Doubles travel as their IEEE-754 bit pattern in a fixed u64, so no precision is lost.
+    void put_f64(f64 value);
+
     // Length-prefixed (put_var length, then the raw bytes).
     void put_bytes(const u8* data, std::size_t len);
     void put_string(const std::string& value);
@@ -51,6 +54,7 @@ public:
     bool get_svar(i64& out);
 
     bool get_bool(bool& out);
+    bool get_f64(f64& out);
 
     bool get_bytes(std::vector<u8>& out);
     bool get_string(std::string& out);

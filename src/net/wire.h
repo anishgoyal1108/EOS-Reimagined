@@ -27,8 +27,29 @@ bool deserialize(byte_reader& reader, connect_infos& msg);
 void serialize(byte_writer& writer, const p2p_data& msg);
 bool deserialize(byte_reader& reader, p2p_data& msg);
 
+void serialize(byte_writer& writer, const session_attribute& msg);
+bool deserialize(byte_reader& reader, session_attribute& msg);
+
 void serialize(byte_writer& writer, const session_infos& msg);
 bool deserialize(byte_reader& reader, session_infos& msg);
+
+void serialize(byte_writer& writer, const session_search& msg);
+bool deserialize(byte_reader& reader, session_search& msg);
+
+void serialize(byte_writer& writer, const session_search_response& msg);
+bool deserialize(byte_reader& reader, session_search_response& msg);
+
+void serialize(byte_writer& writer, const session_join_request& msg);
+bool deserialize(byte_reader& reader, session_join_request& msg);
+
+void serialize(byte_writer& writer, const session_join_response& msg);
+bool deserialize(byte_reader& reader, session_join_response& msg);
+
+void serialize(byte_writer& writer, const session_destroy& msg);
+bool deserialize(byte_reader& reader, session_destroy& msg);
+
+void serialize(byte_writer& writer, const session_members& msg);
+bool deserialize(byte_reader& reader, session_members& msg);
 
 // One message on a TCP stream is [u32 big-endian length][body]; UDP datagrams are unframed.
 std::vector<u8> frame_message(const std::vector<u8>& body);

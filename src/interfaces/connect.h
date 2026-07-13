@@ -63,6 +63,10 @@ public:
     // messages; this lets callers (and tests) observe the roster the network path builds.
     std::size_t known_peer_count() const;
 
+    // Whether this player is one we have actually met on the mesh. A host uses this to refuse a
+    // join from someone it has never seen.
+    bool is_known_peer(const std::string& product_user_id) const;
+
     EOS_NotificationId add_notify_login_status_changed(
         void* client_data, EOS_Connect_OnLoginStatusChangedCallback delegate);
     void remove_notify_login_status_changed(EOS_NotificationId id);

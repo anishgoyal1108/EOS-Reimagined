@@ -55,6 +55,18 @@ void callback_manager::remove_notification(i_run_callback* owner, EOS_Notificati
 
 void callback_manager::clear() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    // A queued result may own heap fields inside its payload (e.g. duplicated strings). Give its
+    // owner the chance to release them before we drop it, exactly as delivery would, so tearing a
+    // platform down with callbacks still in flight does not leak them.
+    std::map<i_run_callback*, std::deque<std::unique_ptr<frame_result>>>::iterator it =
+        callbacks_to_run_.begin();
+    for (; it != callbacks_to_run_.end(); ++it) {
+        for (std::size_t i = 0; i < it->second.size(); i++) {
+            if (it->second[i]) {
+                it->first->free_callback(*it->second[i]);
+            }
+        }
+    }
     frames_to_run_.clear();
     callbacks_to_run_.clear();
     notifications_.clear();

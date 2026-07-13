@@ -8,6 +8,7 @@
 #include "interfaces/auth.h"
 #include "interfaces/connect.h"
 #include "interfaces/p2p.h"
+#include "interfaces/sessions.h"
 #include "net/message_router.h"
 
 namespace eosr {
@@ -85,6 +86,7 @@ public:
     sdk_connect& connect() { return connect_; }
     sdk_auth& auth() { return auth_; }
     sdk_p2p& p2p() { return p2p_; }
+    sdk_sessions& sessions() { return sessions_; }
 
 private:
     sdk_settings settings_;
@@ -95,6 +97,7 @@ private:
     sdk_connect connect_;
     sdk_auth auth_;
     sdk_p2p p2p_;
+    sdk_sessions sessions_;
     stub_interface interfaces_[if_count];
     bool created_;
 };

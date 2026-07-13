@@ -1,5 +1,7 @@
 #include "common/byte_buffer.h"
 
+#include <cstring>
+
 namespace eosr {
 
 static const u32 byte_bits = 8;
@@ -188,6 +190,21 @@ bool byte_reader::get_string(std::string& out) {
     }
     out.assign(reinterpret_cast<const char*>(data_ + pos_), static_cast<std::size_t>(len));
     pos_ += static_cast<std::size_t>(len);
+    return true;
+}
+
+void byte_writer::put_f64(f64 value) {
+    u64 bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    put_u64(bits);
+}
+
+bool byte_reader::get_f64(f64& out) {
+    u64 bits = 0;
+    if (!get_u64(bits)) {
+        return false;
+    }
+    std::memcpy(&out, &bits, sizeof(out));
     return true;
 }
 

@@ -19,6 +19,7 @@ add_executable(unit_tests
     unit/test_auth.cpp
     unit/test_p2p.cpp
     unit/test_discovery.cpp
+    unit/test_sessions.cpp
 )
 target_link_libraries(unit_tests PRIVATE eosr_core doctest)
 

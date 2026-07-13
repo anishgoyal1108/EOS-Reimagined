@@ -16,6 +16,7 @@
 #include "core/settings.h"
 #include "interfaces/connect.h"
 #include "interfaces/p2p.h"
+#include "interfaces/sessions.h"
 #include "net/message_router.h"
 #include "net/messages.h"
 #include "net/wire.h"
@@ -508,5 +509,255 @@ TEST_CASE("connect learns about a peer that joins the mesh") {
     bob.emu_deinit();
     alice_net.stop();
     bob_net.stop();
+    platform::net_shutdown();
+}
+
+// Matchmaking, for real: one instance hosts a game and the other finds it over the mesh and joins
+// it. This is the loop a co-op player actually walks through, with nothing faked in between.
+namespace {
+
+bool g_host_updated = false;
+std::string g_hosted_id;
+void EOS_CALL on_host_update(const EOS_Sessions_UpdateSessionCallbackInfo* info) {
+    g_host_updated = info->ResultCode == EOS_EResult::EOS_Success;
+    g_hosted_id = (info->SessionId != 0) ? info->SessionId : "";
+}
+
+bool g_found = false;
+void EOS_CALL on_found(const EOS_SessionSearch_FindCallbackInfo* info) {
+    g_found = info->ResultCode == EOS_EResult::EOS_Success;
+}
+
+bool g_joined = false;
+EOS_EResult g_join_result = EOS_EResult::EOS_UnexpectedError;
+void EOS_CALL on_joined(const EOS_Sessions_JoinSessionCallbackInfo* info) {
+    g_joined = true;
+    g_join_result = info->ResultCode;
+}
+
+void EOS_CALL ignore_login(const EOS_Connect_LoginCallbackInfo*) {}
+void EOS_CALL on_left(const EOS_Sessions_DestroySessionCallbackInfo*) {}
+
+} // namespace
+
+TEST_CASE("one instance hosts a game and another finds it and joins") {
+    REQUIRE(platform::net_init());
+    g_host_updated = false;
+    g_found = false;
+    g_joined = false;
+
+    // Two ordinary instances of the same game.
+    sdk_settings host_settings;
+    sdk_settings guest_settings;
+    EOS_Platform_Options options = {};
+    options.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    options.ProductId = "co-op-game";
+    host_settings.apply_platform_options(&options);
+    guest_settings.apply_platform_options(&options);
+    REQUIRE(host_settings.product_user_id() != guest_settings.product_user_id());
+
+    callback_manager host_cb;
+    callback_manager guest_cb;
+    message_router host_net;
+    message_router guest_net;
+    sdk_connect host_connect(host_settings, host_cb, host_net);
+    sdk_connect guest_connect(guest_settings, guest_cb, guest_net);
+    sdk_sessions host(host_settings, host_cb, host_net, host_connect);
+    sdk_sessions guest(guest_settings, guest_cb, guest_net, guest_connect);
+    host_connect.emu_init();
+    guest_connect.emu_init();
+    host.emu_init();
+    guest.emu_init();
+
+    REQUIRE(start_router(host_net, host_settings.product_user_id(), host_settings.product_id(), 45800));
+    REQUIRE(start_router(guest_net, guest_settings.product_user_id(), guest_settings.product_id(), 45800));
+
+    // Both log in, so each learns the other is a real player it has met.
+    EOS_Connect_Credentials credentials = {};
+    credentials.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
+    credentials.Token = "device";
+    credentials.Type = EOS_EExternalCredentialType::EOS_ECT_DEVICEID_ACCESS_TOKEN;
+    EOS_Connect_LoginOptions login = {};
+    login.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
+    login.Credentials = &credentials;
+    host_connect.login(&login, 0, ignore_login);
+    guest_connect.login(&login, 0, ignore_login);
+    host_cb.tick();
+    guest_cb.tick();
+
+    // The host has to know the guest before it will seat it.
+    pump(host_net, guest_net, [&]() {
+        return host_connect.known_peer_count() > 0 && guest_connect.known_peer_count() > 0;
+    });
+    REQUIRE(host_connect.known_peer_count() == 1);
+
+    EOS_ProductUserId host_id =
+        id_registry::instance().get_product_user_id(host_settings.product_user_id());
+    EOS_ProductUserId guest_id =
+        id_registry::instance().get_product_user_id(guest_settings.product_user_id());
+
+    // The host puts a game up, with a map the guest can search for.
+    EOS_Sessions_CreateSessionModificationOptions create = {};
+    create.ApiVersion = EOS_SESSIONS_CREATESESSIONMODIFICATION_API_LATEST;
+    create.SessionName = "my-game";
+    create.BucketId = "Region:Coop";
+    create.MaxPlayers = 4;
+    create.LocalUserId = host_id;
+    EOS_HSessionModification modification = 0;
+    REQUIRE(host.create_session_modification(&create, &modification) == EOS_EResult::EOS_Success);
+
+    EOS_Sessions_AttributeData map_name = {};
+    map_name.ApiVersion = EOS_SESSIONS_ATTRIBUTEDATA_API_LATEST;
+    map_name.Key = "map";
+    map_name.ValueType = EOS_EAttributeType::EOS_AT_STRING;
+    map_name.Value.AsUtf8 = "crab-island";
+    EOS_SessionModification_AddAttributeOptions add = {};
+    add.ApiVersion = EOS_SESSIONMODIFICATION_ADDATTRIBUTE_API_LATEST;
+    add.SessionAttribute = &map_name;
+    add.AdvertisementType = EOS_ESessionAttributeAdvertisementType::EOS_SAAT_Advertise;
+    REQUIRE(host.modification_add_attribute(modification, &add) == EOS_EResult::EOS_Success);
+
+    EOS_Sessions_UpdateSessionOptions update = {};
+    update.ApiVersion = EOS_SESSIONS_UPDATESESSION_API_LATEST;
+    update.SessionModificationHandle = modification;
+    host.update_session(&update, 0, on_host_update);
+    host_cb.tick();
+    host.modification_release(modification);
+    REQUIRE(g_host_updated);
+    REQUIRE(g_hosted_id.size() == 32);
+
+    // The guest goes looking for a game on that map.
+    EOS_Sessions_CreateSessionSearchOptions search_options = {};
+    search_options.ApiVersion = EOS_SESSIONS_CREATESESSIONSEARCH_API_LATEST;
+    search_options.MaxSearchResults = 10;
+    EOS_HSessionSearch search = 0;
+    REQUIRE(guest.create_session_search(&search_options, &search) == EOS_EResult::EOS_Success);
+
+    EOS_Sessions_AttributeData wanted = map_name;
+    EOS_SessionSearch_SetParameterOptions parameter = {};
+    parameter.ApiVersion = EOS_SESSIONSEARCH_SETPARAMETER_API_LATEST;
+    parameter.Parameter = &wanted;
+    parameter.ComparisonOp = EOS_EComparisonOp::EOS_CO_EQUAL;
+    REQUIRE(guest.search_set_parameter(search, &parameter) == EOS_EResult::EOS_Success);
+
+    EOS_SessionSearch_FindOptions find = {};
+    find.ApiVersion = EOS_SESSIONSEARCH_FIND_API_LATEST;
+    find.LocalUserId = guest_id;
+    guest.search_find(search, &find, 0, on_found);
+
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return g_found;
+    });
+    REQUIRE(g_found);
+    REQUIRE(guest.search_result_count(search) == 1);
+
+    // It is the host's game, described exactly as the host described it.
+    EOS_SessionSearch_CopySearchResultByIndexOptions pick = {};
+    pick.ApiVersion = EOS_SESSIONSEARCH_COPYSEARCHRESULTBYINDEX_API_LATEST;
+    pick.SessionIndex = 0;
+    EOS_HSessionDetails details = 0;
+    REQUIRE(guest.search_copy_result(search, &pick, &details) == EOS_EResult::EOS_Success);
+
+    EOS_SessionDetails_Info* info = 0;
+    REQUIRE(guest.details_copy_info(details, &info) == EOS_EResult::EOS_Success);
+    REQUIRE((info != 0));
+    CHECK(std::string(info->SessionId) == g_hosted_id);
+    CHECK(std::string(info->Settings->BucketId) == "Region:Coop");
+    CHECK(info->Settings->NumPublicConnections == 4);
+    CHECK(info->NumOpenPublicConnections == 3); // the host has a seat
+    REQUIRE((info->OwnerUserId != 0));
+    CHECK(info->OwnerUserId->id_str == host_settings.product_user_id());
+    release_session_details_info(info);
+
+    // And the guest joins it.
+    EOS_Sessions_JoinSessionOptions join = {};
+    join.ApiVersion = EOS_SESSIONS_JOINSESSION_API_LATEST;
+    join.SessionName = "joined-game";
+    join.SessionHandle = details;
+    join.LocalUserId = guest_id;
+    guest.join_session(&join, 0, on_joined);
+
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return g_joined;
+    });
+    REQUIRE(g_joined);
+    CHECK(g_join_result == EOS_EResult::EOS_Success);
+
+    // The host seated the guest: two players, and a seat fewer to give.
+    EOS_Sessions_CopyActiveSessionHandleOptions copy = {};
+    copy.ApiVersion = EOS_SESSIONS_COPYACTIVESESSIONHANDLE_API_LATEST;
+    copy.SessionName = "my-game";
+    EOS_HActiveSession active = 0;
+    REQUIRE(host.copy_active_session_handle(&copy, &active) == EOS_EResult::EOS_Success);
+    CHECK(host.active_registered_count(active) == 2);
+
+    EOS_ActiveSession_Info* active_info = 0;
+    REQUIRE(host.active_copy_info(active, &active_info) == EOS_EResult::EOS_Success);
+    CHECK(active_info->SessionDetails->NumOpenPublicConnections == 2);
+    release_active_session_info(active_info);
+
+    // And the guest holds the same game, under its own name for it.
+    copy.SessionName = "joined-game";
+    EOS_HActiveSession guest_active = 0;
+    REQUIRE(guest.copy_active_session_handle(&copy, &guest_active) == EOS_EResult::EOS_Success);
+    CHECK(guest.active_registered_count(guest_active) == 2);
+
+    guest.active_release(guest_active);
+
+    // The guest quits to the menu. Its seat has to come back, or a few rounds of joining and
+    // leaving would fill the host's game with players who are not there.
+    EOS_Sessions_DestroySessionOptions leave = {};
+    leave.ApiVersion = EOS_SESSIONS_DESTROYSESSION_API_LATEST;
+    leave.SessionName = "joined-game";
+    guest.destroy_session(&leave, 0, on_left);
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return host.active_registered_count(active) == 1;
+    });
+    CHECK(host.active_registered_count(active) == 1);
+
+    EOS_ActiveSession_Info* after_leaving = 0;
+    REQUIRE(host.active_copy_info(active, &after_leaving) == EOS_EResult::EOS_Success);
+    CHECK(after_leaving->SessionDetails->NumOpenPublicConnections == 3); // the seat is back
+    release_active_session_info(after_leaving);
+
+    // It changes its mind and comes back.
+    g_joined = false;
+    guest.join_session(&join, 0, on_joined);
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return g_joined;
+    });
+    REQUIRE(g_join_result == EOS_EResult::EOS_Success);
+    CHECK(host.active_registered_count(active) == 2);
+
+    // Now the host quits, and the game the guest was in is gone.
+    EOS_Sessions_DestroySessionOptions shut_down = {};
+    shut_down.ApiVersion = EOS_SESSIONS_DESTROYSESSION_API_LATEST;
+    shut_down.SessionName = "my-game";
+    host.destroy_session(&shut_down, 0, on_left);
+    pump(host_net, guest_net, [&]() {
+        host_cb.tick();
+        guest_cb.tick();
+        return guest.copy_active_session_handle(&copy, &guest_active) == EOS_EResult::EOS_NotFound;
+    });
+    copy.SessionName = "joined-game";
+    CHECK(guest.copy_active_session_handle(&copy, &guest_active) == EOS_EResult::EOS_NotFound);
+
+    host.active_release(active);
+    guest.details_release(details);
+    guest.search_release(search);
+    host.emu_deinit();
+    guest.emu_deinit();
+    host_connect.emu_deinit();
+    guest_connect.emu_deinit();
+    host_net.stop();
+    guest_net.stop();
     platform::net_shutdown();
 }

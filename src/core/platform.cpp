@@ -11,6 +11,7 @@ sdk_platform::sdk_platform()
     : connect_(settings_, cb_manager_, network_),
       auth_(settings_, cb_manager_),
       p2p_(settings_, cb_manager_, network_),
+      sessions_(settings_, cb_manager_, network_, connect_),
       created_(false) {
     for (int i = 0; i < if_count; i++) {
         interfaces_[i].id = static_cast<interface_id>(i);
@@ -43,6 +44,7 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
     connect_.emu_init();
     auth_.emu_init();
     p2p_.emu_init();
+    sessions_.emu_init();
     created_ = true;
     log_info("platform created for product '" + settings_.product_id() + "'");
     return true;
@@ -58,6 +60,7 @@ void sdk_platform::release() {
     connect_.emu_deinit();
     auth_.emu_deinit();
     p2p_.emu_deinit();
+    sessions_.emu_deinit();
     network_.stop();
     cb_manager_.clear();
     platform::net_shutdown();
@@ -89,6 +92,9 @@ void* sdk_platform::interface_handle(interface_id id) {
     }
     if (id == if_p2p) {
         return &p2p_;
+    }
+    if (id == if_sessions) {
+        return &sessions_;
     }
     return &interfaces_[id];
 }

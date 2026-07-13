@@ -36,6 +36,11 @@ enum class message_type : u16 {
     session_infos = 30,
     session_search = 31,
     session_search_response = 32,
+    session_join_request = 33,
+    session_join_response = 34,
+    session_destroy = 35,
+    session_register = 36,
+    session_unregister = 37,
 
     // Discovery and peer lifecycle. net_advertise travels over UDP and is consumed by the
     // router itself; the peer_connected / peer_disconnected envelopes are synthesized by the
@@ -87,13 +92,87 @@ struct p2p_data {
     std::vector<u8> data;
 };
 
-// An advertised session. `players` is a repeated field, which exercises the codec's lists.
+// One key/value a session advertises. The value's meaning is decided by `value_type`, which is
+// an EOS_EAttributeType: 0 bool, 1 int64, 2 double, 3 string.
+struct session_attribute {
+    std::string key;
+    i32 value_type = 0;
+    bool as_bool = false;
+    i64 as_int64 = 0;
+    f64 as_double = 0.0;
+    std::string as_string;
+    // EOS_ESessionAttributeAdvertisementType: whether a searcher may see this at all.
+    i32 advertisement = 0;
+};
+
+// A session a host is advertising: everything a searcher needs to decide whether it wants in, and
+// how to reach it.
 struct session_infos {
     std::string session_id;
+    std::string owner_id;   // the host's ProductUserId
     std::string bucket_id;
-    u32 max_players = 0;
     std::string host_address;
-    std::vector<std::string> players;
+    u32 max_players = 0;
+    u32 open_slots = 0;
+    i32 permission_level = 0; // EOS_EOnlineSessionPermissionLevel
+    i32 state = 0;            // EOS_EOnlineSessionState
+    bool allow_join_in_progress = false;
+    bool invites_allowed = false;
+    bool sanctions_enabled = false;
+    // Who is in the session. This is the one roster: it is what EOS_ActiveSession reports, what
+    // capacity is measured against, and who session traffic goes to. A player who leaves comes off
+    // it, which is what gives their seat back. Only someone on it may move anyone else on or off.
+    std::vector<std::string> registered_players;
+    std::vector<session_attribute> attributes;
+};
+
+// One condition a searcher puts on a session's attributes.
+struct search_parameter {
+    session_attribute attribute;
+    i32 comparison_op = 0; // EOS_EComparisonOp
+};
+
+// A searcher asking every peer for sessions it would want to join. `search_id` comes back on each
+// answer so a searcher with several searches in flight knows which one was answered.
+struct session_search {
+    std::string search_id;
+    std::string session_id;     // exact-id search; empty means no id filter
+    std::string target_user_id; // find a particular player's session; empty means no user filter
+    u32 max_results = 0;
+    std::vector<search_parameter> parameters;
+};
+
+// A host answering a search with one session that matched it.
+// A peer's whole answer to one search: every session it hosts that matched, in a single reply. One
+// reply per peer -- even an empty one -- is what lets the searcher know that peer is done.
+struct session_search_response {
+    std::string search_id;
+    std::vector<session_infos> sessions;
+};
+
+// A player asking a host to let it in. The host decides: it is the one that knows whether the
+// session is full and whether it even knows this player.
+struct session_join_request {
+    std::string session_id;
+};
+
+// The host's verdict, sent to every member so they all learn who joined. `reason` is an
+// EOS_EResult: Success, or why not.
+struct session_join_response {
+    std::string session_id;
+    std::string player_id;
+    i32 reason = 0;
+};
+
+// A host telling its members the session is gone.
+struct session_destroy {
+    std::string session_id;
+};
+
+// A member registering or unregistering players with the session.
+struct session_members {
+    std::string session_id;
+    std::vector<std::string> player_ids;
 };
 
 } // namespace eosr
