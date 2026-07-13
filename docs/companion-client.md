@@ -1,0 +1,167 @@
+# External social companion
+
+## Decision
+
+A standalone companion is in scope as the long-term replacement for the social overlay's join
+surface. It does not inject into the game, render over it, or call a function pointer in another
+process. The replacement SDK already owns the EOS notification registrations. The companion sends a
+local command, and the SDK turns that command into the normal notification on the next
+`EOS_Platform_Tick`.
+
+This closes an important playability gap for games whose only multiplayer entry point is one of:
+
+- `EOS_Presence_AddNotifyJoinGameAccepted`
+- `EOS_Lobby_AddNotifyJoinLobbyAccepted`
+- `EOS_Sessions_AddNotifyJoinSessionAccepted`
+
+It does not reproduce the complete Epic overlay. A game that requires overlay rendering, exclusive
+input, commerce UI, or a platform-native invite service can still remain unsupported.
+
+## Why it is feasible
+
+Presence join strings already cross the authenticated mesh. Sessions and Lobby already have search,
+details, and join paths. The missing operation is local: a player chooses a remote target and the SDK
+in the game process tells the game that choice was accepted.
+
+The three callbacks are not identical:
+
+- **Presence** carries the join string and both Epic account ids directly in the callback.
+- **Sessions** carries a UI event id. The game resolves it with
+  `EOS_Sessions_CopySessionHandleByUiEventId`, then calls `EOS_Sessions_JoinSession`.
+- **Lobby** carries a UI event id. The game resolves it with
+  `EOS_Lobby_CopyLobbyDetailsHandleByUiEventId`, then calls `EOS_Lobby_JoinLobby`.
+
+The current implementation registers all three notifications, but only Presence has the underlying
+join data ready. Both `Copy*ByUiEventId` functions still return `EOS_NotFound`. A useful companion
+therefore needs a real UI-event store, not merely a button that fires callbacks.
+
+## Architecture
+
+### Local control channel
+
+The SDK binds the first free port in a small control range on `127.0.0.1` only. The companion scans
+that range and performs a versioned binary handshake. Each running game instance returns its product
+id, local ids, display name, process-instance nonce, and supported join routes.
+
+This deliberately uses loopback TCP instead of named pipes or Unix-domain sockets:
+
+- the same implementation uses the existing cross-platform socket shim;
+- a native companion can reach a Windows DLL running under Wine/Proton;
+- multiple game instances use exclusive slots, as mesh discovery already does; and
+- binding loopback rather than `0.0.0.0` prevents another machine on the LAN from driving local UI
+  events.
+
+The control protocol is separate from the peer mesh. It has a distinct magic, version, bounded frame
+length, and per-run nonce. It never carries or exposes the profile private key. The trust boundary is
+the local desktop user: defending against another process running as the same user is not a goal,
+because that process can already replace the DLL or profile. Browser-originated requests are refused
+by using a non-HTTP binary handshake.
+
+The SDK does not create a control worker thread. It polls the listener and established control
+connections from `EOS_Platform_Tick`, validates commands, and queues notifications through the
+existing callback manager. The game callback therefore runs on the same thread and at the same point
+in the frame as every other EOS callback.
+
+### Candidate model
+
+The SDK exposes read-only `join_candidate` snapshots to the local control broker:
+
+- route: Presence, Session, or Lobby;
+- opaque candidate id, scoped to this game instance;
+- authenticated peer PUID/EAID and display name;
+- human-readable game/lobby/session label where available;
+- the internal presence, session-details, or lobby-details snapshot needed to accept it; and
+- a revision and expiry time.
+
+The companion sends only the opaque candidate id. It cannot provide an arbitrary remote identity,
+join string, lobby, or session for the SDK to trust. On acceptance the SDK resolves the id again and
+refuses a stale candidate, a disconnected peer, a full/private target, or a target from another
+product.
+
+Presence candidates come from the existing authenticated Presence cache. Session and Lobby
+candidates need a small background wildcard search owned by the control broker, using the same
+request/response and authority checks as an SDK search. They must not be made visible by a joined
+participant re-advertising somebody else's target.
+
+### UI-event lifecycle
+
+The SDK owns a process-unique, non-zero `EOS_UI_EventId` for every accepted action. An event is bound
+to one local user, one route, and an immutable candidate snapshot.
+
+1. The game registers an accepted notification. Registration is reported as a capability to the
+   companion.
+2. The companion lists current candidates and the player selects one.
+3. The SDK revalidates the candidate, creates the UI event, and schedules the notification.
+4. On the next tick, the callback fires with the exact documented ids and strings.
+5. A Session or Lobby game calls its `Copy*ByUiEventId` API and receives a normal details handle
+   backed by the event snapshot.
+6. The game attempts the join and calls `EOS_UI_AcknowledgeEventId` with the result.
+7. The SDK consumes the event and reports the result to the companion. Unacknowledged events expire.
+
+Copying a handle does not consume an event, because a game may inspect it more than once. An
+acknowledgement does. Event ids are never reused during a platform lifetime, and teardown releases
+all event snapshots and pending companion responses.
+
+## Delivery plan
+
+### Stage 1 — control-plane spike and Presence MVP
+
+- Add a portable, non-blocking loopback control server behind the existing socket shim.
+- Add protocol encode/decode tests, bounded queues, connection cleanup, and instance discovery.
+- Expose registered join routes and authenticated Presence candidates.
+- Implement a command-line companion with `instances`, `list`, and `join` commands.
+- Fire `EOS_Presence_JoinGameAcceptedCallbackInfo` on the next game tick with stable string lifetime.
+- Implement the common UI-event id allocator and acknowledgement result path.
+
+The spike succeeds when two real SDK instances mesh over LAN, the CLI selects one peer, and a game
+harness receives one callback with the exact local id, target id, join string, and event id.
+
+### Stage 2 — Session and Lobby UI events
+
+- Add the broker-owned background searches and candidate snapshots.
+- Implement `EOS_Sessions_CopySessionHandleByUiEventId`.
+- Implement `EOS_Lobby_CopyLobbyDetailsHandleByUiEventId`.
+- Fire the Session and Lobby accepted notifications only when their matching notification is live.
+- Carry acknowledgement success/failure back to the companion and expire abandoned events.
+
+This stage succeeds when the callback-to-copy-to-join sequence works without a game-specific shortcut
+for both interfaces, including host migration between listing and acceptance.
+
+### Stage 3 — companion UX and optional UI bridge
+
+- Add a small desktop or local-web UI without adding a GUI dependency to the shipped SDK library.
+- Show running games separately, including multiple local copies of the same title.
+- Show route support, peer identity, joinability, stale/disconnected state, and the game's final
+  acknowledgement result.
+- Optionally make `EOS_UI_ShowFriends` notify or raise an already-running companion. Starting a new
+  process from the SDK remains platform-specific and is not required for the join path.
+
+The CLI remains supported for automation and diagnostics even after a graphical client exists.
+
+## Test matrix
+
+- Unit: event-id uniqueness, route binding, snapshot lifetime, acknowledgement, timeout, teardown,
+  duplicate clicks, wrong local user, and stale candidate refusal.
+- Protocol: fragmented/coalesced frames, oversized lengths, bad magic/version/nonce, slow clients,
+  bounded output, disconnect/reconnect, and control-port exhaustion.
+- C ABI integration: register each notification through the built library, issue a real control
+  command, tick, call `Copy*ByUiEventId` from inside the callback, join, and acknowledge.
+- Real mesh: two and three instances; peer disconnect after listing; full target; owner migration;
+  participant re-advertisement refusal; and a candidate from another product.
+- Targets: native Linux, native Windows, MinGW/Wine, and a Proton-shaped test where a native Linux
+  companion drives the Windows DLL under Wine through host loopback.
+- Game trials: capture notification registration, candidate selection, callback delivery, details
+  copy, join call, and acknowledgement in the alpha diagnostic logs.
+
+## Limits that remain
+
+- The game must call `EOS_Platform_Tick` and register at least one supported accepted notification.
+- A game that only calls `EOS_UI_ShowFriends` may need the optional UI bridge before it discovers the
+  external surface.
+- Invite-received/accepted/rejected APIs remain separate work. Some games may require that full
+  lifecycle rather than a generic join action.
+- Platform-native invites, commerce/account portals, overlay rendering, and exclusive input are not
+  supplied by the companion.
+- Anti-cheat or file-integrity enforcement can reject the replacement SDK before this path runs.
+- The companion is local to each player. Remote reachability still comes from the LAN mesh; this
+  milestone does not add Internet traversal or relay services.

@@ -111,7 +111,34 @@ Self-certifying, key-derived identities over a standards-exact Noise XX channel.
 - **What connection-binding did not cover, and what closed it:** first contact was self-asserted, the presence epic-account id travelled in a payload, and P2P packets were unauthenticated. All three are closed by the Authenticated Mesh Identity milestone above. What remains true, permanently: none of this attests a real Epic account or game ownership. That is impossible without Epic, and we do not claim it. What EOS Reimagined authenticates is that a peer holds the key its identity is derived from — which is what stops one player wearing another's identity, and is the whole of what a backendless emulator can honestly offer.
 - **Known gaps / deferred (tracked, not bugs):**
   - Thread-safety: the whole engine is single-threaded-tick by design (only the info-struct free registries are mutex-guarded, because those frees are bare C entry points). A game calling an interface off its tick thread is not yet serialized; if we commit to the SDK's any-thread contract it needs one platform-wide lock across all interfaces, not a per-interface patch.
-  - Presence `JoinGameAccepted` notification has no trigger without the social overlay (registered, never fires).
+  - The three overlay-originated join notifications have no trigger yet: Presence
+    `JoinGameAccepted`, Lobby `JoinLobbyAccepted`, and Sessions `JoinSessionAccepted` register but
+    never fire. This is not permanently tied to an injected renderer. The planned external social
+    companion supplies the click over a loopback control channel and lets the SDK fire the normal
+    callback on the game tick; see [companion-client.md](companion-client.md).
+
+## Long-term milestone: external social companion (planned)
+
+The social overlay is both a renderer and the source of join actions. Rendering inside arbitrary
+games remains out of scope, but the action path is feasible without it: a standalone companion can
+show authenticated LAN peers and tell the SDK inside the selected game process which candidate the
+local player accepted.
+
+- **Local, not injected:** a versioned binary control channel binds only to `127.0.0.1` and is polled
+  from `EOS_Platform_Tick`. The SDK, not the companion, owns and fires the game's callback.
+- **Presence first:** expose the networked join string and fire
+  `EOS_Presence_JoinGameAcceptedCallbackInfo` with the authenticated local/target ids.
+- **Real UI events:** add process-unique `EOS_UI_EventId` state and
+  `EOS_UI_AcknowledgeEventId`; implement Session/Lobby `Copy*ByUiEventId` over immutable candidate
+  snapshots before enabling their accepted notifications.
+- **Automation before GUI:** ship a small CLI first so the full path is testable and scriptable. A
+  graphical or local-web client is a later shell over the same protocol.
+- **Acceptance:** real C-ABI callback-to-copy-to-join-to-ack tests over two and three mesh instances
+  on Linux, Windows, Wine, and a native-Linux-companion-to-Wine scenario.
+- **Still not promised:** overlay rendering/input, platform-native invitations, commerce/account UI,
+  Internet traversal, or compatibility with games that never register a supported join callback.
+
+Detailed design and test matrix: [companion-client.md](companion-client.md).
 
 ## Milestone: all 42 classes across all 6 phases labeled + documented (2026-07-10).
 - **Follow-ups resolved (2026-07-10):** full newer-build wire protocol recovered from embedded protobuf descriptors → `protocol.md` "RECOVERED newer-build schema". Confirmed UserInfo/Friends have NO network path (username via `EpicEmu_Infos_pb`); documented new `EpicAuth_pb`, `EpicCustomInvites_pb{payload}`, `EpicEmu_pb` handshake, `EpicOverlay_pb`; new fields (Presence `integratedplatform`, Lobby `rtc_room_name`, Sessions `owner_server_id`, search `app_id`).

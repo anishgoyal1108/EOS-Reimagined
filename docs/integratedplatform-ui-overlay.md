@@ -18,6 +18,12 @@ Handle `EOS_HUI` via `EOS_Platform_GetUIInterface`. `IRunCallback`. `EmuInit` @`
 ## Overlay (`overlay/EpicOverlay.cpp`)
 The in-game overlay renderer (many methods are internal, not EOS-flat). Hooks the game's present/input (relates to `PrePresent`/`ReportInputState` and the WinHTTP/graphics imports). Gated by `enable_overlay`. Largely a rendering/input concern — **out of scope for a headless library reimpl** (can be stubbed: overlay never visible, `GetFriendsVisible=false`).
 
+The join-action part is separable from rendering. A standalone companion can present the authenticated
+peer/session/lobby state and ask the SDK inside the game process to fire the documented accepted
+notification on its next tick. This is the planned route to multiplayer parity for games whose only
+join surface is the social overlay; see [companion-client.md](companion-client.md). It does not make
+the renderer, input capture, commerce UI, or platform-native invitations in scope.
+
 ## Reimpl notes / follow-ups
 - Reimpl: IntegratedPlatform = local login-status state + pre-logout callback plumbing; UI = report overlay not-visible/paused and accept show/hide as no-ops unless an overlay is implemented; the options container is a simple keyed list consumed at platform create.
-- Follow-ups: which integrated-platform types are recognized; overlay render backend (D3D11/12/Vulkan/GL hooks) if overlay parity is ever wanted.
+- Follow-ups: which integrated-platform types are recognized; the external companion and UI-event store; overlay render backend (D3D11/12/Vulkan/GL hooks) only if full visual parity is ever wanted.
