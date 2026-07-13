@@ -38,6 +38,7 @@ add_library(eosr_core STATIC
     src/interfaces/presence.cpp
     src/interfaces/lobby.cpp
     src/net/wire.cpp
+    src/net/secure_channel.cpp
     src/net/message_router.cpp
 )
 
