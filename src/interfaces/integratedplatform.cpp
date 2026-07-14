@@ -1,9 +1,10 @@
 #include "interfaces/integratedplatform.h"
 
-#include <map>
 #include <memory>
 #include <mutex>
+#include <vector>
 
+#include "common/handle_store.h"
 #include "common/ids.h"
 #include "core/callback_manager.h"
 
@@ -14,10 +15,11 @@ namespace {
 const callback_type_id cb_login_status_changed = 1;
 
 // The containers a game currently holds. Global because a container is created before any platform
-// exists -- it is what a platform is created *from*. Guarded because Create/Release are bare C entry
-// points a game may call from any thread, like the other free-function registries.
+// exists -- it is what a platform is created *from*. Guarded because Create/Add/Release are bare C
+// entry points a game may call from any thread, like the other free-function registries. Handles are
+// process-unique tokens (handle_store), so a released one never aliases a live container.
 std::mutex g_container_mutex;
-std::map<void*, std::unique_ptr<integrated_platform_container> > g_containers;
+handle_store<integrated_platform_container> g_containers;
 
 bool version_ok(i32 version, i32 latest) {
     return version > 0 && version <= latest;
@@ -86,34 +88,41 @@ EOS_EResult create_integrated_platform_container(
         return EOS_EResult::EOS_InvalidParameters;
     }
     std::unique_ptr<integrated_platform_container> container(new integrated_platform_container());
-    integrated_platform_container* raw = container.get();
-    {
-        std::lock_guard<std::mutex> lock(g_container_mutex);
-        g_containers[raw] = std::move(container);
-    }
-    *out_handle = reinterpret_cast<EOS_HIntegratedPlatformOptionsContainer>(raw);
+    std::lock_guard<std::mutex> lock(g_container_mutex);
+    *out_handle = reinterpret_cast<EOS_HIntegratedPlatformOptionsContainer>(
+        g_containers.add(std::move(container)));
     return EOS_EResult::EOS_Success;
 }
 
-integrated_platform_container* find_integrated_platform_container(
-    EOS_HIntegratedPlatformOptionsContainer handle) {
-    if (handle == 0) {
-        return 0;
-    }
+EOS_EResult add_container_entry(
+    EOS_HIntegratedPlatformOptionsContainer handle,
+    const EOS_IntegratedPlatformOptionsContainer_AddOptions* options) {
     std::lock_guard<std::mutex> lock(g_container_mutex);
-    std::map<void*, std::unique_ptr<integrated_platform_container> >::iterator found =
-        g_containers.find(reinterpret_cast<void*>(handle));
-    return (found != g_containers.end()) ? found->second.get() : 0;
+    integrated_platform_container* container = g_containers.find(handle);
+    return (container != 0) ? container->add(options) : EOS_EResult::EOS_InvalidParameters;
 }
 
-// A handle we did not mint, or already released, is not ours to free. We look it up rather than
-// trusting it, so a stale or double release changes nothing instead of freeing someone else's memory.
-void release_integrated_platform_container(EOS_HIntegratedPlatformOptionsContainer handle) {
-    if (handle == 0) {
-        return;
-    }
+bool copy_container_entries(EOS_HIntegratedPlatformOptionsContainer handle,
+                            std::vector<integrated_platform_entry>& out) {
     std::lock_guard<std::mutex> lock(g_container_mutex);
-    g_containers.erase(reinterpret_cast<void*>(handle));
+    integrated_platform_container* container = g_containers.find(handle);
+    if (container == 0) {
+        return false;
+    }
+    out = container->entries();
+    return true;
+}
+
+bool find_integrated_platform_container(EOS_HIntegratedPlatformOptionsContainer handle) {
+    std::lock_guard<std::mutex> lock(g_container_mutex);
+    return g_containers.find(handle) != 0;
+}
+
+// A handle we did not mint, or already released, is not ours to free. Because handles are unique
+// tokens, a released one is found by nothing, so a stale or double release changes nothing.
+void release_integrated_platform_container(EOS_HIntegratedPlatformOptionsContainer handle) {
+    std::lock_guard<std::mutex> lock(g_container_mutex);
+    g_containers.release(handle);
 }
 
 sdk_integrated_platform::sdk_integrated_platform(callback_manager& callbacks)
@@ -307,7 +316,11 @@ bool sdk_integrated_platform::cb_run_frame() {
     changes.swap(pending_changes_);
     for (std::size_t i = 0; i < changes.size(); i++) {
         const status_change& change = changes[i];
-        // Re-look-up each notification by id before firing: a fired callback may remove another.
+        // Re-look-up each notification by id before firing: a fired callback may remove another, or
+        // remove itself. We never touch the payload after fire() -- self-removal frees it, so a write
+        // to take the strings back would be a use-after-free. The strings live in `changes` for the
+        // whole frame, and the next change overwrites them before the next fire, so nothing ever
+        // reads them between frames; leaving them set is harmless where taking them back is not.
         const std::vector<EOS_NotificationId> ids =
             callbacks_.notification_ids(this, cb_login_status_changed);
         for (std::size_t n = 0; n < ids.size(); n++) {
@@ -324,11 +337,6 @@ bool sdk_integrated_platform::cb_run_frame() {
             info->PreviousLoginStatus = change.previous;
             info->CurrentLoginStatus = change.current;
             note->fire();
-            // The strings belong to `changes`, which goes out of scope at the end of this frame. The
-            // game may only read them during the callback, so we take them back rather than leave a
-            // dangling pointer sitting in a registration that outlives them.
-            info->PlatformType = 0;
-            info->LocalPlatformUserId = 0;
         }
     }
     return false;

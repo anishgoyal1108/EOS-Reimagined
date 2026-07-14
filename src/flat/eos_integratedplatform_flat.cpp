@@ -31,9 +31,7 @@ EOS_DECLARE_FUNC(void) EOS_IntegratedPlatformOptionsContainer_Release(
 EOS_DECLARE_FUNC(EOS_EResult) EOS_IntegratedPlatformOptionsContainer_Add(
     EOS_HIntegratedPlatformOptionsContainer Handle,
     const EOS_IntegratedPlatformOptionsContainer_AddOptions* InOptions) {
-    eosr::integrated_platform_container* container =
-        eosr::find_integrated_platform_container(Handle);
-    return (container != 0) ? container->add(InOptions) : EOS_EResult::EOS_InvalidParameters;
+    return eosr::add_container_entry(Handle, InOptions);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_IntegratedPlatform_SetUserLoginStatus(

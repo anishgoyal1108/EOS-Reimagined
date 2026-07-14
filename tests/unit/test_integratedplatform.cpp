@@ -16,6 +16,8 @@ std::string g_status_platform;
 std::string g_status_user;
 EOS_ELoginStatus g_status_previous;
 EOS_ELoginStatus g_status_current;
+sdk_integrated_platform* g_self_removing_platform;
+EOS_NotificationId g_self_removing_notification;
 
 void reset_captures() {
     g_status_count = 0;
@@ -23,6 +25,8 @@ void reset_captures() {
     g_status_user.clear();
     g_status_previous = EOS_ELoginStatus::EOS_LS_LoggedIn;
     g_status_current = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
+    g_self_removing_platform = 0;
+    g_self_removing_notification = EOS_INVALID_NOTIFICATIONID;
 }
 
 void EOS_CALL on_status(const EOS_IntegratedPlatform_UserLoginStatusChangedCallbackInfo* info) {
@@ -31,6 +35,16 @@ void EOS_CALL on_status(const EOS_IntegratedPlatform_UserLoginStatusChangedCallb
     g_status_user = (info->LocalPlatformUserId != 0) ? info->LocalPlatformUserId : "";
     g_status_previous = info->PreviousLoginStatus;
     g_status_current = info->CurrentLoginStatus;
+}
+
+void EOS_CALL on_status_and_remove_self(
+    const EOS_IntegratedPlatform_UserLoginStatusChangedCallbackInfo* info) {
+    on_status(info);
+    if (g_self_removing_platform != 0 &&
+        g_self_removing_notification != EOS_INVALID_NOTIFICATIONID) {
+        g_self_removing_platform->remove_notify_user_login_status_changed(
+            g_self_removing_notification);
+    }
 }
 
 // The handler returns the game's verdict on the logout: process it now, or defer it and finalize
@@ -122,6 +136,31 @@ TEST_CASE("an options container is owned, found, and released exactly once") {
     CHECK(stale == 0);
 }
 
+// A released handle must never become authority over a later object. Pointer-valued handles make
+// that promise dependent on the allocator: when it reuses an address, a stale release erases the
+// new container. The project's other sub-handles use process-unique ids specifically to avoid this
+// ABA lifecycle bug.
+TEST_CASE("a stale container handle cannot alias or release a later container") {
+    EOS_IntegratedPlatform_CreateIntegratedPlatformOptionsContainerOptions create = {};
+    create.ApiVersion =
+        EOS_INTEGRATEDPLATFORM_CREATEINTEGRATEDPLATFORMOPTIONSCONTAINER_API_LATEST;
+
+    EOS_HIntegratedPlatformOptionsContainer stale = 0;
+    REQUIRE(create_integrated_platform_container(&create, &stale) == EOS_EResult::EOS_Success);
+    REQUIRE(stale != 0);
+    release_integrated_platform_container(stale);
+
+    EOS_HIntegratedPlatformOptionsContainer current = 0;
+    REQUIRE(create_integrated_platform_container(&create, &current) == EOS_EResult::EOS_Success);
+    REQUIRE(current != 0);
+    CHECK(current != stale);
+
+    // Even if a caller retained and released the old value again, the live handle must survive.
+    release_integrated_platform_container(stale);
+    CHECK((find_integrated_platform_container(current) != 0));
+    release_integrated_platform_container(current);
+}
+
 // One entry per platform. A second entry for the same platform is not a refinement of the first, it
 // is two answers to one question.
 TEST_CASE("a container takes one entry per platform and refuses a duplicate") {
@@ -183,6 +222,34 @@ TEST_CASE("the application can set an integrated user's login status, and is tol
     REQUIRE(g_status_count == 2);
     CHECK(g_status_previous == EOS_ELoginStatus::EOS_LS_LoggedIn);
     CHECK(g_status_current == EOS_ELoginStatus::EOS_LS_NotLoggedIn);
+}
+
+// EOS notification callbacks are allowed to remove their own registration. Delivery must not touch
+// the persistent notification payload after invoking game code: self-removal frees that payload.
+// This is primarily a sanitizer regression; the stale writes may appear harmless in an allocator
+// that leaves freed bytes mapped.
+TEST_CASE("a login-status callback may unregister itself during delivery") {
+    integrated_fixture fx;
+    fx.configure(EOS_IPT_Steam, EOS_EIntegratedPlatformManagementFlags::
+                                    EOS_IPMF_ApplicationManagedIdentityLogin);
+
+    EOS_IntegratedPlatform_AddNotifyUserLoginStatusChangedOptions listen = {};
+    listen.ApiVersion = EOS_INTEGRATEDPLATFORM_ADDNOTIFYUSERLOGINSTATUSCHANGED_API_LATEST;
+    g_self_removing_platform = &fx.platform;
+    g_self_removing_notification = fx.platform.add_notify_user_login_status_changed(
+        &listen, 0, on_status_and_remove_self);
+    REQUIRE(g_self_removing_notification != EOS_INVALID_NOTIFICATIONID);
+
+    REQUIRE(fx.set_status(EOS_IPT_Steam, "76561198000000000",
+                          EOS_ELoginStatus::EOS_LS_LoggedIn) == EOS_EResult::EOS_Success);
+    fx.callbacks.tick();
+    CHECK(g_status_count == 1);
+
+    // It removed itself, so a later change cannot call it again.
+    REQUIRE(fx.set_status(EOS_IPT_Steam, "76561198000000000",
+                          EOS_ELoginStatus::EOS_LS_NotLoggedIn) == EOS_EResult::EOS_Success);
+    fx.callbacks.tick();
+    CHECK(g_status_count == 1);
 }
 
 // The three ways this call is not the game's to make, each with its own word. Collapsing them would

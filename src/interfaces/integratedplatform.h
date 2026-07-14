@@ -37,13 +37,26 @@ private:
     std::vector<integrated_platform_entry> entries_;
 };
 
-// The container store. A handle is only ever one we minted and have not yet released, so a stale,
-// double, or foreign release is a no-op rather than a free of someone else's memory.
+// The container store. A handle is a process-unique token minted from the same counter as every
+// other sub-handle, never a raw pointer -- so a released handle can never alias a later container,
+// and a stale, double, or foreign release finds nothing and is a no-op rather than a free of (or
+// authority over) someone else's memory. Every operation runs under the store lock and copies out
+// what it needs; no pointer into container storage escapes the lock, so a game may Create, Add, and
+// Release from any thread without racing platform creation.
 EOS_EResult create_integrated_platform_container(
     const EOS_IntegratedPlatform_CreateIntegratedPlatformOptionsContainerOptions* options,
     EOS_HIntegratedPlatformOptionsContainer* out_handle);
-integrated_platform_container* find_integrated_platform_container(
-    EOS_HIntegratedPlatformOptionsContainer handle);
+// Add one entry to the container named by `handle`. A handle we never minted or already released is
+// InvalidParameters, not a dereference.
+EOS_EResult add_container_entry(
+    EOS_HIntegratedPlatformOptionsContainer handle,
+    const EOS_IntegratedPlatformOptionsContainer_AddOptions* options);
+// Copy the container's entries into `out` under the store lock, so the caller never touches storage
+// a concurrent Release could free. Returns whether a live container answered.
+bool copy_container_entries(EOS_HIntegratedPlatformOptionsContainer handle,
+                            std::vector<integrated_platform_entry>& out);
+// Whether a live container exists for `handle`. An existence probe only: no pointer escapes the lock.
+bool find_integrated_platform_container(EOS_HIntegratedPlatformOptionsContainer handle);
 void release_integrated_platform_container(EOS_HIntegratedPlatformOptionsContainer handle);
 
 // The IntegratedPlatform interface: the bridge to Steam, a console's native account system, and the

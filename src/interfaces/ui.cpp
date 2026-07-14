@@ -124,6 +124,7 @@ void sdk_ui::emu_deinit() {
     }
     callbacks_.unregister_callbacks(this);
     callbacks_.unregister_frame(this);
+    pending_initial_delivery_.clear();
     registered_ = false;
 }
 
@@ -385,19 +386,6 @@ EOS_EResult sdk_ui::configure_on_screen_keyboard(
 // The join-accepted notifications, which are the ones that actually gate multiplayer, live on
 // Presence, Lobby and Sessions and are the companion's job.
 
-// Queue a one-shot copy of a notification payload, so the game hears the current state on the next
-// tick without the persistent registration being spent.
-void sdk_ui::deliver_initial_state(callback_type_id type, std::size_t info_size,
-                                   completion_delegate delegate, void* client_data) {
-    std::unique_ptr<frame_result> result(new frame_result());
-    void* raw = result->create_callback(type, info_size, delegate);
-    // Every one of these payloads begins with ClientData, and the rest of it is the zeroed current
-    // state: not visible, no exclusive input, no memory report.
-    *static_cast<void**>(raw) = client_data;
-    result->set_done(true);
-    callbacks_.add_callback(this, std::move(result));
-}
-
 EOS_NotificationId sdk_ui::add_notify_display_settings_updated(
     const EOS_UI_AddNotifyDisplaySettingsUpdatedOptions* options, void* client_data,
     EOS_UI_OnDisplaySettingsUpdatedCallback delegate) {
@@ -415,9 +403,7 @@ EOS_NotificationId sdk_ui::add_notify_display_settings_updated(
     info->bIsExclusiveInput = EOS_FALSE;
     const EOS_NotificationId id = callbacks_.add_notification(this, std::move(result));
     if (id != EOS_INVALID_NOTIFICATIONID) {
-        deliver_initial_state(cb_display_settings,
-                              sizeof(EOS_UI_OnDisplaySettingsUpdatedCallbackInfo),
-                              reinterpret_cast<completion_delegate>(delegate), client_data);
+        pending_initial_delivery_.push_back(id);
     }
     return id;
 }
@@ -437,8 +423,7 @@ EOS_NotificationId sdk_ui::add_notify_memory_monitor(
     info->SystemMemoryMonitorReport = 0;
     const EOS_NotificationId id = callbacks_.add_notification(this, std::move(result));
     if (id != EOS_INVALID_NOTIFICATIONID) {
-        deliver_initial_state(cb_memory_monitor, sizeof(EOS_UI_MemoryMonitorCallbackInfo),
-                              reinterpret_cast<completion_delegate>(delegate), client_data);
+        pending_initial_delivery_.push_back(id);
     }
     return id;
 }
@@ -464,6 +449,21 @@ void sdk_ui::remove_notify(EOS_NotificationId id) {
 }
 
 bool sdk_ui::cb_run_frame() {
+    if (pending_initial_delivery_.empty()) {
+        return false;
+    }
+    // Deliver each notification's promised initial call by firing the persistent registration once:
+    // it already holds the delegate, the client data, and the zeroed current state. We re-look-up by
+    // id and only fire a still-live one, so a notification removed before this tick delivers nothing
+    // -- and a fired callback that removes another pending one takes effect on the re-look-up.
+    std::vector<EOS_NotificationId> pending;
+    pending.swap(pending_initial_delivery_);
+    for (std::size_t i = 0; i < pending.size(); i++) {
+        frame_result* note = callbacks_.find_notification(this, pending[i]);
+        if (note != 0) {
+            note->fire();
+        }
+    }
     return false;
 }
 

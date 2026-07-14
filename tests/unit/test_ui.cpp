@@ -237,6 +237,22 @@ TEST_CASE("a display-settings notification reports the current state on the next
     fx.ui.remove_notify(id);
 }
 
+// RemoveNotify means the game no longer wishes to receive the callback. The initial-state delivery
+// is part of that registration, not an independent completion: if removal happens before the next
+// tick, invoking it can call through client data the game has already released.
+TEST_CASE("removing a display-settings notification cancels its pending initial callback") {
+    ui_fixture fx;
+    EOS_UI_AddNotifyDisplaySettingsUpdatedOptions options = {};
+    options.ApiVersion = EOS_UI_ADDNOTIFYDISPLAYSETTINGSUPDATED_API_LATEST;
+
+    const EOS_NotificationId id =
+        fx.ui.add_notify_display_settings_updated(&options, 0, on_display_settings);
+    REQUIRE(id != EOS_INVALID_NOTIFICATIONID);
+    fx.ui.remove_notify(id);
+    fx.callbacks.tick();
+    CHECK(g_display_settings_count == 0);
+}
+
 // The memory-monitor registration carries the same explicit next-tick guarantee. A headless
 // desktop implementation has no platform report to attach, but it must still publish that current
 // null state once after registration.

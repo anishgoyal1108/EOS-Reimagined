@@ -69,10 +69,9 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
         options->ApiVersion >= options_with_integrated_platform &&
         options->IntegratedPlatformOptionsContainerHandle != 0
     ) {
-        const integrated_platform_container* container =
-            find_integrated_platform_container(options->IntegratedPlatformOptionsContainerHandle);
-        if (container != 0) {
-            integrated_platform_.configure(container->entries());
+        std::vector<integrated_platform_entry> entries;
+        if (copy_container_entries(options->IntegratedPlatformOptionsContainerHandle, entries)) {
+            integrated_platform_.configure(entries);
         }
     }
 
