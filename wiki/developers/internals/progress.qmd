@@ -122,8 +122,8 @@ A game resolves every `EOS_*` symbol it imports when the library loads; one it c
   Callback-bearing calls share one correlation across call, return, and deferred callback, including
   the non-void storage calls; absent transfer handles are explicit nulls, and notification return /
   register / remove records share one opaque label.
-- **Handwritten ABI tracing:** bootstrap, common, logging, Platform, Connect, Auth, and P2P are
-  covered (131 of 356 handwritten exports). Calls rejected before dispatch remain visible; synchronous
+- **Handwritten ABI tracing:** bootstrap, common, logging, Platform, Connect, Auth, P2P, and Presence
+  are covered (150 of 356 handwritten exports). Calls rejected before dispatch remain visible; synchronous
   results use typed return values; asynchronous calls retain one correlation through callback
   delivery; returned notification ids use the same opaque labels as register/fire/remove records.
   P2P send traces contain endpoint/socket labels and packet metadata but never payload bytes.

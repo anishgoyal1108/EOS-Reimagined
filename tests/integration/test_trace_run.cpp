@@ -10,6 +10,7 @@
 #include "eos_connect.h"
 #include "eos_auth.h"
 #include "eos_p2p.h"
+#include "eos_presence.h"
 #include "eos_ecom.h"
 #include "eos_achievements.h"
 #include "eos_playerdatastorage.h"
@@ -61,6 +62,7 @@ void EOS_CALL on_auth_delete(const EOS_Auth_DeletePersistentAuthCallbackInfo* in
     CHECK(info->ResultCode == EOS_EResult::EOS_NotImplemented);
     g_auth_delete_fired = true;
 }
+void EOS_CALL on_join_game_accepted(const EOS_Presence_JoinGameAcceptedCallbackInfo*) {}
 
 void set_env(const char* name, const char* value) {
 #if defined(_WIN32)
@@ -210,6 +212,9 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     RESOLVE(fn_connect_status, EOS_Connect_GetLoginStatus);
     RESOLVE(fn_get_p2p, EOS_Platform_GetP2PInterface);
     RESOLVE(fn_p2p_send, EOS_P2P_SendPacket);
+    RESOLVE(fn_get_presence, EOS_Platform_GetPresenceInterface);
+    RESOLVE(fn_add_join_game, EOS_Presence_AddNotifyJoinGameAccepted);
+    RESOLVE(fn_remove_join_game, EOS_Presence_RemoveNotifyJoinGameAccepted);
     EOS_HConnect connect = fn_get_connect(platform);
     REQUIRE((connect != nullptr));
 
@@ -259,6 +264,13 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     send.Reliability = EOS_EPacketReliability::EOS_PR_ReliableOrdered;
     send.bDisableAutoAcceptConnection = EOS_TRUE;
     CHECK(fn_p2p_send(fn_get_p2p(platform), &send) == EOS_EResult::EOS_NoConnection);
+
+    EOS_Presence_AddNotifyJoinGameAcceptedOptions join_game = {};
+    join_game.ApiVersion = EOS_PRESENCE_ADDNOTIFYJOINGAMEACCEPTED_API_LATEST;
+    const EOS_NotificationId join_game_id = fn_add_join_game(
+        fn_get_presence(platform), &join_game, nullptr, on_join_game_accepted);
+    REQUIRE(join_game_id != EOS_INVALID_NOTIFICATIONID);
+    fn_remove_join_game(fn_get_presence(platform), join_game_id);
 
     // A diagnostic trace must retain calls that fail before dispatch too. Bad/stale handles are one
     // of the first things an in-game alpha probe needs to explain, not a reason for the probe itself
@@ -389,6 +401,18 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
           std::string::npos);
     CHECK(p2p_send_call.find("\"len\":19") != std::string::npos);
     CHECK(p2p_send_return.find("\"name\":\"EOS_NoConnection\"") != std::string::npos);
+    const std::string join_game_return = find_line(
+        lines,
+        "\"kind\":\"return\",\"fn\":\"EOS_Presence_AddNotifyJoinGameAccepted\"");
+    const std::string join_game_register = find_line(
+        lines, "\"event\":\"JoinGameAccepted\",\"action\":\"register\"");
+    const std::string join_game_remove = find_line(
+        lines, "\"event\":\"JoinGameAccepted\",\"action\":\"remove\"");
+    REQUIRE_FALSE(join_game_return.empty());
+    REQUIRE_FALSE(join_game_register.empty());
+    REQUIRE_FALSE(join_game_remove.empty());
+    CHECK(field_of(join_game_return, "v") == field_of(join_game_register, "id"));
+    CHECK(field_of(join_game_register, "id") == field_of(join_game_remove, "id"));
 
     // The asynchronous login: its call, its synchronous return, and the callback that completed it a
     // tick later all carry one correlation id, so a reader can stitch the operation back together.
