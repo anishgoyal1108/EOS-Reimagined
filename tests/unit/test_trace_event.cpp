@@ -46,6 +46,16 @@ trace_field f_uint(const std::string& key, u64 value) {
 
 std::vector<trace_field> none() { return std::vector<trace_field>(); }
 
+std::size_t occurrences(const std::string& text, const std::string& needle) {
+    std::size_t count = 0;
+    std::size_t pos = 0;
+    while ((pos = text.find(needle, pos)) != std::string::npos) {
+        count++;
+        pos += needle.size();
+    }
+    return count;
+}
+
 } // namespace
 
 TEST_CASE("a meta record serializes its event and inline fields in order") {
@@ -166,4 +176,32 @@ TEST_CASE("a string field with an invalid byte is made safe by the writer") {
     const std::string line = serialize_meta(make_envelope(), "config", fields);
     CHECK(line == prefix + "\"kind\":\"meta\",\"event\":\"config\","
                            "\"detail\":\"bad\xEF\xBF\xBD\"}");
+}
+
+TEST_CASE("trace fields cannot carry arbitrary sensitive text") {
+    const std::string token = "credential-token-that-must-not-enter-a-trace";
+    std::vector<trace_field> args;
+    args.push_back(f_str("credential", token));
+
+    const std::string line = serialize_call(make_envelope(), "EOS_Connect_Login", 3, "c#1", args);
+    CHECK(line.find(token) == std::string::npos);
+}
+
+TEST_CASE("inline fields cannot shadow the trace envelope or body") {
+    std::vector<trace_field> fields;
+    fields.push_back(f_uint("seq", 999));
+    fields.push_back(f_str("kind", "not-meta"));
+    fields.push_back(f_str("event", "not-rotate"));
+
+    const std::string line = serialize_meta(make_envelope(), "rotate", fields);
+    CHECK(occurrences(line, "\"seq\":") == 1);
+    CHECK(occurrences(line, "\"kind\":") == 1);
+    CHECK(occurrences(line, "\"event\":") == 1);
+}
+
+TEST_CASE("one trace record cannot exceed the minimum sink capacity") {
+    std::vector<trace_field> fields;
+    fields.push_back(f_str("detail", std::string(70000, 'x')));
+    const std::string line = serialize_meta(make_envelope(), "config", fields);
+    CHECK(line.size() < 65536u); // room must remain for the rotate record at the 64 KiB minimum
 }

@@ -188,8 +188,8 @@ One JSON object per line. Every record shares an **envelope** and adds a **body*
   `dropped_bytes`), `profile` (the local pseudonymous `peer_fp` once the profile is loaded), `config`
   (a config diagnostic), `shutdown`.
 - **`call`** — `fn`, `api` (the `ApiVersion` the game supplied), `corr` (for an async call, else
-  absent), `args` (allow-listed scalars only — lengths, flags, labelled ids — never buffers, free
-  text, or pointers).
+  absent), and `args`: a nested object of allow-listed scalars only — lengths, flags, labelled ids —
+  never buffers, free text, or pointers.
 - **`return`** — `fn`, `corr`, and whichever of these the function's signature actually produces:
   - `result` `{ code, name }` for an `EOS_EResult` return;
   - `value` `{ type, v }` for a scalar/enum/handle/bool/count/notification-id return — e.g.
@@ -200,14 +200,21 @@ One JSON object per line. Every record shares an **envelope** and adds a **body*
   - `void: true` when the function returns nothing.
   A `Copy*` carries both `result` and `out`; a getter carries `value`; `EOS_Platform_Tick` carries
   `void`. There is always exactly one of `result` / `value` / `void`, optionally with `out`.
-- **`callback`** — `fn` (the operation), `corr` (links back to its `call`), `result`, and allow-listed
-  payload scalars.
+- **`callback`** — `fn` (the operation), `corr` (links back to its `call`), `result`, and `payload`: a
+  nested object of allow-listed scalars, the same shape as `call`'s `args`.
 - **`notify`** — `event` (e.g. `FriendsUpdate`), `action` (`register` / `remove` / `fire`), `id`
   (notification id), and allow-listed scalars. Registration, removal, and delivery are distinct events,
   never conflated.
 - **`net`** — `event` ∈ `{discover, handshake, adopt, drop, search, p2p_open, p2p_close, …}`, with the
   peer's labelled id, its cross-process `peer_fp` on adopt/drop, byte lengths, and packet metadata — no
   payloads, keys, tokens, or raw ids.
+
+Body fields are not free-form. A field is emitted only if its key is on the allow-list of known field
+names (never a reserved envelope/body key like `seq`, `kind`, `event`, `fn`, or `result`), so a record
+always has one unambiguous set of schema fields; every string value is bounded (≤ 512 bytes) and every
+body's field count is bounded (≤ 32). Those caps put a hard ceiling on one record — comfortably under
+the 64 KiB sink minimum, which must hold a full record *and* the rotate record — so no single event can
+outgrow the sink.
 
 ### Correlation
 

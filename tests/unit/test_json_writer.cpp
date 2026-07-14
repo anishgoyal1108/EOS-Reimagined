@@ -103,3 +103,54 @@ TEST_CASE("a truncated multibyte sequence is replaced") {
     writer.end_object();
     CHECK(writer.str() == "{\"s\":\"\xEF\xBF\xBD\xEF\xBF\xBD\"}");
 }
+
+TEST_CASE("a well-formed document reports ok") {
+    json_writer writer;
+    writer.begin_object();
+    writer.field_int("n", 1);
+    writer.key("a");
+    writer.begin_array();
+    writer.value_int(2);
+    writer.end_array();
+    writer.end_object();
+    CHECK(writer.ok());
+}
+
+TEST_CASE("misuse leaves the writer not ok") {
+    SUBCASE("a mismatched close") {
+        json_writer writer;
+        writer.begin_object();
+        writer.end_array(); // closing an object as an array
+        CHECK_FALSE(writer.ok());
+    }
+    SUBCASE("a key inside an array") {
+        json_writer writer;
+        writer.begin_array();
+        writer.key("nope");
+        CHECK_FALSE(writer.ok());
+    }
+    SUBCASE("a value with no key inside an object") {
+        json_writer writer;
+        writer.begin_object();
+        writer.value_int(5);
+        CHECK_FALSE(writer.ok());
+    }
+    SUBCASE("a dangling key") {
+        json_writer writer;
+        writer.begin_object();
+        writer.key("k");
+        writer.end_object(); // no value for k
+        CHECK_FALSE(writer.ok());
+    }
+    SUBCASE("an unclosed container") {
+        json_writer writer;
+        writer.begin_object();
+        CHECK_FALSE(writer.ok());
+    }
+    SUBCASE("a second top-level value") {
+        json_writer writer;
+        writer.value_int(1);
+        writer.value_int(2);
+        CHECK_FALSE(writer.ok());
+    }
+}

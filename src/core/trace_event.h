@@ -8,16 +8,19 @@
 
 namespace eosr {
 
-// A scalar that may be traced. There is deliberately no pointer, byte-buffer, or raw-id form: a
-// payload, pointer, key, or account id cannot be traced by construction -- only its length, a result
-// code, or a stable opaque label reaches the writer. This is the structural half of the redaction
-// guarantee in docs/alpha-tracing.md §5.
+// A scalar that may be traced: an int, unsigned, bool, or short string. There is deliberately no
+// pointer or byte-buffer form -- a payload or pointer cannot be traced at all -- and serialization is
+// the second line of defence: a field is emitted only if its key is on the allow-list (§4's known
+// field names), never a reserved envelope/body key, and every string is length-bounded and every body
+// field-count bounded, so an arbitrary token, an over-long value, or a key that would shadow the
+// schema cannot reach the file. See the caps in trace_event.cpp.
+// Spec: docs/alpha-tracing.md §5.
 struct trace_scalar {
     enum kind { s_int, s_uint, s_bool, s_string };
-    kind type;
-    i64 int_value;
-    u64 uint_value;
-    bool bool_value;
+    kind type = s_int;
+    i64 int_value = 0;
+    u64 uint_value = 0;
+    bool bool_value = false;
     std::string string_value;
 };
 
@@ -36,17 +39,17 @@ struct trace_field {
 // (e.g. "t#0"), never an OS id.
 // Spec: docs/alpha-tracing.md §4.
 struct trace_envelope {
-    u32 schema_version;
-    u64 seq;
-    u64 t_mono_ns;
-    u64 pid;
+    u32 schema_version = 1;
+    u64 seq = 0;
+    u64 t_mono_ns = 0;
+    u64 pid = 0;
     std::string inst;
     std::string tid;
 };
 
 // An EOS_EResult, both numeric and symbolic.
 struct trace_result_code {
-    i32 code;
+    i32 code = 0;
     std::string name;
 };
 
@@ -55,7 +58,7 @@ struct trace_result_code {
 // out-parameters go in `out`.
 struct trace_return {
     enum kind { r_result, r_value, r_void };
-    kind type;
+    kind type = r_void;
     trace_result_code result;       // r_result
     std::string value_type;         // r_value: "bool" / "count" / "handle" / "enum" / "notification_id"
     trace_scalar value;             // r_value

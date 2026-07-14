@@ -57,17 +57,29 @@ bool decode_utf8(const std::string& s, std::size_t i, std::size_t& length) {
 
 } // namespace
 
-json_writer::json_writer() : after_key_(false) {}
+json_writer::json_writer() : after_key_(false), valid_(true) {}
 
 void json_writer::pre_value() {
-    if (after_key_) {
-        after_key_ = false;
+    if (!valid_) {
         return;
     }
     if (levels_.empty()) {
+        // A value at the top level is allowed only as the single whole document.
+        if (!out_.empty()) {
+            valid_ = false;
+        }
         return;
     }
     level& current = levels_.back();
+    if (current.is_object) {
+        // A value inside an object must follow a key.
+        if (!after_key_) {
+            valid_ = false;
+            return;
+        }
+        after_key_ = false;
+        return;
+    }
     if (!current.first) {
         out_ += ',';
     }
@@ -123,29 +135,58 @@ void json_writer::write_string(const std::string& value) {
 
 void json_writer::begin_object() {
     pre_value();
+    if (!valid_) {
+        return;
+    }
     out_ += '{';
     const level opened = {true, true};
     levels_.push_back(opened);
 }
 
 void json_writer::end_object() {
+    if (!valid_) {
+        return;
+    }
+    // Closing must match an open object, and never with a key left dangling.
+    if (levels_.empty() || !levels_.back().is_object || after_key_) {
+        valid_ = false;
+        return;
+    }
     out_ += '}';
     levels_.pop_back();
 }
 
 void json_writer::begin_array() {
     pre_value();
+    if (!valid_) {
+        return;
+    }
     out_ += '[';
     const level opened = {false, true};
     levels_.push_back(opened);
 }
 
 void json_writer::end_array() {
+    if (!valid_) {
+        return;
+    }
+    if (levels_.empty() || levels_.back().is_object) {
+        valid_ = false;
+        return;
+    }
     out_ += ']';
     levels_.pop_back();
 }
 
 void json_writer::key(const std::string& name) {
+    if (!valid_) {
+        return;
+    }
+    // A key belongs only inside an object, and only where a key is expected.
+    if (levels_.empty() || !levels_.back().is_object || after_key_) {
+        valid_ = false;
+        return;
+    }
     level& current = levels_.back();
     if (!current.first) {
         out_ += ',';
@@ -158,26 +199,41 @@ void json_writer::key(const std::string& name) {
 
 void json_writer::value_string(const std::string& value) {
     pre_value();
+    if (!valid_) {
+        return;
+    }
     write_string(value);
 }
 
 void json_writer::value_int(i64 value) {
     pre_value();
+    if (!valid_) {
+        return;
+    }
     out_ += std::to_string(value);
 }
 
 void json_writer::value_uint(u64 value) {
     pre_value();
+    if (!valid_) {
+        return;
+    }
     out_ += std::to_string(value);
 }
 
 void json_writer::value_bool(bool value) {
     pre_value();
+    if (!valid_) {
+        return;
+    }
     out_ += value ? "true" : "false";
 }
 
 void json_writer::value_null() {
     pre_value();
+    if (!valid_) {
+        return;
+    }
     out_ += "null";
 }
 

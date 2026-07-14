@@ -41,9 +41,15 @@ public:
     // The serialized JSON built so far.
     const std::string& str() const { return out_; }
 
+    // Whether every call so far formed a well-formed, complete document: no mismatched close, no key
+    // outside an object, no value without a key, no dangling key, and every container closed. A
+    // misused writer stops emitting once invalid, so a consumer can check this before persisting.
+    bool ok() const { return valid_ && levels_.empty(); }
+
 private:
-    // Emit the separator a value needs: a comma unless it is the first in its container or it directly
-    // follows a key.
+    // Prepare to emit a value: validate the position and emit the separator a value needs (a comma
+    // unless it is first in its container or directly follows a key). Sets the writer invalid on
+    // misuse.
     void pre_value();
     // Write a JSON string literal: quoted, escaped, and guaranteed-valid UTF-8.
     void write_string(const std::string& value);
@@ -56,6 +62,7 @@ private:
     std::string out_;
     std::vector<level> levels_;
     bool after_key_;
+    bool valid_;
 };
 
 } // namespace eosr
