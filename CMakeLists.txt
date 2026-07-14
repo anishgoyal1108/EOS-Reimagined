@@ -27,6 +27,7 @@ add_library(eosr_core STATIC
     src/common/crypto.cpp
     src/core/frame_result.cpp
     src/core/callback_manager.cpp
+    src/core/config.cpp
     src/core/identity.cpp
     src/core/settings.cpp
     src/core/client.cpp

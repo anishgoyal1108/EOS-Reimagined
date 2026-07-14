@@ -9,6 +9,7 @@ add_executable(unit_tests
     unit/test_callback_manager.cpp
     unit/test_ids.cpp
     unit/test_handle_store.cpp
+    unit/test_config.cpp
     unit/test_crypto.cpp
     unit/test_secure_channel.cpp
     unit/test_identity.cpp
