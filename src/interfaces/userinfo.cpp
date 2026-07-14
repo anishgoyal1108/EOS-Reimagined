@@ -362,8 +362,7 @@ EOS_EResult sdk_userinfo::copy_external_user_info_by_index(
     const EOS_UserInfo_CopyExternalUserInfoByIndexOptions* options,
     EOS_UserInfo_ExternalUserInfo** out) const {
     (void)options;
-    // The output pointer is mandatory even when the cache is empty: a null one is a malformed call,
-    // distinct from a well-formed lookup that finds nothing.
+    // A null out-pointer is a malformed call, not an empty-cache miss.
     if (out == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
@@ -375,8 +374,7 @@ EOS_EResult sdk_userinfo::copy_external_user_info_by_account_type(
     const EOS_UserInfo_CopyExternalUserInfoByAccountTypeOptions* options,
     EOS_UserInfo_ExternalUserInfo** out) const {
     (void)options;
-    // The output pointer is mandatory even when the cache is empty: a null one is a malformed call,
-    // distinct from a well-formed lookup that finds nothing.
+    // A null out-pointer is a malformed call, not an empty-cache miss.
     if (out == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
@@ -388,8 +386,7 @@ EOS_EResult sdk_userinfo::copy_external_user_info_by_account_id(
     const EOS_UserInfo_CopyExternalUserInfoByAccountIdOptions* options,
     EOS_UserInfo_ExternalUserInfo** out) const {
     (void)options;
-    // The output pointer is mandatory even when the cache is empty: a null one is a malformed call,
-    // distinct from a well-formed lookup that finds nothing.
+    // A null out-pointer is a malformed call, not an empty-cache miss.
     if (out == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
