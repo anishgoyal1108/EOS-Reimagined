@@ -47,6 +47,9 @@ EOS_DECLARE_FUNC(EOS_HPlatform) EOS_Platform_Create(const EOS_Platform_Options* 
         return 0;
     }
     eosr::sdk_platform* platform = eosr::platform_create();
+    // The emulator configuration EOS_Initialize resolved: the player's display name and language, the
+    // discovery ports, whether to run a peer network. The game supplies none of these.
+    platform->set_run_config(eosr::global_run_config());
     if (!platform->create(Options)) {
         eosr::platform_destroy();
         return 0;

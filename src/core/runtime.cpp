@@ -37,6 +37,23 @@ tracer& global_tracer() {
     return the_tracer;
 }
 
+namespace {
+
+resolved_config& run_config_storage() {
+    static resolved_config* config = new resolved_config();
+    return *config;
+}
+
+} // namespace
+
+void set_global_run_config(const resolved_config& config) {
+    run_config_storage() = config;
+}
+
+const resolved_config& global_run_config() {
+    return run_config_storage();
+}
+
 sdk_platform* platform_create() {
     std::lock_guard<std::mutex> lock(platform_mutex);
     if (live_platform == 0) {

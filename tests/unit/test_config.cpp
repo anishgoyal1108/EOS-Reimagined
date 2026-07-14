@@ -18,12 +18,13 @@ struct fake_source : config_source {
     std::map<std::string, std::string> file_strings;
     std::map<std::string, i64> file_ints;
     std::map<std::string, std::pair<i64, i64> > file_pairs;
+    std::map<std::string, bool> file_flags;
 
     // A key lives in at most one of the typed maps, so "present in some other map" is exactly the
     // wrong-type case the real JSON source will report.
     bool present(const std::string& key) const {
         return file_strings.count(key) != 0 || file_ints.count(key) != 0 ||
-               file_pairs.count(key) != 0;
+               file_pairs.count(key) != 0 || file_flags.count(key) != 0;
     }
 
     bool env(const std::string& name, std::string& out) const {
@@ -55,6 +56,14 @@ struct fake_source : config_source {
         if (it != file_pairs.end()) {
             first = it->second.first;
             second = it->second.second;
+            return lookup::ok;
+        }
+        return present(key) ? lookup::wrong_type : lookup::missing;
+    }
+    lookup file_bool(const std::string& key, bool& out) const {
+        std::map<std::string, bool>::const_iterator it = file_flags.find(key);
+        if (it != file_flags.end()) {
+            out = it->second;
             return lookup::ok;
         }
         return present(key) ? lookup::wrong_type : lookup::missing;
@@ -345,4 +354,130 @@ TEST_CASE("the run directory comes from EOSR_RUN_DIR or is left for the auto pat
     fake_source runner;
     runner.envs["EOSR_RUN_DIR"] = "/runs/alice-run-1";
     CHECK(resolve_config(runner, defaults).run_dir == "/runs/alice-run-1");
+}
+
+// --- Emulator options the game never supplies (parity with the wider Epic-emulator ecosystem). ---
+
+TEST_CASE("the defaults are a working LAN emulator with logging and tracing off") {
+    fake_source none;
+    const resolved_config config = resolve_config(none, make_defaults());
+    CHECK(config.display_name == "Player");
+    CHECK(config.locale == "en");
+    CHECK(config.logging == log_level::off);
+    CHECK(config.enable_lan);
+    CHECK_FALSE(config.enable_overlay);
+    CHECK_FALSE(config.unlock_dlcs);
+}
+
+TEST_CASE("username is accepted as an alias for display_name") {
+    fake_source source;
+    source.file_strings["username"] = "Marlowe";
+    CHECK(resolve_config(source, make_defaults()).display_name == "Marlowe");
+
+    // display_name wins when a file carries both, and the environment still beats the file.
+    fake_source both;
+    both.file_strings["username"] = "FromUsername";
+    both.file_strings["display_name"] = "FromDisplayName";
+    CHECK(resolve_config(both, make_defaults()).display_name == "FromDisplayName");
+    both.envs["EOSR_DISPLAY_NAME"] = "FromEnv";
+    CHECK(resolve_config(both, make_defaults()).display_name == "FromEnv");
+}
+
+TEST_CASE("language is accepted as an alias for locale, and a bad tag falls through") {
+    fake_source source;
+    source.file_strings["language"] = "pt-BR";
+    CHECK(resolve_config(source, make_defaults()).locale == "pt-BR");
+
+    fake_source env;
+    env.envs["EOSR_LOCALE"] = "fr";
+    CHECK(resolve_config(env, make_defaults()).locale == "fr");
+
+    fake_source bad;
+    bad.envs["EOSR_LOCALE"] = "../etc/passwd"; // not a language tag
+    const resolved_config config = resolve_config(bad, make_defaults());
+    CHECK(config.locale == "en"); // falls back to the default
+    REQUIRE(config.diagnostics.size() == 1);
+    CHECK(config.diagnostics[0].field == "locale");
+    CHECK(config.diagnostics[0].action == "ignored");
+}
+
+TEST_CASE("log_level accepts the ecosystem spellings") {
+    fake_source off;
+    CHECK(resolve_config(off, make_defaults()).logging == log_level::off);
+
+    fake_source err;
+    err.file_strings["log_level"] = "ERR"; // the spelling the other emulators use
+    CHECK(resolve_config(err, make_defaults()).logging == log_level::error);
+
+    fake_source warning;
+    warning.envs["EOSR_LOG_LEVEL"] = "warning";
+    CHECK(resolve_config(warning, make_defaults()).logging == log_level::warn);
+
+    fake_source trace;
+    trace.file_strings["log_level"] = "trace";
+    CHECK(resolve_config(trace, make_defaults()).logging == log_level::trace);
+
+    fake_source bad;
+    bad.file_strings["log_level"] = "chatty";
+    const resolved_config config = resolve_config(bad, make_defaults());
+    CHECK(config.logging == log_level::off);
+    REQUIRE(config.diagnostics.size() == 1);
+    CHECK(config.diagnostics[0].reason == "unrecognized value");
+}
+
+TEST_CASE("boolean options resolve from the file and the environment") {
+    fake_source file;
+    file.file_flags["enable_lan"] = false;
+    CHECK_FALSE(resolve_config(file, make_defaults()).enable_lan);
+
+    // The environment beats the file, and accepts what people actually type.
+    fake_source env;
+    env.file_flags["enable_lan"] = false;
+    env.envs["EOSR_ENABLE_LAN"] = "yes";
+    CHECK(resolve_config(env, make_defaults()).enable_lan);
+
+    fake_source zero;
+    zero.envs["EOSR_ENABLE_LAN"] = "0";
+    CHECK_FALSE(resolve_config(zero, make_defaults()).enable_lan);
+
+    // A non-boolean environment value is discarded and yields to the file, like every other field.
+    fake_source bad;
+    bad.envs["EOSR_ENABLE_LAN"] = "maybe";
+    bad.file_flags["enable_lan"] = false;
+    const resolved_config config = resolve_config(bad, make_defaults());
+    CHECK_FALSE(config.enable_lan);
+    REQUIRE(config.diagnostics.size() == 1);
+    CHECK(config.diagnostics[0].reason == "not a boolean");
+}
+
+TEST_CASE("a wrong-typed boolean is a diagnostic, not a silent default") {
+    fake_source source;
+    source.file_strings["enable_lan"] = "true"; // a string where a bool belongs
+    const resolved_config config = resolve_config(source, make_defaults());
+    CHECK(config.enable_lan); // the default stands
+    REQUIRE(config.diagnostics.size() == 1);
+    CHECK(config.diagnostics[0].field == "enable_lan");
+    CHECK(config.diagnostics[0].reason == "wrong type");
+}
+
+TEST_CASE("options we cannot honour are reported rather than silently ignored") {
+    // Identity is derived from the profile key and recomputed by every peer from the key the
+    // handshake proves, so an id we merely claimed would be rejected by the peers it must reach.
+    fake_source ids;
+    ids.file_strings["epicid"] = "00112233445566778899aabbccddeeff";
+    ids.file_strings["productuserid"] = "ffeeddccbbaa99887766554433221100";
+    const resolved_config id_config = resolve_config(ids, make_defaults());
+    REQUIRE(id_config.diagnostics.size() == 2);
+    CHECK(id_config.diagnostics[0].field == "epicid");
+    CHECK(id_config.diagnostics[1].field == "productuserid");
+
+    fake_source overlay;
+    overlay.file_flags["enable_overlay"] = true;
+    overlay.file_flags["unlock_dlcs"] = true;
+    const resolved_config config = resolve_config(overlay, make_defaults());
+    CHECK(config.enable_overlay); // recorded, so runtime.json reports what was asked for
+    CHECK(config.unlock_dlcs);
+    REQUIRE(config.diagnostics.size() == 2);
+    CHECK(config.diagnostics[0].field == "enable_overlay");
+    CHECK(config.diagnostics[1].field == "unlock_dlcs");
 }

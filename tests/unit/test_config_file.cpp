@@ -240,3 +240,34 @@ TEST_CASE("a failed parse empties a previously populated output") {
     std::string value;
     CHECK(file.get_string("display_name", value) == lookup::missing);
 }
+
+TEST_CASE("a JSON boolean is read as a boolean") {
+    config_file file;
+    std::string error;
+    REQUIRE(parse_config_file("{\"enable_lan\":true,\"unlock_dlcs\":false}", file, error));
+
+    bool value = false;
+    REQUIRE(file.get_bool("enable_lan", value) == lookup::ok);
+    CHECK(value);
+    REQUIRE(file.get_bool("unlock_dlcs", value) == lookup::ok);
+    CHECK_FALSE(value);
+
+    CHECK(file.get_bool("absent", value) == lookup::missing);
+
+    // A boolean is not a string and not an integer, and each mistyped read says so.
+    std::string text;
+    i64 number = 0;
+    CHECK(file.get_string("enable_lan", text) == lookup::wrong_type);
+    CHECK(file.get_int("enable_lan", number) == lookup::wrong_type);
+}
+
+TEST_CASE("a non-boolean value read as a boolean is a wrong type, not a false") {
+    config_file file;
+    std::string error;
+    REQUIRE(parse_config_file("{\"enable_lan\":\"true\",\"count\":0}", file, error));
+
+    bool value = true;
+    CHECK(file.get_bool("enable_lan", value) == lookup::wrong_type); // a string, not a bool
+    CHECK(file.get_bool("count", value) == lookup::wrong_type);      // an int, not a bool
+    CHECK(value);                                                    // and `out` is untouched
+}

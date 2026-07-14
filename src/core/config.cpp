@@ -20,6 +20,62 @@ const std::size_t max_label_chars = 32;
 const i64 max_port = 65535;
 const i64 max_port_span = 64;
 
+const std::size_t max_locale_chars = 16;
+
+std::string lowered(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (std::size_t i = 0; i < text.size(); i++) {
+        const char c = text[i];
+        out += (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+    }
+    return out;
+}
+
+// An environment flag: the JSON spellings plus the ones people actually type.
+bool parse_flag_text(const std::string& text, bool& out) {
+    const std::string value = lowered(text);
+    if (value == "true" || value == "1" || value == "yes" || value == "on") {
+        out = true;
+        return true;
+    }
+    if (value == "false" || value == "0" || value == "no" || value == "off") {
+        out = false;
+        return true;
+    }
+    return false;
+}
+
+// The log levels the Epic emulator ecosystem already uses, so a config written for another emulator
+// means the same thing here. We accept both "err" and "error", and both "warn" and "warning".
+bool parse_log_level(const std::string& text, log_level& out) {
+    const std::string value = lowered(text);
+    if (value == "off") { out = log_level::off; return true; }
+    if (value == "fatal") { out = log_level::fatal; return true; }
+    if (value == "err" || value == "error") { out = log_level::error; return true; }
+    if (value == "warn" || value == "warning") { out = log_level::warn; return true; }
+    if (value == "info") { out = log_level::info; return true; }
+    if (value == "debug") { out = log_level::debug; return true; }
+    if (value == "trace") { out = log_level::trace; return true; }
+    return false;
+}
+
+// An ISO-639 language tag, optionally with a region: en, en-US, pt-BR. Letters and one separator only,
+// so it can never carry a path or a control character into the files or the wire.
+bool valid_locale(const std::string& text) {
+    if (text.empty() || text.size() > max_locale_chars) {
+        return false;
+    }
+    for (std::size_t i = 0; i < text.size(); i++) {
+        const char c = text[i];
+        const bool letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        if (!letter && c != '-' && c != '_') {
+            return false;
+        }
+    }
+    return true;
+}
+
 void add_diag(std::vector<config_diagnostic>& diagnostics, const std::string& field,
               const char* source, const char* reason, const char* action) {
     config_diagnostic diagnostic;
@@ -232,6 +288,38 @@ u32 clamp_rotated(i64 value, std::vector<config_diagnostic>& diagnostics, const 
     return static_cast<u32>(value);
 }
 
+// One boolean field, environment then file then the default already in `out`. An unparseable value at
+// either layer is discarded with a diagnostic and yields to the next, exactly like every other field.
+void resolve_flag(const config_source& source, const char* env_name, const char* file_key,
+                  std::vector<config_diagnostic>& diagnostics, bool& out) {
+    std::string raw;
+    if (env_value(source, env_name, raw)) {
+        bool value = false;
+        if (parse_flag_text(raw, value)) {
+            out = value;
+            return;
+        }
+        add_diag(diagnostics, file_key, "environment", "not a boolean", "ignored");
+    }
+    bool value = false;
+    const lookup found = source.file_bool(file_key, value);
+    if (found == lookup::ok) {
+        out = value;
+    } else if (found == lookup::wrong_type) {
+        add_diag(diagnostics, file_key, "file", "wrong type", "ignored");
+    }
+}
+
+// A key we accept so a config written for another Epic emulator loads cleanly, but which we cannot
+// honour. Reporting it is the point: silently ignoring it would leave the user believing it took.
+void reject_unsupported(const config_source& source, const char* key, const char* reason,
+                        std::vector<config_diagnostic>& diagnostics) {
+    std::string raw;
+    if (source.file_string(key, raw) != lookup::missing) {
+        add_diag(diagnostics, key, "file", reason, "ignored");
+    }
+}
+
 } // namespace
 
 resolved_config resolve_config(const config_source& source, const config_defaults& defaults) {
@@ -242,6 +330,11 @@ resolved_config resolve_config(const config_source& source, const config_default
     config.trace_max_bytes = default_max_bytes;
     config.trace_max_rotated_files = default_rotated;
     config.discovery_ports = defaults.default_ports;
+    config.locale = "en";
+    config.logging = log_level::off;
+    config.enable_lan = true;      // the peer mesh is the whole point; it is on unless turned off
+    config.enable_overlay = false;
+    config.unlock_dlcs = false;
 
     std::vector<config_diagnostic>& diagnostics = config.diagnostics;
     std::string raw;
@@ -260,7 +353,12 @@ resolved_config resolve_config(const config_source& source, const config_default
             }
         }
         if (used == 0) {
-            const lookup found = source.file_string("display_name", raw);
+            // `username` is the spelling the rest of the Epic-emulator ecosystem uses; we accept it as
+            // an alias so a config written for one of those works here, with `display_name` preferred.
+            lookup found = source.file_string("display_name", raw);
+            if (found == lookup::missing) {
+                found = source.file_string("username", raw);
+            }
             if (found == lookup::ok && !raw.empty()) {
                 const char* bad = text_reject_reason(raw);
                 if (bad == 0) {
@@ -454,6 +552,78 @@ resolved_config resolve_config(const config_source& source, const config_default
         } else {
             add_diag(diagnostics, "run_dir", "environment", bad, "ignored");
         }
+    }
+
+    // locale: the language the game reports back through EOS_UserInfo. `language` is the ecosystem's
+    // spelling; `locale` is ours, and is preferred when both are present.
+    {
+        const char* used = 0;
+        std::string candidate;
+        if (env_value(source, "EOSR_LOCALE", raw)) {
+            candidate = raw;
+            used = "environment";
+        } else {
+            lookup found = source.file_string("locale", raw);
+            if (found == lookup::missing) {
+                found = source.file_string("language", raw);
+            }
+            if (found == lookup::ok && !raw.empty()) {
+                candidate = raw;
+                used = "file";
+            } else if (found == lookup::wrong_type) {
+                add_diag(diagnostics, "locale", "file", "wrong type", "ignored");
+            }
+        }
+        if (used != 0) {
+            if (valid_locale(candidate)) {
+                config.locale = candidate;
+            } else {
+                add_diag(diagnostics, "locale", used, "not a language tag", "ignored");
+            }
+        }
+    }
+
+    // log_level: how much the ordinary EOS logger emits.
+    {
+        const char* used = 0;
+        std::string candidate;
+        if (env_value(source, "EOSR_LOG_LEVEL", raw)) {
+            candidate = raw;
+            used = "environment";
+        } else {
+            const lookup found = source.file_string("log_level", raw);
+            if (found == lookup::ok && !raw.empty()) {
+                candidate = raw;
+                used = "file";
+            } else if (found == lookup::wrong_type) {
+                add_diag(diagnostics, "log_level", "file", "wrong type", "ignored");
+            }
+        }
+        if (used != 0) {
+            log_level level = log_level::off;
+            if (parse_log_level(candidate, level)) {
+                config.logging = level;
+            } else {
+                add_diag(diagnostics, "log_level", used, "unrecognized value", "ignored");
+            }
+        }
+    }
+
+    resolve_flag(source, "EOSR_ENABLE_LAN", "enable_lan", diagnostics, config.enable_lan);
+    resolve_flag(source, "EOSR_ENABLE_OVERLAY", "enable_overlay", diagnostics, config.enable_overlay);
+    resolve_flag(source, "EOSR_UNLOCK_DLCS", "unlock_dlcs", diagnostics, config.unlock_dlcs);
+
+    // Options we accept so an ecosystem config loads, but cannot honour. Identity is derived from the
+    // profile key and recomputed by every peer from the key the handshake proves (docs/adr/0001), so an
+    // id we merely claimed would be rejected by the peers it is meant to reach.
+    reject_unsupported(source, "epicid", "identity is derived from the profile key", diagnostics);
+    reject_unsupported(source, "productuserid", "identity is derived from the profile key",
+                       diagnostics);
+    if (config.enable_overlay) {
+        add_diag(diagnostics, "enable_overlay", "file", "no overlay to show", "ignored");
+    }
+    if (config.unlock_dlcs) {
+        add_diag(diagnostics, "unlock_dlcs", "file", "no ecom interface yet", "ignored");
     }
 
     return config;

@@ -44,10 +44,28 @@ lookup config_file::get_int_pair(const std::string& key, i64& first, i64& second
     return lookup::ok;
 }
 
+lookup config_file::get_bool(const std::string& key, bool& out) const {
+    std::map<std::string, node>::const_iterator it = nodes_.find(key);
+    if (it == nodes_.end()) {
+        return lookup::missing;
+    }
+    if (it->second.type != node::k_bool) {
+        return lookup::wrong_type;
+    }
+    out = it->second.flag;
+    return lookup::ok;
+}
+
 void config_file::set_string(const std::string& key, const std::string& value) {
     node& n = nodes_[key];
     n.type = node::k_string;
     n.str = value;
+}
+
+void config_file::set_bool(const std::string& key, bool value) {
+    node& n = nodes_[key];
+    n.type = node::k_bool;
+    n.flag = value;
 }
 
 void config_file::set_int(const std::string& key, i64 value) {
@@ -492,10 +510,18 @@ bool parser::parse_value(value_node& out) {
         return parse_number(out);
     }
     if (c == 't') {
-        return parse_literal("true", value_node::v_bool, out);
+        if (!parse_literal("true", value_node::v_bool, out)) {
+            return false;
+        }
+        out.integer = 1; // a bool carries its value in `integer`; the node kind says how to read it
+        return true;
     }
     if (c == 'f') {
-        return parse_literal("false", value_node::v_bool, out);
+        if (!parse_literal("false", value_node::v_bool, out)) {
+            return false;
+        }
+        out.integer = 0;
+        return true;
     }
     if (c == 'n') {
         return parse_literal("null", value_node::v_null, out);
@@ -509,6 +535,8 @@ void store(config_file& out, const std::string& key, const value_node& value) {
         out.set_string(key, value.str);
     } else if (value.type == value_node::v_int) {
         out.set_int(key, value.integer);
+    } else if (value.type == value_node::v_bool) {
+        out.set_bool(key, value.integer != 0);
     } else if (value.type == value_node::v_array) {
         std::vector<i64> ints;
         bool all_int = true;

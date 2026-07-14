@@ -17,6 +17,19 @@ enum class trace_level {
     full
 };
 
+// How much the ordinary EOS logger emits. Ordered like EOS_ELogLevel, and named for the values the
+// emulator ecosystem already uses (off/fatal/err/warn/info/debug/trace), so a config written for
+// another Epic emulator means the same thing here.
+enum class log_level {
+    off,
+    fatal,
+    error,
+    warn,
+    info,
+    debug,
+    trace
+};
+
 // The inclusive discovery-port range an instance binds and advertises to.
 struct discovery_range {
     u16 first;
@@ -46,16 +59,26 @@ struct config_diagnostic {
 // The fully resolved run configuration. Pure data: resolve_config produces it with no I/O, so it can
 // be built and checked in tests without an environment or a filesystem.
 // Spec: docs/alpha-tracing.md §2.
+// Every scalar carries its default in-class, so a default-built resolved_config (a test's, or the
+// process-global one before EOS_Initialize resolves it) is well-defined rather than indeterminate.
 struct resolved_config {
     std::string display_name;              // validated UTF-8, bounded to the EOS caps
     std::string data_dir;                  // profile/key storage (given, already env-resolved)
     std::string run_dir;                   // EOSR_RUN_DIR, or empty for the auto <trace_dir>/<run_id>
     std::string trace_dir;                 // resolved against data_dir when relative
-    trace_level level;
-    u64 trace_max_bytes;                   // per-file cap before rotation, clamped to its range
-    u32 trace_max_rotated_files;           // rotated files kept, not counting the live one
-    discovery_range discovery_ports;
+    trace_level level = trace_level::off;
+    u64 trace_max_bytes = 0;               // per-file cap before rotation, clamped to its range
+    u32 trace_max_rotated_files = 0;       // rotated files kept, not counting the live one
+    discovery_range discovery_ports = discovery_range();
     std::string instance_label;            // path-safe slug, or empty when unset
+
+    // Emulator behaviour the game itself does not set. These drive the platform, not the trace.
+    std::string locale;                    // ISO-639 language, e.g. "en"
+    log_level logging = log_level::off;    // the ordinary EOS logger's threshold
+    bool enable_lan = true;                // false runs the platform with no peer network at all
+    bool enable_overlay = false;           // accepted; we have no overlay to show (see docs)
+    bool unlock_dlcs = false;              // accepted; we have no Ecom interface yet (see docs)
+
     // One entry per field that was rejected, clamped, or truncated -- what resolution did and why.
     std::vector<config_diagnostic> diagnostics;
 };
@@ -76,6 +99,7 @@ public:
     virtual lookup file_string(const std::string& key, std::string& out) const = 0;
     virtual lookup file_int(const std::string& key, i64& out) const = 0;
     virtual lookup file_int_pair(const std::string& key, i64& first, i64& second) const = 0;
+    virtual lookup file_bool(const std::string& key, bool& out) const = 0;
 };
 
 // The non-config inputs resolution needs: the platform's already-resolved data directory (which is

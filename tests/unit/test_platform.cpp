@@ -160,3 +160,71 @@ TEST_CASE("release discards callbacks and frame registrations before recreation"
     CHECK(owner.frame_count == 0);
     platform.release();
 }
+
+// --- The emulator configuration the game never supplies (eosr.json / EOSR_*). ---
+
+namespace {
+
+resolved_config run_config_for(const std::string& name, const std::string& locale, bool lan) {
+    resolved_config config;
+    config.display_name = name;
+    config.locale = locale;
+    config.enable_lan = lan;
+    config.discovery_ports.first = 45700;
+    config.discovery_ports.last = 45703;
+    return config;
+}
+
+} // namespace
+
+TEST_CASE("the run config supplies the player's name and language") {
+    sdk_platform p;
+    p.set_run_config(run_config_for("Marlowe", "pt-BR", true));
+    EOS_Platform_Options o = options_with_product("game-config");
+    REQUIRE(p.create(&o));
+
+    // The name a peer will see, and the language EOS_UserInfo reports back.
+    CHECK(p.settings().username() == "Marlowe");
+    CHECK(p.settings().override_locale() == "pt-BR");
+    p.release();
+}
+
+TEST_CASE("a platform without a run config keeps its built-in defaults") {
+    sdk_platform p; // no set_run_config: exactly what a unit test, or a game with no config, gets
+    EOS_Platform_Options o = options_with_product("game-default");
+    REQUIRE(p.create(&o));
+    CHECK(p.settings().username() == "DefaultName");
+    p.release();
+}
+
+TEST_CASE("a locale the game set itself wins over the configured one") {
+    sdk_platform p;
+    p.set_run_config(run_config_for("Marlowe", "pt-BR", true));
+    EOS_Platform_Options o = options_with_product("game-locale");
+    o.OverrideLocaleCode = "ja"; // the game is explicit, so it decides
+    REQUIRE(p.create(&o));
+    CHECK(p.settings().override_locale() == "ja");
+    p.release();
+}
+
+TEST_CASE("enable_lan false brings the platform up with no peer network") {
+    sdk_platform p;
+    p.set_run_config(run_config_for("Marlowe", "en", false));
+    EOS_Platform_Options o = options_with_product("game-nolan");
+
+    REQUIRE(p.create(&o)); // the platform still comes up: everything local keeps working
+    CHECK(p.is_created());
+    CHECK_FALSE(p.network().is_running()); // and no peer can ever appear
+    CHECK((p.interface_handle(if_connect) != 0));
+    p.tick(); // ticking a networkless platform is a safe no-op
+    p.release();
+}
+
+TEST_CASE("enable_lan true runs the peer network on the configured ports") {
+    sdk_platform p;
+    p.set_run_config(run_config_for("Marlowe", "en", true));
+    EOS_Platform_Options o = options_with_product("game-lan");
+    REQUIRE(p.create(&o));
+    CHECK(p.network().is_running());
+    p.release();
+}

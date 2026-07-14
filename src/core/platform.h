@@ -4,6 +4,7 @@
 #include "eos_types.h"
 
 #include "core/callback_manager.h"
+#include "core/config.h"
 #include "core/settings.h"
 #include "interfaces/auth.h"
 #include "interfaces/connect.h"
@@ -72,6 +73,12 @@ public:
     sdk_platform(const sdk_platform&) = delete;
     sdk_platform& operator=(const sdk_platform&) = delete;
 
+    // The resolved emulator configuration (eosr.json / EOSR_*), which the game knows nothing about:
+    // the display name, the language, the discovery ports, and whether to run a peer network at all.
+    // The flat layer supplies it before create(); a platform built without one (a unit test) keeps its
+    // built-in defaults, so this is additive.
+    void set_run_config(const resolved_config& config);
+
     // Bring the platform up from EOS_Platform_Options. Returns false only if the socket
     // subsystem cannot be initialized; a null options pointer is rejected by the caller.
     bool create(const EOS_Platform_Options* options);
@@ -127,6 +134,8 @@ private:
     sdk_friends friends_;
     sdk_userinfo userinfo_;
     stub_interface interfaces_[if_count];
+    resolved_config run_config_;
+    bool have_run_config_;
     EOS_EApplicationStatus application_status_;
     EOS_ENetworkStatus network_status_;
     bool created_;

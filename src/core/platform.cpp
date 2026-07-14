@@ -19,6 +19,7 @@ sdk_platform::sdk_platform()
       integrated_platform_(cb_manager_),
       friends_(settings_, cb_manager_, network_),
       userinfo_(settings_, cb_manager_, network_, connect_),
+      have_run_config_(false),
       // A game that never says otherwise is in the foreground with a working network, which is the
       // only state an emulator running beside it could be in.
       application_status_(EOS_EApplicationStatus::EOS_AS_Foreground),
@@ -27,6 +28,11 @@ sdk_platform::sdk_platform()
     for (int i = 0; i < if_count; i++) {
         interfaces_[i].id = static_cast<interface_id>(i);
     }
+}
+
+void sdk_platform::set_run_config(const resolved_config& config) {
+    run_config_ = config;
+    have_run_config_ = true;
 }
 
 sdk_platform::~sdk_platform() {
@@ -50,14 +56,38 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
     settings_.apply_platform_options(options);
     cb_manager_.set_max_tick_budget(std::chrono::milliseconds(settings_.tick_budget_ms()));
 
+    // The emulator's own configuration, applied after the game's options: the display name and the
+    // language are the player's to choose, and apply_platform_options has just cleared the locale the
+    // game did not set. Neither touches identity -- the profile key alone decides who we are.
+    if (have_run_config_) {
+        if (!run_config_.display_name.empty()) {
+            settings_.set_username(run_config_.display_name);
+        }
+        if (!run_config_.locale.empty() && settings_.override_locale().empty()) {
+            settings_.set_override_locale(run_config_.locale);
+        }
+    }
+
     // Discovery advertises who we are and which game we are running, so only peers running the
     // same product mesh with us -- and only after each has proved it holds the key its identity is
     // derived from. A platform still works with no network: peers simply never appear, and
     // everything local keeps functioning.
     network_.set_identity(settings_.profile(), settings_.product_id(), settings_.sandbox_id(),
                           settings_.deployment_id());
-    if (!network_.start()) {
-        log_warn("platform: peer discovery unavailable; running without peers");
+    if (have_run_config_) {
+        net_config net;
+        net.discovery_port_first = run_config_.discovery_ports.first;
+        net.discovery_port_last = run_config_.discovery_ports.last;
+        network_.set_config(net);
+    }
+    // enable_lan false is the one way to run with no peer network at all: everything local keeps
+    // working and no peer can ever appear, which is exactly what the option promises.
+    if (!have_run_config_ || run_config_.enable_lan) {
+        if (!network_.start()) {
+            log_warn("platform: peer discovery unavailable; running without peers");
+        }
+    } else {
+        log_info("platform: LAN disabled by configuration; running without peers");
     }
 
     // The game builds an options container before the platform exists and hands it in here; we copy

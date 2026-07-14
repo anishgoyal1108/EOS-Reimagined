@@ -76,6 +76,19 @@ std::string level_name(trace_level level) {
     return "off";
 }
 
+std::string log_level_name(log_level level) {
+    switch (level) {
+        case log_level::off: return "off";
+        case log_level::fatal: return "fatal";
+        case log_level::error: return "error";
+        case log_level::warn: return "warn";
+        case log_level::info: return "info";
+        case log_level::debug: return "debug";
+        case log_level::trace: return "trace";
+    }
+    return "off";
+}
+
 bool is_separator(char c) {
     return c == '/' || c == '\\';
 }
@@ -197,7 +210,12 @@ bool tracer::write_runtime_json(const std::string& run_dir, const resolved_confi
     writer.key("config");
     writer.begin_object();
     writer.field_string("display_name", config.display_name);
+    writer.field_string("locale", config.locale);
     writer.field_string("trace_level", level_name(config.level));
+    writer.field_string("log_level", log_level_name(config.logging));
+    writer.field_bool("enable_lan", config.enable_lan);
+    writer.field_bool("enable_overlay", config.enable_overlay);
+    writer.field_bool("unlock_dlcs", config.unlock_dlcs);
     writer.key("discovery_ports");
     writer.begin_array();
     writer.value_uint(config.discovery_ports.first);

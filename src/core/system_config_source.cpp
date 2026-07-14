@@ -17,7 +17,8 @@ const std::size_t max_config_bytes = 65536;
 // copy of the whole environment.
 const char* const recognized_env[] = {
     "EOSR_DISPLAY_NAME", "EOSR_RUN_DIR",       "EOSR_TRACE_DIR",       "EOSR_TRACE",
-    "EOSR_TRACE_MAX_BYTES", "EOSR_TRACE_MAX_ROTATED", "EOSR_DISCOVERY_PORTS", "EOSR_INSTANCE_LABEL"
+    "EOSR_TRACE_MAX_BYTES", "EOSR_TRACE_MAX_ROTATED", "EOSR_DISCOVERY_PORTS", "EOSR_INSTANCE_LABEL",
+    "EOSR_LOCALE", "EOSR_LOG_LEVEL", "EOSR_ENABLE_LAN", "EOSR_ENABLE_OVERLAY", "EOSR_UNLOCK_DLCS"
 };
 
 // A stable machine-readable reason; the free-text detail (a parser message, say) goes in `message` so
@@ -118,6 +119,10 @@ lookup system_config_source::file_int(const std::string& key, i64& out) const {
 
 lookup system_config_source::file_int_pair(const std::string& key, i64& first, i64& second) const {
     return file_.get_int_pair(key, first, second);
+}
+
+lookup system_config_source::file_bool(const std::string& key, bool& out) const {
+    return file_.get_bool(key, out);
 }
 
 resolved_config load_resolved_config(const std::string& data_dir,

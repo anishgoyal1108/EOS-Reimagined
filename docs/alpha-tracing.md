@@ -88,6 +88,13 @@ on the file; `data_dir` is the one field the file cannot set.
 | Max rotated files | `trace_max_rotated_files` | `EOSR_TRACE_MAX_ROTATED` | `8` | Rotated `trace.N.jsonl` files kept, **not** counting the live `trace.jsonl`; total on disk is this + 1. Range 0–64; `0` keeps only the live file (rotation discards the previous one). |
 | Discovery ports | `discovery_ports` | `EOSR_DISCOVERY_PORTS` | existing default range | `[first, last]` in JSON; `"first-last"` in env. |
 | Instance label | `instance_label` | `EOSR_INSTANCE_LABEL` | `""` (unset) | Optional human label, metadata only; a bounded path-safe slug (see below). Never required to open the trace. |
+| Locale | `locale` (alias `language`) | `EOSR_LOCALE` | `"en"` | ISO-639 tag, optionally with a region (`en`, `pt-BR`). Reported through `EOS_UserInfo`. A locale the game sets itself via `EOS_Platform_Options` wins. |
+| Log level | `log_level` | `EOSR_LOG_LEVEL` | `"off"` | `off`/`fatal`/`err`/`warn`/`info`/`debug`/`trace` — the ordinary EOS logger's threshold. Distinct from `trace_level`, which drives the trace sink. |
+| LAN | `enable_lan` | `EOSR_ENABLE_LAN` | `true` | `false` brings the platform up with **no peer network at all**: everything local keeps working and no peer can appear. |
+| Overlay | `enable_overlay` | `EOSR_ENABLE_OVERLAY` | `false` | Accepted; we have no overlay to draw (`EOS_UI` is an honest stub). `true` is recorded and reported as an ignored diagnostic. |
+| Unlock DLCs | `unlock_dlcs` | `EOSR_UNLOCK_DLCS` | `false` | Accepted; there is no Ecom interface yet. `true` is recorded and reported as an ignored diagnostic. |
+
+The display name is also accepted under the key **`username`**, and the locale under **`language`**, which are the spellings the wider Epic-emulator ecosystem uses — so a config written for one of those loads here. `display_name`/`locale` win when a file carries both.
 
 ```json
 {
@@ -114,6 +121,29 @@ on the file; `data_dir` is the one field the file cannot set.
   through.)
 - **Discovery ports** — `first` and `last` nonzero, `first <= last`, and the span bounded (≤ 64 ports)
   so a typo cannot open thousands of sockets.
+
+### Ecosystem parity, and the one option we cannot honour
+
+The option set above deliberately covers what the other Epic emulators expose, so a player moving from
+one does not lose anything they were relying on: the **username**, the **language**, the **log level**,
+whether the **LAN** mesh runs, and the **overlay**/**DLC** switches. `savepath` is `EOSR_DATA_DIR`,
+which must be an environment variable because it is what locates the config file in the first place.
+There is no `disable_online_networking` key because it is unconditionally true here — this emulator has
+no online networking to disable; the LAN mesh is the only network it has, and `enable_lan` turns it off.
+An `appid` key would be actively harmful: the product/sandbox/deployment ids come from the game via
+`EOS_Platform_Options` and are already folded into the identity **and** the handshake prologue, so
+overriding them would silently fork the mesh — two players who did not set it identically would never
+see each other.
+
+**`epicid` and `productuserid` are accepted and reported, never applied.** Identity here is a keypair,
+not a declaration: every peer *recomputes* a `ProductUserId`/`EpicAccountId` from the static key the
+Noise handshake proved, and drops a connection whose advertised id does not match (`docs/adr/0001` §4,
+§5). An id we merely claimed would therefore be rejected by exactly the peers it was meant to reach. The
+capability those keys exist to give — *a stable identity you choose and can carry* — is provided
+instead by the profile key itself: it is 64 hex characters, it is the export format, and copying it to
+another machine makes you the same player there. Per-instance identity for a couch-co-op launcher is
+`EOSR_DATA_DIR` plus the exclusive profile slots (`docs/adr/0001` §9), which is what the launcher
+integration is expected to use.
 
 ### Config diagnostics honour `off`
 

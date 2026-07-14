@@ -21,20 +21,23 @@ public:
     lookup get_string(const std::string& key, std::string& out) const;
     lookup get_int(const std::string& key, i64& out) const;
     lookup get_int_pair(const std::string& key, i64& first, i64& second) const;
+    lookup get_bool(const std::string& key, bool& out) const;
 
     // Populate the file. The reader calls these; tests may too.
     void set_string(const std::string& key, const std::string& value);
     void set_int(const std::string& key, i64 value);
     void set_int_array(const std::string& key, const std::vector<i64>& values);
+    void set_bool(const std::string& key, bool value);
     void set_other(const std::string& key);
 
 private:
     struct node {
-        enum kind { k_string, k_int, k_int_array, k_other };
+        enum kind { k_string, k_int, k_int_array, k_bool, k_other };
         kind type;
         std::string str;
         i64 integer;
         std::vector<i64> ints;
+        bool flag;
     };
     std::map<std::string, node> nodes_;
 };
