@@ -11,6 +11,7 @@
 #include "eos_auth.h"
 #include "eos_p2p.h"
 #include "eos_presence.h"
+#include "eos_sessions.h"
 #include "eos_ecom.h"
 #include "eos_achievements.h"
 #include "eos_playerdatastorage.h"
@@ -63,6 +64,7 @@ void EOS_CALL on_auth_delete(const EOS_Auth_DeletePersistentAuthCallbackInfo* in
     g_auth_delete_fired = true;
 }
 void EOS_CALL on_join_game_accepted(const EOS_Presence_JoinGameAcceptedCallbackInfo*) {}
+void EOS_CALL on_join_session_accepted(const EOS_Sessions_JoinSessionAcceptedCallbackInfo*) {}
 
 void set_env(const char* name, const char* value) {
 #if defined(_WIN32)
@@ -215,6 +217,11 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     RESOLVE(fn_get_presence, EOS_Platform_GetPresenceInterface);
     RESOLVE(fn_add_join_game, EOS_Presence_AddNotifyJoinGameAccepted);
     RESOLVE(fn_remove_join_game, EOS_Presence_RemoveNotifyJoinGameAccepted);
+    RESOLVE(fn_get_sessions, EOS_Platform_GetSessionsInterface);
+    RESOLVE(fn_create_session_search, EOS_Sessions_CreateSessionSearch);
+    RESOLVE(fn_release_session_search, EOS_SessionSearch_Release);
+    RESOLVE(fn_add_join_session, EOS_Sessions_AddNotifyJoinSessionAccepted);
+    RESOLVE(fn_remove_join_session, EOS_Sessions_RemoveNotifyJoinSessionAccepted);
     EOS_HConnect connect = fn_get_connect(platform);
     REQUIRE((connect != nullptr));
 
@@ -271,6 +278,24 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
         fn_get_presence(platform), &join_game, nullptr, on_join_game_accepted);
     REQUIRE(join_game_id != EOS_INVALID_NOTIFICATIONID);
     fn_remove_join_game(fn_get_presence(platform), join_game_id);
+
+    EOS_HSessions sessions = fn_get_sessions(platform);
+    REQUIRE((sessions != nullptr));
+    EOS_Sessions_CreateSessionSearchOptions session_search_options = {};
+    session_search_options.ApiVersion = EOS_SESSIONS_CREATESESSIONSEARCH_API_LATEST;
+    session_search_options.MaxSearchResults = 8;
+    EOS_HSessionSearch session_search = nullptr;
+    REQUIRE(fn_create_session_search(sessions, &session_search_options, &session_search) ==
+            EOS_EResult::EOS_Success);
+    REQUIRE((session_search != nullptr));
+    fn_release_session_search(session_search);
+
+    EOS_Sessions_AddNotifyJoinSessionAcceptedOptions join_session = {};
+    join_session.ApiVersion = EOS_SESSIONS_ADDNOTIFYJOINSESSIONACCEPTED_API_LATEST;
+    const EOS_NotificationId join_session_id = fn_add_join_session(
+        sessions, &join_session, nullptr, on_join_session_accepted);
+    REQUIRE(join_session_id != EOS_INVALID_NOTIFICATIONID);
+    fn_remove_join_session(sessions, join_session_id);
 
     // A diagnostic trace must retain calls that fail before dispatch too. Bad/stale handles are one
     // of the first things an in-game alpha probe needs to explain, not a reason for the probe itself
@@ -413,6 +438,25 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     REQUIRE_FALSE(join_game_remove.empty());
     CHECK(field_of(join_game_return, "v") == field_of(join_game_register, "id"));
     CHECK(field_of(join_game_register, "id") == field_of(join_game_remove, "id"));
+
+    const std::string session_search_return = find_line(
+        lines, "\"kind\":\"return\",\"fn\":\"EOS_Sessions_CreateSessionSearch\"");
+    REQUIRE_FALSE(session_search_return.empty());
+    CHECK(session_search_return.find("\"name\":\"EOS_Success\"") != std::string::npos);
+    CHECK(session_search_return.find("\"out\":{\"handle\":\"handle#") !=
+          std::string::npos);
+    const std::string join_session_return = find_line(
+        lines,
+        "\"kind\":\"return\",\"fn\":\"EOS_Sessions_AddNotifyJoinSessionAccepted\"");
+    const std::string join_session_register = find_line(
+        lines, "\"event\":\"JoinSessionAccepted\",\"action\":\"register\"");
+    const std::string join_session_remove = find_line(
+        lines, "\"event\":\"JoinSessionAccepted\",\"action\":\"remove\"");
+    REQUIRE_FALSE(join_session_return.empty());
+    REQUIRE_FALSE(join_session_register.empty());
+    REQUIRE_FALSE(join_session_remove.empty());
+    CHECK(field_of(join_session_return, "v") == field_of(join_session_register, "id"));
+    CHECK(field_of(join_session_register, "id") == field_of(join_session_remove, "id"));
 
     // The asynchronous login: its call, its synchronous return, and the callback that completed it a
     // tick later all carry one correlation id, so a reader can stitch the operation back together.

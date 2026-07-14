@@ -15,6 +15,7 @@
 #include "eos_achievements.h"
 #include "eos_stats.h"
 #include "eos_p2p.h"
+#include "eos_sessions.h"
 #include "eos_ui.h"
 #include "eos_integratedplatform.h"
 #include "eos_version.h"
@@ -162,6 +163,7 @@ TEST_CASE("Lobby flat ABI nulls handle outputs when the parent handle is invalid
     platform_options.ClientCredentials.ClientSecret = "secret";
     EOS_HPlatform platform = fn_create(&platform_options);
     REQUIRE((platform != nullptr));
+
     REQUIRE((fn_get_lobby(platform) != nullptr));
 
     EOS_HLobby bad_lobby = reinterpret_cast<EOS_HLobby>(0xdeadbeef);
@@ -180,6 +182,60 @@ TEST_CASE("Lobby flat ABI nulls handle outputs when the parent handle is invalid
     CHECK(fn_copy_details(bad_lobby, &copy_options, &details) ==
           EOS_EResult::EOS_InvalidParameters);
     CHECK((details == nullptr));
+
+    fn_release(platform);
+    CHECK(fn_shutdown() == EOS_EResult::EOS_Success);
+}
+
+TEST_CASE("Sessions flat ABI rejects foreign parent and sub-handles") {
+    REQUIRE_FALSE(g_library_path.empty());
+    dynamic_library lib;
+    REQUIRE(lib.open(g_library_path.c_str()));
+
+    RESOLVE(fn_initialize, EOS_Initialize);
+    RESOLVE(fn_shutdown, EOS_Shutdown);
+    RESOLVE(fn_create, EOS_Platform_Create);
+    RESOLVE(fn_release, EOS_Platform_Release);
+    RESOLVE(fn_create_search, EOS_Sessions_CreateSessionSearch);
+    RESOLVE(fn_copy_invite, EOS_Sessions_CopySessionHandleByInviteId);
+    RESOLVE(fn_set_platforms, EOS_SessionModification_SetAllowedPlatformIds);
+
+    EOS_InitializeOptions initialize = {};
+    initialize.ApiVersion = EOS_INITIALIZE_API_LATEST;
+    initialize.ProductName = "SessionsReview";
+    initialize.ProductVersion = "1.0";
+    REQUIRE(fn_initialize(&initialize) == EOS_EResult::EOS_Success);
+
+    EOS_Platform_Options platform_options = {};
+    platform_options.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    platform_options.ProductId = "sessions-review";
+    platform_options.SandboxId = "sandbox";
+    platform_options.DeploymentId = "deployment";
+    platform_options.ClientCredentials.ClientId = "client";
+    platform_options.ClientCredentials.ClientSecret = "secret";
+    EOS_HPlatform platform = fn_create(&platform_options);
+    REQUIRE((platform != nullptr));
+
+    EOS_Sessions_CreateSessionSearchOptions search_options = {};
+    search_options.ApiVersion = EOS_SESSIONS_CREATESESSIONSEARCH_API_LATEST;
+    search_options.MaxSearchResults = 1;
+    EOS_HSessionSearch search = reinterpret_cast<EOS_HSessionSearch>(0x1);
+    CHECK(fn_create_search(reinterpret_cast<EOS_HSessions>(0xdeadbeef), &search_options, &search) ==
+          EOS_EResult::EOS_InvalidParameters);
+    CHECK((search == nullptr));
+
+    EOS_Sessions_CopySessionHandleByInviteIdOptions copy = {};
+    copy.ApiVersion = EOS_SESSIONS_COPYSESSIONHANDLEBYINVITEID_API_LATEST;
+    copy.InviteId = "missing";
+    EOS_HSessionDetails details = reinterpret_cast<EOS_HSessionDetails>(0x1);
+    CHECK(fn_copy_invite(reinterpret_cast<EOS_HSessions>(0xdeadbeef), &copy, &details) ==
+          EOS_EResult::EOS_InvalidParameters);
+    CHECK((details == nullptr));
+
+    EOS_SessionModification_SetAllowedPlatformIdsOptions platforms = {};
+    platforms.ApiVersion = EOS_SESSIONMODIFICATION_SETALLOWEDPLATFORMIDS_API_LATEST;
+    CHECK(fn_set_platforms(reinterpret_cast<EOS_HSessionModification>(0xdeadbeef), &platforms) ==
+          EOS_EResult::EOS_InvalidParameters);
 
     fn_release(platform);
     CHECK(fn_shutdown() == EOS_EResult::EOS_Success);

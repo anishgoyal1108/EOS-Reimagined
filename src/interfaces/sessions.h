@@ -80,6 +80,8 @@ public:
                                              const EOS_SessionModification_SetMaxPlayersOptions* options);
     EOS_EResult modification_set_invites_allowed(
         void* handle, const EOS_SessionModification_SetInvitesAllowedOptions* options);
+    EOS_EResult modification_set_allowed_platform_ids(
+        void* handle, const EOS_SessionModification_SetAllowedPlatformIdsOptions* options);
     EOS_EResult modification_add_attribute(void* handle,
                                            const EOS_SessionModification_AddAttributeOptions* options);
     EOS_EResult modification_remove_attribute(

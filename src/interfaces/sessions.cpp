@@ -555,6 +555,16 @@ EOS_EResult sdk_sessions::modification_set_invites_allowed(
     return EOS_EResult::EOS_Success;
 }
 
+EOS_EResult sdk_sessions::modification_set_allowed_platform_ids(
+    void* handle, const EOS_SessionModification_SetAllowedPlatformIdsOptions* options) {
+    if (modifications_.find(handle) == 0 || options == 0 ||
+        !version_ok(options->ApiVersion,
+                    EOS_SESSIONMODIFICATION_SETALLOWEDPLATFORMIDS_API_LATEST)) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    return EOS_EResult::EOS_Success;
+}
+
 EOS_EResult sdk_sessions::modification_add_attribute(
     void* handle, const EOS_SessionModification_AddAttributeOptions* options) {
     modification_object* object = modifications_.find(handle);
