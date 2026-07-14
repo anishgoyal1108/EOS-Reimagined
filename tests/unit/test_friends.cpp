@@ -219,6 +219,20 @@ TEST_CASE("an invite to a meshed peer succeeds, there being nothing to send") {
     CHECK(g_invite_result == EOS_EResult::EOS_Success);
 }
 
+// Review regression: LAN auto-accept only explains success for a peer that is already on the mesh
+// (and therefore already a friend).  For an arbitrary account we have neither a peer nor a backend
+// to receive the invitation, so Success would falsely tell the game that an invite was sent.
+TEST_CASE("an invite to an unknown account is not reported as sent") {
+    friends_fixture fx;
+    EOS_Friends_SendInviteOptions options = {};
+    options.ApiVersion = EOS_FRIENDS_SENDINVITE_API_LATEST;
+    options.LocalUserId = fx.me();
+    options.TargetUserId = fx.id(peer_a_epic);
+    fx.friends.send_invite(&options, 0, on_invite);
+    fx.callbacks.tick();
+    CHECK(g_invite_result == EOS_EResult::EOS_NotFound);
+}
+
 TEST_CASE("the blocked-users list is always empty and its notification never fires") {
     friends_fixture fx;
     EOS_Friends_GetBlockedUsersCountOptions count = {};

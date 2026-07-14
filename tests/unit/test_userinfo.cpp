@@ -231,6 +231,37 @@ TEST_CASE("there are no external accounts to query or copy") {
     CHECK((ext == 0));
 }
 
+// Review regression: all three CopyExternal* contracts explicitly distinguish a missing output
+// pointer (InvalidParameters) from a well-formed lookup that has no cached entry (NotFound).  An
+// empty external-account cache does not make the mandatory output pointer optional.
+TEST_CASE("external user-info copies reject a null output pointer") {
+    userinfo_fixture fx;
+
+    EOS_UserInfo_CopyExternalUserInfoByIndexOptions by_index = {};
+    by_index.ApiVersion = EOS_USERINFO_COPYEXTERNALUSERINFOBYINDEX_API_LATEST;
+    by_index.LocalUserId = fx.me();
+    by_index.TargetUserId = fx.me();
+    by_index.Index = 0;
+    CHECK(fx.userinfo.copy_external_user_info_by_index(&by_index, 0) ==
+          EOS_EResult::EOS_InvalidParameters);
+
+    EOS_UserInfo_CopyExternalUserInfoByAccountTypeOptions by_type = {};
+    by_type.ApiVersion = EOS_USERINFO_COPYEXTERNALUSERINFOBYACCOUNTTYPE_API_LATEST;
+    by_type.LocalUserId = fx.me();
+    by_type.TargetUserId = fx.me();
+    by_type.AccountType = EOS_EExternalAccountType::EOS_EAT_STEAM;
+    CHECK(fx.userinfo.copy_external_user_info_by_account_type(&by_type, 0) ==
+          EOS_EResult::EOS_InvalidParameters);
+
+    EOS_UserInfo_CopyExternalUserInfoByAccountIdOptions by_id = {};
+    by_id.ApiVersion = EOS_USERINFO_COPYEXTERNALUSERINFOBYACCOUNTID_API_LATEST;
+    by_id.LocalUserId = fx.me();
+    by_id.TargetUserId = fx.me();
+    by_id.AccountId = "76561198000000000";
+    CHECK(fx.userinfo.copy_external_user_info_by_account_id(&by_id, 0) ==
+          EOS_EResult::EOS_InvalidParameters);
+}
+
 TEST_CASE("the best display name is the epic one, on the epic platform") {
     userinfo_fixture fx;
     fx.meets(peer_puid, peer_epic, "Kasparov");
@@ -247,6 +278,24 @@ TEST_CASE("the best display name is the epic one, on the epic platform") {
     release_best_display_name(out);
 }
 
+// Review regression: the only cached name is an Epic display name.  Asking specifically for Steam
+// cannot succeed by returning those same bytes with PlatformType changed to Steam; that asserts a
+// linked platform identity which the implementation says it does not have.
+TEST_CASE("a platform-specific best name is indeterminate without that linked account") {
+    userinfo_fixture fx;
+    fx.meets(peer_puid, peer_epic, "Kasparov");
+
+    EOS_UserInfo_CopyBestDisplayNameWithPlatformOptions options = {};
+    options.ApiVersion = EOS_USERINFO_COPYBESTDISPLAYNAMEWITHPLATFORM_API_LATEST;
+    options.LocalUserId = fx.me();
+    options.TargetUserId = fx.id(peer_epic);
+    options.TargetPlatformType = EOS_OPT_Steam;
+    EOS_UserInfo_BestDisplayName* out = reinterpret_cast<EOS_UserInfo_BestDisplayName*>(1);
+    CHECK(fx.userinfo.copy_best_display_name_with_platform(&options, &out) ==
+          EOS_EResult::EOS_UserInfo_BestDisplayNameIndeterminate);
+    CHECK((out == 0));
+}
+
 TEST_CASE("the local platform type is epic") {
     userinfo_fixture fx;
     EOS_UserInfo_GetLocalPlatformTypeOptions options = {};
@@ -254,15 +303,37 @@ TEST_CASE("the local platform type is epic") {
     CHECK(fx.userinfo.get_local_platform_type(&options) == EOS_OPT_Epic);
 }
 
-TEST_CASE("copy user info rejects an incompatible version") {
+TEST_CASE("userinfo copies report an incompatible version distinctly") {
     userinfo_fixture fx;
     EOS_UserInfo_CopyUserInfoOptions options = {};
     options.ApiVersion = EOS_USERINFO_COPYUSERINFO_API_LATEST + 1;
     options.LocalUserId = fx.me();
     options.TargetUserId = fx.me();
     EOS_UserInfo* out = reinterpret_cast<EOS_UserInfo*>(1);
-    CHECK(fx.userinfo.copy_user_info(&options, &out) == EOS_EResult::EOS_InvalidParameters);
+    // The API contract names EOS_IncompatibleVersion for this case.  Collapsing it into
+    // InvalidParameters hides an ABI mismatch from the game and from the upcoming alpha trace.
+    CHECK(fx.userinfo.copy_user_info(&options, &out) == EOS_EResult::EOS_IncompatibleVersion);
     CHECK((out == 0));
+
+    EOS_UserInfo_CopyBestDisplayNameOptions best = {};
+    best.ApiVersion = EOS_USERINFO_COPYBESTDISPLAYNAME_API_LATEST + 1;
+    best.LocalUserId = fx.me();
+    best.TargetUserId = fx.me();
+    EOS_UserInfo_BestDisplayName* best_out =
+        reinterpret_cast<EOS_UserInfo_BestDisplayName*>(1);
+    CHECK(fx.userinfo.copy_best_display_name(&best, &best_out) ==
+          EOS_EResult::EOS_IncompatibleVersion);
+    CHECK((best_out == 0));
+
+    EOS_UserInfo_CopyBestDisplayNameWithPlatformOptions with_platform = {};
+    with_platform.ApiVersion = EOS_USERINFO_COPYBESTDISPLAYNAMEWITHPLATFORM_API_LATEST + 1;
+    with_platform.LocalUserId = fx.me();
+    with_platform.TargetUserId = fx.me();
+    with_platform.TargetPlatformType = EOS_OPT_Epic;
+    best_out = reinterpret_cast<EOS_UserInfo_BestDisplayName*>(1);
+    CHECK(fx.userinfo.copy_best_display_name_with_platform(&with_platform, &best_out) ==
+          EOS_EResult::EOS_IncompatibleVersion);
+    CHECK((best_out == 0));
 }
 
 TEST_CASE("releasing a null or unknown user info is a safe no-op") {

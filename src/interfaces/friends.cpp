@@ -144,9 +144,14 @@ void sdk_friends::send_invite(const EOS_Friends_SendInviteOptions* options, void
                        options->TargetUserId->id_str);
         return;
     }
-    deliver_simple(client_data, reinterpret_cast<completion_delegate>(delegate), info_size,
-                   EOS_EResult::EOS_Success, options->LocalUserId->id_str,
-                   options->TargetUserId->id_str);
+    // A meshed peer is already a friend, so the request trivially succeeds -- there is nothing to
+    // send. An account we have never met has no peer to reach and no backend to reach it through, so
+    // Success would falsely tell the game an invite went out; NotFound is the honest answer.
+    const EOS_EResult code = is_friend(options->TargetUserId->id_str)
+                                 ? EOS_EResult::EOS_Success
+                                 : EOS_EResult::EOS_NotFound;
+    deliver_simple(client_data, reinterpret_cast<completion_delegate>(delegate), info_size, code,
+                   options->LocalUserId->id_str, options->TargetUserId->id_str);
 }
 
 void sdk_friends::accept_invite(const EOS_Friends_AcceptInviteOptions* options, void* client_data,
@@ -168,9 +173,14 @@ void sdk_friends::accept_invite(const EOS_Friends_AcceptInviteOptions* options, 
                        options->TargetUserId->id_str);
         return;
     }
-    deliver_simple(client_data, reinterpret_cast<completion_delegate>(delegate), info_size,
-                   EOS_EResult::EOS_Success, options->LocalUserId->id_str,
-                   options->TargetUserId->id_str);
+    // A meshed peer is already a friend, so the request trivially succeeds -- there is nothing to
+    // send. An account we have never met has no peer to reach and no backend to reach it through, so
+    // Success would falsely tell the game an invite went out; NotFound is the honest answer.
+    const EOS_EResult code = is_friend(options->TargetUserId->id_str)
+                                 ? EOS_EResult::EOS_Success
+                                 : EOS_EResult::EOS_NotFound;
+    deliver_simple(client_data, reinterpret_cast<completion_delegate>(delegate), info_size, code,
+                   options->LocalUserId->id_str, options->TargetUserId->id_str);
 }
 
 void sdk_friends::reject_invite(const EOS_Friends_RejectInviteOptions* options, void* client_data,
@@ -192,9 +202,14 @@ void sdk_friends::reject_invite(const EOS_Friends_RejectInviteOptions* options, 
                        options->TargetUserId->id_str);
         return;
     }
-    deliver_simple(client_data, reinterpret_cast<completion_delegate>(delegate), info_size,
-                   EOS_EResult::EOS_Success, options->LocalUserId->id_str,
-                   options->TargetUserId->id_str);
+    // A meshed peer is already a friend, so the request trivially succeeds -- there is nothing to
+    // send. An account we have never met has no peer to reach and no backend to reach it through, so
+    // Success would falsely tell the game an invite went out; NotFound is the honest answer.
+    const EOS_EResult code = is_friend(options->TargetUserId->id_str)
+                                 ? EOS_EResult::EOS_Success
+                                 : EOS_EResult::EOS_NotFound;
+    deliver_simple(client_data, reinterpret_cast<completion_delegate>(delegate), info_size, code,
+                   options->LocalUserId->id_str, options->TargetUserId->id_str);
 }
 
 i32 sdk_friends::get_friends_count(const EOS_Friends_GetFriendsCountOptions* options) const {

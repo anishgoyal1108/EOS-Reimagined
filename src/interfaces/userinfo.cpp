@@ -332,8 +332,15 @@ EOS_EResult sdk_userinfo::copy_user_info(const EOS_UserInfo_CopyUserInfoOptions*
         return EOS_EResult::EOS_InvalidParameters;
     }
     *out = 0;
-    if (options == 0 || !version_ok(options->ApiVersion, EOS_USERINFO_COPYUSERINFO_API_LATEST) ||
-        options->LocalUserId == 0 || options->TargetUserId == 0 || !options->TargetUserId->valid) {
+    if (options == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    // A rejected ApiVersion is an ABI mismatch, not a malformed request: the header names
+    // IncompatibleVersion for it, and a game uses that to pick an older call shape.
+    if (!version_ok(options->ApiVersion, EOS_USERINFO_COPYUSERINFO_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
+    }
+    if (options->LocalUserId == 0 || options->TargetUserId == 0 || !options->TargetUserId->valid) {
         return EOS_EResult::EOS_InvalidParameters;
     }
     user_record record;
@@ -355,9 +362,12 @@ EOS_EResult sdk_userinfo::copy_external_user_info_by_index(
     const EOS_UserInfo_CopyExternalUserInfoByIndexOptions* options,
     EOS_UserInfo_ExternalUserInfo** out) const {
     (void)options;
-    if (out != 0) {
-        *out = 0;
+    // The output pointer is mandatory even when the cache is empty: a null one is a malformed call,
+    // distinct from a well-formed lookup that finds nothing.
+    if (out == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
     }
+    *out = 0;
     return EOS_EResult::EOS_NotFound;
 }
 
@@ -365,9 +375,12 @@ EOS_EResult sdk_userinfo::copy_external_user_info_by_account_type(
     const EOS_UserInfo_CopyExternalUserInfoByAccountTypeOptions* options,
     EOS_UserInfo_ExternalUserInfo** out) const {
     (void)options;
-    if (out != 0) {
-        *out = 0;
+    // The output pointer is mandatory even when the cache is empty: a null one is a malformed call,
+    // distinct from a well-formed lookup that finds nothing.
+    if (out == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
     }
+    *out = 0;
     return EOS_EResult::EOS_NotFound;
 }
 
@@ -375,9 +388,12 @@ EOS_EResult sdk_userinfo::copy_external_user_info_by_account_id(
     const EOS_UserInfo_CopyExternalUserInfoByAccountIdOptions* options,
     EOS_UserInfo_ExternalUserInfo** out) const {
     (void)options;
-    if (out != 0) {
-        *out = 0;
+    // The output pointer is mandatory even when the cache is empty: a null one is a malformed call,
+    // distinct from a well-formed lookup that finds nothing.
+    if (out == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
     }
+    *out = 0;
     return EOS_EResult::EOS_NotFound;
 }
 
@@ -388,8 +404,13 @@ EOS_EResult sdk_userinfo::copy_best_display_name(
         return EOS_EResult::EOS_InvalidParameters;
     }
     *out = 0;
-    if (options == 0 || !version_ok(options->ApiVersion, EOS_USERINFO_COPYBESTDISPLAYNAME_API_LATEST) ||
-        options->TargetUserId == 0 || !options->TargetUserId->valid) {
+    if (options == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (!version_ok(options->ApiVersion, EOS_USERINFO_COPYBESTDISPLAYNAME_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
+    }
+    if (options->TargetUserId == 0 || !options->TargetUserId->valid) {
         return EOS_EResult::EOS_InvalidParameters;
     }
     user_record record;
@@ -408,17 +429,27 @@ EOS_EResult sdk_userinfo::copy_best_display_name_with_platform(
         return EOS_EResult::EOS_InvalidParameters;
     }
     *out = 0;
-    if (options == 0 ||
-        !version_ok(options->ApiVersion, EOS_USERINFO_COPYBESTDISPLAYNAMEWITHPLATFORM_API_LATEST) ||
-        options->TargetUserId == 0 || !options->TargetUserId->valid) {
+    if (options == 0) {
         return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (!version_ok(options->ApiVersion, EOS_USERINFO_COPYBESTDISPLAYNAMEWITHPLATFORM_API_LATEST)) {
+        return EOS_EResult::EOS_IncompatibleVersion;
+    }
+    if (options->TargetUserId == 0 || !options->TargetUserId->valid) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    // The only display name we hold is the Epic one. Asked for a specific other platform, we have no
+    // linked account to answer from, and returning the Epic bytes relabelled as that platform would
+    // assert an identity we do not have -- so the best name is indeterminate, as the header allows.
+    if (options->TargetPlatformType != local_platform_type) {
+        return EOS_EResult::EOS_UserInfo_BestDisplayNameIndeterminate;
     }
     user_record record;
     if (!resolve(options->TargetUserId->id_str, record) || record.display_name.empty()) {
         return EOS_EResult::EOS_NotFound;
     }
     *out = build_best_name(options->TargetUserId->id_str, record.display_name, record.nickname,
-                           options->TargetPlatformType);
+                           local_platform_type);
     return EOS_EResult::EOS_Success;
 }
 
