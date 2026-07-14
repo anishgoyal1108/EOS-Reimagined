@@ -28,7 +28,7 @@ class sdk_connect;
 // The Sessions interface: how a game is advertised and found. A host describes a session and
 // leaves it sitting there; a searcher asks every peer what it has, and the hosts answer out of
 // their own session list. Nothing is broadcast — discovery is a question, not an announcement.
-// Spec: EOSSDK_Sessions (docs/sessions.md), session search (docs/protocol.md)
+// Spec: EOSSDK_Sessions (wiki/internals/sessions.md), session search (wiki/internals/protocol.md)
 class sdk_sessions : public i_run_callback, public i_run_network {
 public:
     sdk_sessions(sdk_settings& settings, callback_manager& callbacks, message_router& network,

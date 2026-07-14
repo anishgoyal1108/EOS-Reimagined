@@ -64,7 +64,7 @@ struct stub_interface {
 // (callback_manager), the peer network (message_router), the resolved settings, and one object
 // per interface. Tick is the sole driver of async delivery and network dispatch. Kept a plain
 // class — the flat layer holds the single process instance — so tests can create it in isolation.
-// Spec: EOSSDK_Platform (docs/client.md), EOS_Platform_Create/Tick/Release (docs/architecture.md)
+// Spec: EOSSDK_Platform (wiki/internals/client.md), EOS_Platform_Create/Tick/Release (wiki/internals/architecture.md)
 class sdk_platform {
 public:
     sdk_platform();

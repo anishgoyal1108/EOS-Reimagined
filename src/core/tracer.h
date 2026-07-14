@@ -24,7 +24,7 @@ namespace eosr {
 //
 // The class is free of process-global machinery so a test can drive one directly against a temporary
 // directory; the flat layer owns the single process instance (global_tracer()).
-// Spec: docs/alpha-tracing.md §1 (run directory), §2 (config), §3 (runtime.json), §4/§6 (records,
+// Spec: wiki/internals/alpha-tracing.md §1 (run directory), §2 (config), §3 (runtime.json), §4/§6 (records,
 // lifecycle).
 class tracer : public trace_meta_source {
 public:

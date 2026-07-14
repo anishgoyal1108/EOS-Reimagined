@@ -32,7 +32,7 @@ struct net_envelope;
 // The parts that describe a player's *other* platforms -- their Steam or console identities -- have
 // no source here, so the external-account list is always empty. The best display name is simply the
 // Epic one, because it is the only one there is.
-// Spec: EOSSDK_UserInfo (docs/userinfo.md)
+// Spec: EOSSDK_UserInfo (wiki/internals/userinfo.md)
 class sdk_userinfo : public i_run_callback, public i_run_network {
 public:
     sdk_userinfo(sdk_settings& settings, callback_manager& callbacks, message_router& network,

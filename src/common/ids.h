@@ -31,7 +31,7 @@ bool id_string_is_valid(const std::string& id_str);
 
 // Interns id strings so a given string always resolves to the same handle pointer, which
 // is what lets the flat API validate a handle by identity. The registry owns every handle.
-// Spec: EOSSDK_Client id maps (docs/client.md §2)
+// Spec: EOSSDK_Client id maps (wiki/internals/client.md §2)
 class id_registry {
 public:
     static id_registry& instance();

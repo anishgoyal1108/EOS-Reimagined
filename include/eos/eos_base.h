@@ -7,7 +7,7 @@
 #if !defined(_WIN32) && !defined(_WIN64) && !defined(__ANDROID__) && !defined(__linux__) && !defined(__APPLE__)
 #error \
 This platform expected a `eos_<platform>_base.h` include before this header. \
-Please refer to https://dev.epicgames.com/docs/services or `eos_platform_prereqs.h` for details.
+Please refer to https://dev.epicgames.com/wiki/internals/services or `eos_platform_prereqs.h` for details.
 #endif
 #endif
 
@@ -32,7 +32,7 @@ Please refer to https://dev.epicgames.com/docs/services or `eos_platform_prereqs
 #if !defined(EOS_MEMORY_CALL) || !defined(EOS_CALL) || !defined(EOS_USE_DLLEXPORT)
 #error \
 The expected macros EOS_MEMORY_CALL, EOS_CALL, and EOS_USE_DLLEXPORT where not all defined. \
-Please refer to https://dev.epicgames.com/docs/services or `eos_platform_prereqs.h` for details.
+Please refer to https://dev.epicgames.com/wiki/internals/services or `eos_platform_prereqs.h` for details.
 #endif
 
 

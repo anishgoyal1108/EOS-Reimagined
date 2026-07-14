@@ -27,7 +27,7 @@ using callback_type_id = int;
 // via unique_ptr; interfaces keep a non-owning frame_result* while a request is pending.
 // The payload is a vector of max_align_t elements, so its storage is aligned for any
 // callback-info type and copy/move/destruction are all automatic.
-// Spec: FrameResult / CallbackMessage_t (docs/architecture.md §5)
+// Spec: FrameResult / CallbackMessage_t (wiki/internals/architecture.md §5)
 class frame_result {
 public:
     frame_result();

@@ -7,7 +7,7 @@
 using namespace eosr;
 
 TEST_CASE("the peer fingerprint matches the golden vector") {
-    // docs/alpha-tracing.md §4: this exact pair pins the construction so two tools agree.
+    // wiki/internals/alpha-tracing.md §4: this exact pair pins the construction so two tools agree.
     CHECK(peer_fingerprint("00112233445566778899aabbccddeeff") == "ebf65ed621ba531b");
 }
 

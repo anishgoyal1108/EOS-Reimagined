@@ -20,7 +20,7 @@ namespace eosr {
 // to all of them, so several instances on one machine each get a slot and still find each other:
 // that is what makes two local copies of a game see one another. Tests inject a private range and
 // a loopback-only address list so they never touch the real network.
-// Spec: UDP discovery (docs/protocol.md)
+// Spec: UDP discovery (wiki/internals/protocol.md)
 struct net_config {
     u16 discovery_port_first;
     u16 discovery_port_last;
@@ -41,7 +41,7 @@ struct net_config {
 // go through a loopback self-pipe, in the clear, so they take the same decode-and-dispatch path
 // without pretending to be a peer. A peer appearing or timing out is dispatched to the interfaces
 // as a synthetic peer_connected / peer_disconnected envelope.
-// Spec: Network (docs/protocol.md), authenticated mesh (docs/adr/0001)
+// Spec: Network (wiki/internals/protocol.md), authenticated mesh (wiki/internals/adr/0001)
 class message_router {
 public:
     message_router();

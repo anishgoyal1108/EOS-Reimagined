@@ -29,6 +29,7 @@ add_executable(unit_tests
     unit/test_settings.cpp
     unit/test_client.cpp
     unit/test_platform.cpp
+    unit/test_stub_completion.cpp
     unit/test_connect.cpp
     unit/test_auth.cpp
     unit/test_p2p.cpp

@@ -4,7 +4,7 @@
 
 /******************************************************************************
  *
- * Please refer to https://dev.epicgames.com/docs/services for more details
+ * Please refer to https://dev.epicgames.com/wiki/internals/services for more details
  * on platform specific development.
  *
  * Some platforms need additional setup before `eos_base.h` is called.
@@ -44,7 +44,7 @@
 #error \
 The macros EOS_MEMORY_CALL, EOS_CALL, and EOS_USE_DLLEXPORT where unexpectedly partially defined. \
 This can occur if `eos_platform_prereqs.h` is included after `eos_base.h` is included. \
-Please refer to https://dev.epicgames.com/docs/services for more details.
+Please refer to https://dev.epicgames.com/wiki/internals/services for more details.
 #endif
 
 #undef EOS_PREPROCESSOR_TO_STRING

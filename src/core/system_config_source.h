@@ -17,7 +17,7 @@ namespace eosr {
 // or the file being edited, does not move a value out from under a run. File-loading problems (an
 // unreadable, oversized, or malformed file, or an explicitly selected EOSR_CONFIG that is missing)
 // become diagnostics; an absent *default* file is normal and silent.
-// Spec: docs/alpha-tracing.md §2, §7.
+// Spec: wiki/internals/alpha-tracing.md §2, §7.
 class system_config_source : public config_source {
 public:
     explicit system_config_source(const std::string& data_dir);

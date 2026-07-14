@@ -484,7 +484,7 @@ void sdk_presence::remove_notify_on_presence_changed(EOS_NotificationId id) {
 }
 
 // The overlay is where a friend clicks "join game"; without it this notification has no trigger, so
-// it is registered (a game must be able to) but never fires. Documented in docs/presence.md.
+// it is registered (a game must be able to) but never fires. Documented in wiki/internals/presence.md.
 EOS_NotificationId sdk_presence::add_notify_join_game_accepted(
     void* client_data, EOS_Presence_OnJoinGameAcceptedCallback delegate) {
     if (delegate == 0) {

@@ -10,6 +10,9 @@
 #include "eos_connect.h"
 #include "eos_auth.h"
 #include "eos_lobby.h"
+#include "eos_ecom.h"
+#include "eos_achievements.h"
+#include "eos_stats.h"
 #include "eos_p2p.h"
 #include "eos_integratedplatform.h"
 #include "eos_version.h"
@@ -1084,5 +1087,84 @@ TEST_CASE("the built SDK library takes an integrated-platform container and outl
 
     fn_container_release(older_container);
     fn_release(older_platform);
+    CHECK(fn_shutdown() == EOS_EResult::EOS_Success);
+}
+
+// A game binds the whole SDK surface. The families we have not built must still be *there*: a static
+// import we lack refuses the process at load, and a Unity/Mono P/Invoke we lack throws
+// EntryPointNotFoundException at the first call. Either way the emulator never gets control, so it
+// cannot even report the problem. These exports exist so the failure is an honest NotImplemented the
+// game can see -- and, crucially, so an asynchronous one still completes rather than hanging.
+namespace {
+bool g_ecom_fired = false;
+EOS_EResult g_ecom_result = EOS_EResult::EOS_Success;
+void* g_ecom_client_data = 0;
+void EOS_CALL on_ecom_ownership(const EOS_Ecom_QueryOwnershipCallbackInfo* info) {
+    g_ecom_fired = true;
+    g_ecom_result = info->ResultCode;
+    g_ecom_client_data = info->ClientData;
+}
+} // namespace
+
+TEST_CASE("an unimplemented interface is exported, and its async call still completes") {
+    REQUIRE_FALSE(g_library_path.empty());
+    dynamic_library lib;
+    REQUIRE(lib.open(g_library_path.c_str()));
+
+    RESOLVE(fn_initialize, EOS_Initialize);
+    RESOLVE(fn_shutdown, EOS_Shutdown);
+    RESOLVE(fn_create, EOS_Platform_Create);
+    RESOLVE(fn_release, EOS_Platform_Release);
+    RESOLVE(fn_tick, EOS_Platform_Tick);
+    // The whole point: these resolve at all. Before the compatibility shells they did not exist.
+    RESOLVE(fn_get_ecom, EOS_Platform_GetEcomInterface);
+    RESOLVE(fn_query_ownership, EOS_Ecom_QueryOwnership);
+    RESOLVE(fn_ecom_count, EOS_Ecom_GetEntitlementsCount);
+    RESOLVE(fn_achievements, EOS_Platform_GetAchievementsInterface);
+    RESOLVE(fn_unlock, EOS_Achievements_UnlockAchievements);
+    RESOLVE(fn_stats, EOS_Stats_IngestStat);
+    RESOLVE(fn_definition_release, EOS_Achievements_Definition_Release);
+
+    EOS_InitializeOptions iopts = {};
+    iopts.ApiVersion = EOS_INITIALIZE_API_LATEST;
+    iopts.ProductName = "StubTest";
+    iopts.ProductVersion = "1.0.0";
+    REQUIRE(fn_initialize(&iopts) == EOS_EResult::EOS_Success);
+
+    EOS_Platform_Options popts = {};
+    popts.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    popts.ProductId = "prod-stub";
+    popts.SandboxId = "sandbox-stub";
+    popts.DeploymentId = "deploy-stub";
+    EOS_HPlatform platform = fn_create(&popts);
+    REQUIRE((platform != nullptr));
+
+    // Every getter hands back a usable handle, even for an interface we have not built.
+    EOS_HEcom ecom = fn_get_ecom(platform);
+    CHECK((ecom != nullptr));
+    CHECK((fn_achievements(platform) != nullptr));
+
+    // A synchronous getter reports nothing rather than inventing a value.
+    EOS_Ecom_GetEntitlementsCountOptions count_opts = {};
+    count_opts.ApiVersion = EOS_ECOM_GETENTITLEMENTSCOUNT_API_LATEST;
+    CHECK(fn_ecom_count(ecom, &count_opts) == 0);
+
+    // An asynchronous one still fires its callback -- a game awaiting it must never hang.
+    int client_data = 0;
+    g_ecom_fired = false;
+    EOS_Ecom_QueryOwnershipOptions own_opts = {};
+    own_opts.ApiVersion = EOS_ECOM_QUERYOWNERSHIP_API_LATEST;
+    fn_query_ownership(ecom, &own_opts, &client_data, on_ecom_ownership);
+    for (int i = 0; i < 8 && !g_ecom_fired; i++) {
+        fn_tick(platform);
+    }
+    CHECK(g_ecom_fired);
+    CHECK(g_ecom_result == EOS_EResult::EOS_NotImplemented); // honest, not a fabricated success
+    CHECK(g_ecom_client_data == &client_data);
+
+    // A deprecated release the game's own SDK version still declares: present, and a safe no-op.
+    fn_definition_release(nullptr);
+
+    fn_release(platform);
     CHECK(fn_shutdown() == EOS_EResult::EOS_Success);
 }

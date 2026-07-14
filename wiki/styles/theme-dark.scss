@@ -1,0 +1,97 @@
+/*-- scss:defaults --*/
+
+// Dark scheme tuned to the project's navy/teal brand (matches the diagrams).
+$body-bg: #0b1220;
+$body-color: #ccd9ea;
+$headings-color: #e8eef7;
+
+$primary: #2dd4bf;
+$secondary: #7c8da6;
+$link-color: #4cd7c4;
+$code-color: #5eead4;
+$code-bg: #101b30;
+
+$navbar-bg: #0c1526;
+$navbar-fg: #dbe4ee;
+$navbar-hl: #5eead4;
+
+$border-color: #22304a;
+$table-border-color: #22304a;
+
+$sidebar-fg: #a9b8cd;
+$toc-color: #8fa1b8;
+$toc-active-border: #2dd4bf;
+
+$input-bg: #101b30;
+$dropdown-bg: #101b30;
+
+/*-- scss:rules --*/
+
+body {
+  // Subtle brand glow behind the page, most visible on the landing hero.
+  background-image:
+    radial-gradient(46rem 24rem at 18% -6%, rgba(20, 184, 166, 0.09), transparent 60%),
+    radial-gradient(42rem 22rem at 88% -4%, rgba(99, 102, 241, 0.09), transparent 60%);
+  background-repeat: no-repeat;
+}
+
+h2 {
+  border-bottom-color: #22304a;
+}
+
+div.sourceCode,
+pre:not(.sourceCode) {
+  background-color: #0e1930;
+  border-color: #22304a;
+  border-left-color: rgba(45, 212, 191, 0.5);
+}
+
+p code:not(.sourceCode),
+li code:not(.sourceCode),
+td code:not(.sourceCode),
+th code:not(.sourceCode) {
+  background-color: rgba(45, 212, 191, 0.09);
+}
+
+.feature-card {
+  background: #0e1830;
+  border-color: #22304a;
+
+  &:hover {
+    border-color: rgba(45, 212, 191, 0.6);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  }
+}
+
+.quarto-announcement {
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.16), rgba(99, 102, 241, 0.16));
+}
+
+.status-live {
+  color: #5eead4;
+  background: rgba(20, 184, 166, 0.14);
+  border-color: rgba(45, 212, 191, 0.45);
+}
+
+.status-shell {
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.status-absent {
+  color: #fda4af;
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+.status-planned {
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.diagram-panel {
+  background: #0d1830;
+  border-color: #223251;
+}

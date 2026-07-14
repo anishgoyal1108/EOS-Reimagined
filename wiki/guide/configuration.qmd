@@ -1,0 +1,195 @@
+---
+title: "Configuration: eosr.json & EOSR_* variables"
+description: "Every configuration key and environment variable — defaults, validation, and precedence."
+---
+
+EOS Reimagined runs fine with **no configuration at all**: sensible defaults cover everything.
+When you do want to change something — your display name, the discovery ports, tracing — there
+are two ways in, and they compose:
+
+- a small JSON file, **`eosr.json`**, and
+- **`EOSR_*` environment variables**, which override the file field by field.
+
+::: {.callout-note appearance="simple"}
+`eosr.json` is EOS Reimagined's own config file. The similarly-named `eos_reimagined.json`
+described in the [internals architecture notes](../internals/architecture.md) belongs to the
+*reference emulator* that was reverse-engineered — its keys are not this library's keys.
+:::
+
+## Where the file lives
+
+The library looks for `eosr.json` in its **data directory** — the same per-user directory that
+holds your [profile key](identity-and-profiles.qmd) and traces:
+
+| Platform | Data directory (first match wins) |
+|---|---|
+| Linux | `$EOSR_DATA_DIR` → `$XDG_DATA_HOME/eos-reimagined` → `~/.local/share/eos-reimagined` |
+| Windows | `%EOSR_DATA_DIR%` → `%LOCALAPPDATA%\eos-reimagined` → `%APPDATA%` → `%USERPROFILE%\AppData\Local\eos-reimagined` |
+
+Two consequences worth knowing:
+
+- **The library never writes `eosr.json`.** It doesn't create it, doesn't fill in missing keys,
+  doesn't rewrite it. If you want one, create it yourself; if it's missing, defaults apply
+  silently.
+- **`EOSR_DATA_DIR` is special.** It decides where the config file is *looked for*, so it can
+  only be an environment variable — there is deliberately no `data_dir` key inside the file.
+
+To point at a config file somewhere else entirely, set **`EOSR_CONFIG`** to its path. A relative
+`EOSR_CONFIG` resolves against the data directory (not the process working directory, which
+varies between launchers), so one setting means one file everywhere.
+
+The file is read **once, at `EOS_Initialize`** — editing it while the game runs does nothing
+until the next launch.
+
+## Precedence
+
+For every field, highest first:
+
+```
+environment variable  →  eosr.json  →  built-in default
+```
+
+A value that fails validation at one layer is discarded (with a diagnostic) and resolution falls
+through to the next — an invalid `EOSR_TRACE` doesn't win, but it doesn't force the default
+either; it yields to the file's value first. An environment variable set to the **empty string
+counts as unset**.
+
+## The keys
+
+| `eosr.json` key | Env override | Type | Default | What it does |
+|---|---|---|---|---|
+| `display_name` (alias: `username`) | `EOSR_DISPLAY_NAME` | string | `"Player"` | Your player name as other players see it. |
+| `locale` (alias: `language`) | `EOSR_LOCALE` | string | `"en"` | Language tag reported through `EOS_UserInfo` (e.g. `en`, `pt-BR`). A locale the game itself sets via its platform options wins. |
+| `discovery_ports` | `EOSR_DISCOVERY_PORTS` | `[first, last]` (env form: `"first-last"`) | `[55789, 55798]` | The UDP port range used for peer discovery and P2P data. All players must use the same range. See [Networking](networking.qmd). |
+| `enable_lan` | `EOSR_ENABLE_LAN` | bool | `true` | `false` brings the platform up with **no peer network at all**: everything local keeps working and no peer can ever appear. |
+| `log_level` | `EOSR_LOG_LEVEL` | string | `"off"` | Threshold of the ordinary EOS logger (`off`/`fatal`/`err`/`warn`/`info`/`debug`/`trace`). Delivered only to the game's `EOS_Logging_SetCallback` — this is for developers; players usually want *tracing* instead. |
+| `trace_level` | `EOSR_TRACE` | string | `"off"` | The diagnostic trace sink: `off` / `errors` / `lifecycle` / `full`. See [Tracing](tracing.qmd). |
+| `trace_dir` | `EOSR_TRACE_DIR` | path | `traces` (under the data directory) | Where trace runs are written. A relative path resolves against the data directory. No `~` or variable expansion — the value is a literal path. |
+| `trace_max_bytes` | `EOSR_TRACE_MAX_BYTES` | integer | `67108864` (64 MiB) | Per-file cap before trace rotation. Clamped into [64 KiB, 1 GiB]. |
+| `trace_max_rotated_files` | `EOSR_TRACE_MAX_ROTATED` | integer | `8` | Rotated `trace.N.jsonl` files kept (not counting the live one). Clamped into [0, 64]. |
+| `instance_label` | `EOSR_INSTANCE_LABEL` | string | *(unset)* | Optional human label echoed into trace metadata (handy when running several instances). Metadata only. |
+| `enable_overlay` | `EOSR_ENABLE_OVERLAY` | bool | `false` | Accepted for ecosystem compatibility, **not honoured** — there is no overlay to draw. `true` is recorded as an ignored-setting diagnostic. |
+| `unlock_dlcs` | `EOSR_UNLOCK_DLCS` | bool | `false` | Accepted for ecosystem compatibility, **not honoured yet** — the Ecom interface doesn't exist yet. `true` is recorded as an ignored-setting diagnostic. |
+
+And one environment variable with no file key besides `EOSR_DATA_DIR` and `EOSR_CONFIG`:
+
+| Env variable | What it does |
+|---|---|
+| `EOSR_DATA_DIR` | Overrides the data directory: profile key, config lookup, default trace location. The per-instance isolation knob for launchers. |
+| `EOSR_CONFIG` | Selects a different `eosr.json` (absolute, or relative to the data directory). |
+| `EOSR_RUN_DIR` | Hands the library a pre-created directory for this run's trace files instead of letting it mint one. Meant for test runners; see [Tracing](tracing.qmd). |
+
+## Validation, exactly
+
+Invalid values never break startup — the field falls through to the next layer and a diagnostic
+is recorded (see [where diagnostics go](#where-diagnostics-go)).
+
+- **`display_name`** — must be valid UTF-8 with no embedded NUL. Bounded by both EOS caps: at
+  most **16 characters** *and* **64 UTF-8 bytes**; an over-long name is truncated to the tighter
+  bound on a codepoint boundary (with a diagnostic), never split mid-character.
+- **`locale`** — 1–16 characters, letters with at most one `-` or `_` separator (`en`, `pt-BR`,
+  `zh_CN`).
+- **`discovery_ports`** — both ends non-zero, ≤ 65535, `first ≤ last`, and the span at most
+  **64 ports** (so a typo can't ask the library to probe thousands of sockets). The env form is
+  `EOSR_DISCOVERY_PORTS="55789-55798"`.
+- **`instance_label`** — up to 32 characters from `[A-Za-z0-9._-]`, and never `.` or `..`. It may
+  be echoed by tooling, so it is slug-checked even though it is never used to build a path.
+- **`trace_max_bytes` / `trace_max_rotated_files`** — out-of-range values are **clamped** into
+  range (with a diagnostic) rather than ignored.
+- **Paths** (`trace_dir`, `EOSR_RUN_DIR`, `EOSR_CONFIG`) — literal strings; the library performs
+  no tilde or environment expansion.
+- **Booleans** — `true/false`, `1/0`, `yes/no`, `on/off` (case-insensitive); anything else is
+  "not a boolean" and the layer is skipped.
+
+### The file parser is strict, and strict on purpose
+
+`eosr.json` must be one flat JSON object of strings, integers, booleans, and integer arrays.
+The parser is hand-written, bounded, and hostile-input-safe: input ≤ 64 KiB, any single token
+≤ 4 KiB, ≤ 64 array elements, nesting ≤ 8 levels.
+
+- A **duplicate key makes the whole file a parse error** — every field then falls through to
+  env/default — rather than silently choosing one of the two values.
+- **Unknown keys are ignored** (forward compatibility).
+- A known key with the **wrong shape** (e.g. `"discovery_ports": "55789"`) fails that one field
+  and falls through; the rest of the file still applies.
+- **Integer fields require integer syntax** — `64000000.0` or `6.4e7` is invalid for
+  `trace_max_bytes`.
+- A leading UTF-8 BOM is tolerated; any parse error means the file is treated as absent (with a
+  diagnostic), never half-applied.
+
+## Keys from other emulators
+
+If you're migrating from the wider Epic-emulator ecosystem, your existing config mostly just
+works — and where it doesn't, that's a considered decision rather than an accident:
+
+- **`username`** and **`language`** are accepted as aliases (`display_name` / `locale` win if
+  both spellings are present).
+- **`savepath`** is `EOSR_DATA_DIR` here — it must be an environment variable, because it's what
+  locates the config file in the first place.
+- **`disable_online_networking`** doesn't exist because it is unconditionally true: this
+  emulator *has* no online networking. The LAN mesh is the only network it has, and
+  `enable_lan: false` turns that off.
+- **`appid`** would be actively harmful: the product/sandbox/deployment IDs come from the game
+  itself and are folded into both your derived player ID and the handshake — overriding them
+  would silently fork the mesh so that players who set it differently never see each other.
+- **`epicid` / `productuserid` are accepted and reported, never applied.** Identity here is a
+  keypair, not a declaration: every peer *recomputes* your IDs from the key your connection
+  proves, and would refuse a connection claiming someone else's. The thing those keys existed to
+  give — a stable identity you can carry — is the [profile key](identity-and-profiles.qmd)
+  itself.
+
+## Examples
+
+The smallest useful config:
+
+```json
+{
+  "display_name": "Marlowe"
+}
+```
+
+Everything at its default, spelled out (equivalent to no file at all):
+
+```json
+{
+  "display_name": "Player",
+  "locale": "en",
+  "discovery_ports": [55789, 55798],
+  "enable_lan": true,
+  "log_level": "off",
+  "trace_level": "off",
+  "trace_dir": "traces",
+  "trace_max_bytes": 67108864,
+  "trace_max_rotated_files": 8,
+  "instance_label": "",
+  "enable_overlay": false,
+  "unlock_dlcs": false
+}
+```
+
+A launcher provisioning two isolated couch-co-op instances (each gets its own directory, so each
+gets its own profile, config, and traces):
+
+```sh
+EOSR_DATA_DIR=~/eosr/alice EOSR_DISPLAY_NAME=Alice ./game &
+EOSR_DATA_DIR=~/eosr/bob   EOSR_DISPLAY_NAME=Bob   ./game &
+```
+
+Debugging a session without touching any file:
+
+```sh
+EOSR_TRACE=lifecycle EOSR_INSTANCE_LABEL=repro-1 ./game
+```
+
+## Where diagnostics go {#where-diagnostics-go}
+
+A malformed field never prevents startup, but it *is* recorded:
+
+- If [tracing](tracing.qmd) resolved to enabled and writable, each config problem becomes a
+  structured `meta`/`config` record in `trace.jsonl` — with stable field/source/reason codes, so
+  the trace is self-contained.
+- Otherwise it goes best-effort through the ordinary EOS log callback — which only helps if the
+  game installs one and you can see it.
+
+So if a setting seems ignored, the two-minute answer is: run once with `EOSR_TRACE=errors` and
+read the `config` records at the top of the trace.

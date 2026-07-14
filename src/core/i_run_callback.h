@@ -6,7 +6,7 @@ namespace eosr {
 class frame_result;
 
 // Implemented by every interface that takes part in the per-tick callback loop.
-// Spec: IRunCallback (docs/architecture.md §4)
+// Spec: IRunCallback (wiki/internals/architecture.md §4)
 class i_run_callback {
 public:
     virtual ~i_run_callback() = default;

@@ -8,7 +8,7 @@ namespace eosr {
 // The cross-process peer fingerprint: a stable, pseudonymous label two independent trace tools
 // compute identically for the same peer, without either file handing back the raw id.
 //
-// Construction (docs/alpha-tracing.md §4, one exact recipe so both ends agree):
+// Construction (wiki/internals/alpha-tracing.md §4, one exact recipe so both ends agree):
 //   input  = ASCII "eosr-trace-peer-v1" (18 bytes) immediately followed by the peer's product user
 //            id as its 32 lowercase-hex ASCII bytes -- a fixed 50-byte concatenation, no separator.
 //   digest = SHA-256 of that input.

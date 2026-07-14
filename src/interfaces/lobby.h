@@ -29,7 +29,7 @@ class sdk_connect;
 // and per-member attributes. Structurally the Sessions interface plus members and an owner who has
 // authority over the roster -- authority that now rests on the connection-bound source id, so only
 // the real host can promote, kick, or admit. RTC voice rooms are named but not carried.
-// Spec: EOSSDK_Lobby (docs/lobby.md), lobby protocol (docs/protocol.md)
+// Spec: EOSSDK_Lobby (wiki/internals/lobby.md), lobby protocol (wiki/internals/protocol.md)
 class sdk_lobby : public i_run_callback, public i_run_network {
 public:
     sdk_lobby(sdk_settings& settings, callback_manager& callbacks, message_router& network,

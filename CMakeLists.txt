@@ -63,6 +63,7 @@ add_library(eosr_core STATIC
     src/core/client.cpp
     src/core/platform.cpp
     src/core/runtime.cpp
+    src/core/stub_completion.cpp
     src/interfaces/connect.cpp
     src/interfaces/auth.cpp
     src/interfaces/p2p.cpp
@@ -141,6 +142,7 @@ add_library(eos_shared SHARED
     src/flat/eos_integratedplatform_flat.cpp
     src/flat/eos_friends_flat.cpp
     src/flat/eos_userinfo_flat.cpp
+    src/flat/eos_stubs_flat.cpp
 )
 target_link_libraries(eos_shared PRIVATE eosr_core)
 set_target_properties(eos_shared PROPERTIES

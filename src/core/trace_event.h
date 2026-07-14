@@ -12,7 +12,7 @@ namespace eosr {
 // validated label, a 16-hex fingerprint, or an enum symbol (an identifier such as "device" or
 // "EOS_UNL_BottomRight"). So a credential, a continuance token, a raw account id, or a payload cannot
 // be represented as a value -- and a value that fails its format check is marked invalid and dropped.
-// Spec: docs/alpha-tracing.md §4, §5.
+// Spec: wiki/internals/alpha-tracing.md §4, §5.
 struct trace_value {
     enum kind { v_int, v_uint, v_flag, v_label, v_fingerprint, v_enum };
     kind type = v_int;
@@ -51,7 +51,7 @@ struct trace_field {
 trace_field make_field(field_id id, const trace_value& value);
 
 // The envelope every record shares. `inst` empty is emitted as null; `tid` is a logical thread label.
-// Spec: docs/alpha-tracing.md §4.
+// Spec: wiki/internals/alpha-tracing.md §4.
 struct trace_envelope {
     u32 schema_version = 1;
     u64 seq = 0;
@@ -91,7 +91,7 @@ trace_return return_notification_id(const std::string& label);
 // action, return value, correlation id, notification id, function, or event name rejects the whole
 // record; and the result is the empty string whenever the writer could not complete exactly one
 // bounded, well-formed document -- never a partial or over-long line.
-// Spec: docs/alpha-tracing.md §4.
+// Spec: wiki/internals/alpha-tracing.md §4.
 std::string serialize_meta(const trace_envelope& env, const std::string& event,
                            const std::vector<trace_field>& fields);
 std::string serialize_call(const trace_envelope& env, const std::string& fn, i32 api_version,

@@ -1,13 +1,13 @@
 # Reverse-Engineering Progress Manifest
 
 Target: `EOSSDK-Win64-Shipping.dll` (the reference EOS emulator, ~EOS SDK 1.17.1).
-Legend — **Named**: impl methods auto-named from `__func__`. **Typed**: flat API prototyped + impl struct recovered. **Doc**: `docs/<module>.md` written & cross-checked.
+Legend — **Named**: impl methods auto-named from `__func__`. **Typed**: flat API prototyped + impl struct recovered. **Doc**: `<module>.md` written & cross-checked.
 
 ## Foundation (done)
 - [x] EOS SDK 1.19 types imported (all interfaces) → Ghidra category `/eos_full.h`
 - [x] 628/630 flat API functions prototyped
 - [x] 705 impl methods auto-named across 42 classes (`NameImplMethodsFromFunc.py`)
-- [x] `docs/architecture.md`, `docs/protocol.md` written from source mapping
+- [x] `architecture.md`, `protocol.md` written from source mapping
 - [x] Windows syslibs + WinHTTP/Winsock detours labeled
 
 ## Module status
@@ -92,7 +92,7 @@ All planned foundation interfaces are implemented over the peer mesh, each adver
 - **Superseded by:** the Authenticated Mesh Identity milestone, now **complete** (see below).
 
 ## Authenticated Mesh Identity milestone: COMPLETE (2026-07-13)
-Self-certifying, key-derived identities over a standards-exact Noise XX channel. Spec: [`docs/adr/0001`](adr/0001-authenticated-mesh-identity.md). This closes both gaps the foundation left open, and makes `EOS_EPacketReliability` mean something.
+Self-certifying, key-derived identities over a standards-exact Noise XX channel. Spec: [`adr/0001`](adr/0001-authenticated-mesh-identity.md). This closes both gaps the foundation left open, and makes `EOS_EPacketReliability` mean something.
 - **A profile is a key.** An identity is an X25519 keypair; the ids are derived from the public half and the private half proves them. The username is now only a display name — it used to seed the identity, which meant anyone who typed a name answered to that player's id.
 - **A peer proves who it is before it is anyone.** Every connection runs Noise XX before it becomes a peer, and is adopted under the id *recomputed* from the key it proved. There is no field in which a peer says who it is, so first contact is no longer self-asserted.
 - **The Epic-account id took a second pass.** The line above originally claimed it too, and it was not true: Presence still read the epic id out of the *payload* and bound it first-writer-wins, so a peer could still claim any unclaimed account. The router now hands each peer's key-derived epic id to the interfaces on `peer_connected`, and a presence naming any other account is refused — no TOFU, no race to win. Connect's roster had the same shape of hole: it keyed on the product user id *inside* the message rather than the one the connection proved, so a peer could write another player's roster entry, which is that player's display name as everyone sees it.

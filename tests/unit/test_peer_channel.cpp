@@ -65,7 +65,7 @@ TEST_CASE("two peers complete the handshake and each learns the other's real key
 // The id a peer answers to is recomputed from the key it proved. There is no step at which a peer
 // gets to say who it is, so there is nothing to lie about: an impostor who wants Alice's id would
 // have to hold Alice's key, and holding it is what being Alice means.
-// Spec: identity binding (docs/adr/0001 §11)
+// Spec: identity binding (wiki/internals/adr/0001 §11)
 TEST_CASE("the id a peer gets is the one its key derives, and it never says it") {
     identity alice;
     identity impostor;
@@ -138,7 +138,7 @@ TEST_CASE("a peer of another sandbox or deployment cannot finish the handshake e
 // The old mesh let a peer introduce itself with a plaintext advertisement, and believed it. That
 // path is gone: the first thing off a connection has to be a handshake message of exactly the right
 // size, so an unauthenticated hello is not a downgrade to refuse -- it is simply not a handshake.
-// Spec: no downgrade (docs/adr/0001 §8, §11)
+// Spec: no downgrade (wiki/internals/adr/0001 §8, §11)
 TEST_CASE("a plaintext hello is not mistaken for a handshake") {
     identity bob;
     test::seed_profile(bob, 0xb2);
@@ -320,7 +320,7 @@ TEST_CASE("a datagram opens for the peer it was sealed for, and its sequence is 
 }
 
 // An unreliable path has nothing but the replay window between it and a datagram played back at it.
-// Spec: replay window (docs/adr/0001 §7, §11)
+// Spec: replay window (wiki/internals/adr/0001 §7, §11)
 TEST_CASE("a replayed datagram does not open twice") {
     identity alice;
     identity bob;

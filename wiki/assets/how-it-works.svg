@@ -1,0 +1,160 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" role="img" aria-label="How EOS Reimagined routes a call between two games over the local network">
+  <title>EOS Reimagined — route and protocol</title>
+  <defs>
+    <linearGradient id="gs" gradientUnits="userSpaceOnUse" x1="45" y1="190" x2="915" y2="470">
+      <stop offset="0" stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#818CF8"/>
+    </linearGradient>
+    <marker id="m-gray" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5B6C86"/>
+    </marker>
+    <marker id="m-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#FBBF24"/>
+    </marker>
+    <marker id="m-sky" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#38BDF8"/>
+    </marker>
+    <marker id="m-violet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#A78BFA"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="958" height="618" rx="16" fill="#0D1526" stroke="#243147" stroke-width="2"/>
+
+  <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+    <text x="36" y="42" font-size="19" font-weight="700" fill="#E6EDF3">How a call travels</text>
+    <text x="36" y="64" font-size="12.5" fill="#93A4BA">the route through the library, and the protocol between the peers</text>
+
+    <!-- ================== machine A ================== -->
+    <rect x="60" y="95" width="250" height="58" rx="10" fill="#1B2740" stroke="#34435E"/>
+    <text x="185" y="120" text-anchor="middle" font-size="15" font-weight="700" fill="#E6EDF3">Game — player 1</text>
+    <text x="185" y="140" text-anchor="middle" font-size="11.5" fill="#93A4BA">unmodified, linked against the EOS SDK</text>
+
+    <line x1="170" y1="155" x2="170" y2="184" stroke="#5B6C86" stroke-width="1.6" marker-end="url(#m-gray)"/>
+    <line x1="200" y1="188" x2="200" y2="159" stroke="#5B6C86" stroke-width="1.6" marker-end="url(#m-gray)"/>
+    <text x="155" y="175" text-anchor="end" font-size="11" fill="#93A4BA">EOS_* calls</text>
+    <text x="214" y="175" font-size="11" fill="#93A4BA">callbacks</text>
+
+    <rect x="45" y="190" width="280" height="280" rx="12" fill="#0F2233" stroke="url(#gs)" stroke-width="1.6"/>
+    <text x="185" y="216" text-anchor="middle" font-size="15" font-weight="700" fill="#5EEAD4">EOS Reimagined</text>
+    <text x="185" y="233" text-anchor="middle" font-size="10.5" fill="#93A4BA">drop-in EOSSDK .dll / .so</text>
+
+    <rect x="65" y="248" width="240" height="40" rx="8" fill="#152A40" stroke="#2C4666"/>
+    <text x="185" y="265" text-anchor="middle" font-size="12.5" font-weight="700" fill="#E6EDF3">flat C API</text>
+    <text x="185" y="281" text-anchor="middle" font-size="10.5" fill="#93A4BA">the EOS_* exports the game calls</text>
+
+    <line x1="185" y1="289" x2="185" y2="299" stroke="#5B6C86" stroke-width="1.6" marker-end="url(#m-gray)"/>
+
+    <rect x="65" y="302" width="240" height="52" rx="8" fill="#152A40" stroke="#2C4666"/>
+    <text x="185" y="319" text-anchor="middle" font-size="12.5" font-weight="700" fill="#E6EDF3">interfaces</text>
+    <text x="185" y="334" text-anchor="middle" font-size="10.5" fill="#93A4BA">Auth · Connect · Presence · Friends</text>
+    <text x="185" y="347" text-anchor="middle" font-size="10.5" fill="#93A4BA">Sessions · Lobby · P2P · Storage · …</text>
+
+    <line x1="185" y1="356" x2="125" y2="366" stroke="#5B6C86" stroke-width="1.6" marker-end="url(#m-gray)"/>
+    <line x1="185" y1="356" x2="245" y2="366" stroke="#5B6C86" stroke-width="1.6" marker-end="url(#m-gray)"/>
+
+    <rect x="65" y="368" width="112" height="56" rx="8" fill="#152A40" stroke="#2C4666"/>
+    <text x="121" y="386" text-anchor="middle" font-size="11" font-weight="700" fill="#E6EDF3">callback manager</text>
+    <text x="121" y="401" text-anchor="middle" font-size="9.5" fill="#93A4BA">fires results on</text>
+    <text x="121" y="414" text-anchor="middle" font-size="9.5" fill="#93A4BA">Platform_Tick</text>
+
+    <rect x="193" y="368" width="112" height="56" rx="8" fill="#152A40" stroke="#2C4666"/>
+    <text x="249" y="386" text-anchor="middle" font-size="11" font-weight="700" fill="#E6EDF3">message router</text>
+    <text x="249" y="401" text-anchor="middle" font-size="9.5" fill="#93A4BA">envelopes in/out</text>
+    <text x="249" y="414" text-anchor="middle" font-size="9.5" fill="#93A4BA">over TCP + UDP</text>
+
+    <text x="185" y="444" text-anchor="middle" font-size="10.5" font-style="italic" fill="#7C8DA6">what Epic's backend would answer,</text>
+    <text x="185" y="459" text-anchor="middle" font-size="10.5" font-style="italic" fill="#7C8DA6">we answer here, locally</text>
+
+    <!-- ================== machine B ================== -->
+    <rect x="650" y="95" width="250" height="58" rx="10" fill="#1B2740" stroke="#34435E"/>
+    <text x="775" y="120" text-anchor="middle" font-size="15" font-weight="700" fill="#E6EDF3">Game — player 2</text>
+    <text x="775" y="140" text-anchor="middle" font-size="11.5" fill="#93A4BA">unmodified, linked against the EOS SDK</text>
+
+    <line x1="760" y1="155" x2="760" y2="184" stroke="#5B6C86" stroke-width="1.6" marker-end="url(#m-gray)"/>
+    <line x1="790" y1="188" x2="790" y2="159" stroke="#5B6C86" stroke-width="1.6" marker-end="url(#m-gray)"/>
+    <text x="745" y="175" text-anchor="end" font-size="11" fill="#93A4BA">EOS_* calls</text>
+    <text x="804" y="175" font-size="11" fill="#93A4BA">callbacks</text>
+
+    <rect x="635" y="190" width="280" height="280" rx="12" fill="#0F2233" stroke="url(#gs)" stroke-width="1.6"/>
+    <text x="775" y="216" text-anchor="middle" font-size="15" font-weight="700" fill="#5EEAD4">EOS Reimagined</text>
+    <text x="775" y="233" text-anchor="middle" font-size="10.5" fill="#93A4BA">drop-in EOSSDK .dll / .so</text>
+
+    <rect x="655" y="248" width="240" height="40" rx="8" fill="#152A40" stroke="#2C4666"/>
+    <text x="775" y="265" text-anchor="middle" font-size="12.5" font-weight="700" fill="#E6EDF3">flat C API</text>
+    <text x="775" y="281" text-anchor="middle" font-size="10.5" fill="#93A4BA">the EOS_* exports the game calls</text>
+
+    <line x1="775" y1="289" x2="775" y2="299" stroke="#5B6C86" stroke-width="1.6" marker-end="url(#m-gray)"/>
+
+    <rect x="655" y="302" width="240" height="52" rx="8" fill="#152A40" stroke="#2C4666"/>
+    <text x="775" y="319" text-anchor="middle" font-size="12.5" font-weight="700" fill="#E6EDF3">interfaces</text>
+    <text x="775" y="334" text-anchor="middle" font-size="10.5" fill="#93A4BA">Auth · Connect · Presence · Friends</text>
+    <text x="775" y="347" text-anchor="middle" font-size="10.5" fill="#93A4BA">Sessions · Lobby · P2P · Storage · …</text>
+
+    <line x1="775" y1="356" x2="715" y2="366" stroke="#5B6C86" stroke-width="1.6" marker-end="url(#m-gray)"/>
+    <line x1="775" y1="356" x2="835" y2="366" stroke="#5B6C86" stroke-width="1.6" marker-end="url(#m-gray)"/>
+
+    <rect x="655" y="368" width="112" height="56" rx="8" fill="#152A40" stroke="#2C4666"/>
+    <text x="711" y="386" text-anchor="middle" font-size="11" font-weight="700" fill="#E6EDF3">callback manager</text>
+    <text x="711" y="401" text-anchor="middle" font-size="9.5" fill="#93A4BA">fires results on</text>
+    <text x="711" y="414" text-anchor="middle" font-size="9.5" fill="#93A4BA">Platform_Tick</text>
+
+    <rect x="783" y="368" width="112" height="56" rx="8" fill="#152A40" stroke="#2C4666"/>
+    <text x="839" y="386" text-anchor="middle" font-size="11" font-weight="700" fill="#E6EDF3">message router</text>
+    <text x="839" y="401" text-anchor="middle" font-size="9.5" fill="#93A4BA">envelopes in/out</text>
+    <text x="839" y="414" text-anchor="middle" font-size="9.5" fill="#93A4BA">over TCP + UDP</text>
+
+    <text x="775" y="444" text-anchor="middle" font-size="10.5" font-style="italic" fill="#7C8DA6">what Epic's backend would answer,</text>
+    <text x="775" y="459" text-anchor="middle" font-size="10.5" font-style="italic" fill="#7C8DA6">we answer here, locally</text>
+
+    <!-- ================== the wire ================== -->
+    <rect x="338" y="200" width="284" height="260" rx="12" fill="#94A3B8" fill-opacity="0.05" stroke="#3B4C68" stroke-dasharray="6 6"/>
+    <text x="480" y="224" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="3" fill="#9AAAC0">LOCAL NETWORK</text>
+    <text x="480" y="240" text-anchor="middle" font-size="10.5" fill="#7C8DA6">no internet · no Epic servers</text>
+
+    <text x="480" y="268" text-anchor="middle" font-size="12" font-weight="700" fill="#FBBF24">UDP broadcast — peer discovery</text>
+    <line x1="329" y1="280" x2="631" y2="280" stroke="#FBBF24" stroke-width="2.4" marker-start="url(#m-amber)" marker-end="url(#m-amber)"/>
+    <text x="480" y="297" text-anchor="middle" font-size="10.5" fill="#93A4BA">announce the TCP port · same app id only</text>
+
+    <text x="480" y="328" text-anchor="middle" font-size="12" font-weight="700" fill="#38BDF8">TCP mesh — control &amp; state</text>
+    <line x1="329" y1="340" x2="631" y2="340" stroke="#38BDF8" stroke-width="2.4" marker-start="url(#m-sky)" marker-end="url(#m-sky)"/>
+    <text x="480" y="357" text-anchor="middle" font-size="10.5" fill="#93A4BA">presence · sessions · lobbies · invites</text>
+
+    <text x="480" y="388" text-anchor="middle" font-size="12" font-weight="700" fill="#A78BFA">UDP datagrams — game data</text>
+    <line x1="329" y1="400" x2="631" y2="400" stroke="#A78BFA" stroke-width="2.4" marker-start="url(#m-violet)" marker-end="url(#m-violet)"/>
+    <text x="480" y="417" text-anchor="middle" font-size="10.5" fill="#93A4BA">EOS_P2P packets + acks</text>
+
+    <!-- ================== numbered path ================== -->
+    <g font-size="12" font-weight="700" text-anchor="middle">
+      <circle cx="170" cy="171" r="11" fill="#2DD4BF"/>
+      <text x="170" y="175.5" fill="#062A33">1</text>
+      <circle cx="65" cy="328" r="11" fill="#2DD4BF"/>
+      <text x="65" y="332.5" fill="#062A33">2</text>
+      <circle cx="345" cy="340" r="11" fill="#2DD4BF"/>
+      <text x="345" y="344.5" fill="#062A33">3</text>
+      <circle cx="895" cy="328" r="11" fill="#2DD4BF"/>
+      <text x="895" y="332.5" fill="#062A33">4</text>
+      <circle cx="790" cy="171" r="11" fill="#2DD4BF"/>
+      <text x="790" y="175.5" fill="#062A33">5</text>
+    </g>
+
+    <line x1="60" y1="498" x2="900" y2="498" stroke="#243147"/>
+    <g font-size="12" fill="#93A4BA">
+      <circle cx="82" cy="520" r="10" fill="#2DD4BF"/>
+      <text x="82" y="524" text-anchor="middle" font-size="11" font-weight="700" fill="#062A33">1</text>
+      <text x="100" y="524">the game calls an EOS_* function</text>
+      <circle cx="82" cy="548" r="10" fill="#2DD4BF"/>
+      <text x="82" y="552" text-anchor="middle" font-size="11" font-weight="700" fill="#062A33">2</text>
+      <text x="100" y="552">the interface answers locally and updates its state</text>
+      <circle cx="82" cy="576" r="10" fill="#2DD4BF"/>
+      <text x="82" y="580" text-anchor="middle" font-size="11" font-weight="700" fill="#062A33">3</text>
+      <text x="100" y="580">state changes ride the TCP mesh to every peer</text>
+      <circle cx="502" cy="520" r="10" fill="#2DD4BF"/>
+      <text x="502" y="524" text-anchor="middle" font-size="11" font-weight="700" fill="#062A33">4</text>
+      <text x="520" y="524">the peer's router dispatches to the same interface</text>
+      <circle cx="502" cy="548" r="10" fill="#2DD4BF"/>
+      <text x="502" y="552" text-anchor="middle" font-size="11" font-weight="700" fill="#062A33">5</text>
+      <text x="520" y="552">both games get ordinary EOS callbacks on the next Tick</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,279 @@
+/*-- scss:defaults --*/
+
+// Fonts: Inter for text, JetBrains Mono for code (with graceful system fallbacks).
+$web-font-path: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap";
+$font-family-sans-serif: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+$font-family-monospace: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+// Brand palette (from the logo gradient).
+$eosr-teal: #14b8a6;
+$eosr-sky: #38bdf8;
+$eosr-indigo: #6366f1;
+$eosr-navy: #0c1526;
+
+$primary: #0d9488;
+$secondary: #64748b;
+$link-color: #0f766e;
+$code-color: #0f766e;
+$code-bg: #f0f5f4;
+
+// A dark navbar in both color schemes keeps the brand consistent.
+$navbar-bg: $eosr-navy;
+$navbar-fg: #dbe4ee;
+$navbar-hl: #5eead4;
+
+$border-radius: 0.5rem;
+$table-border-color: #dbe3ec;
+
+$sidebar-fg: #334155;
+$toc-color: #64748b;
+$toc-active-border: $eosr-teal;
+
+$callout-border-width: 4px;
+
+/*-- scss:rules --*/
+
+// ---------------------------------------------------------------------------
+// Base polish
+// ---------------------------------------------------------------------------
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+h2 {
+  border-bottom: 1px solid var(--bs-border-color);
+  padding-bottom: 0.35rem;
+}
+
+.navbar {
+  border-bottom: 1px solid rgba(94, 234, 212, 0.16);
+
+  .navbar-brand {
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .navbar-logo {
+    max-height: 30px;
+  }
+}
+
+// Sidebar: teal accent on the active page.
+.sidebar-navigation .sidebar-item .sidebar-item-container a.active {
+  color: $eosr-teal;
+  font-weight: 600;
+  border-left: 2px solid $eosr-teal;
+  padding-left: 0.5rem;
+  margin-left: -0.6rem;
+}
+
+.sidebar-navigation .sidebar-section-title,
+.sidebar-title {
+  font-weight: 700;
+}
+
+// Code blocks: hairline border, no loud background.
+div.sourceCode,
+pre:not(.sourceCode) {
+  border: 1px solid var(--bs-border-color);
+  border-left: 3px solid rgba(20, 184, 166, 0.55);
+  border-radius: 0.5rem;
+}
+
+p code:not(.sourceCode),
+li code:not(.sourceCode),
+td code:not(.sourceCode),
+th code:not(.sourceCode) {
+  border-radius: 0.25rem;
+  padding: 0.1em 0.3em;
+}
+
+// Tables: the wiki is table-heavy, keep them tight and readable.
+.table {
+  font-size: 0.925em;
+
+  thead th {
+    border-bottom: 2px solid rgba(20, 184, 166, 0.45);
+    font-weight: 700;
+  }
+}
+
+// Announcement bar.
+.quarto-announcement {
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.14), rgba(99, 102, 241, 0.14));
+  font-size: 0.925em;
+}
+
+.nav-footer {
+  border-top: 1px solid var(--bs-border-color);
+  font-size: 0.875em;
+}
+
+// ---------------------------------------------------------------------------
+// Reusable components (used from .qmd pages via div/span classes)
+// ---------------------------------------------------------------------------
+
+// Gradient display text.
+.gradient-text {
+  background: linear-gradient(115deg, #{$eosr-teal}, #{$eosr-sky} 52%, #{$eosr-indigo});
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+// Landing-page hero.
+.hero {
+  text-align: center;
+  padding: 2.75rem 1rem 2.25rem 1rem;
+
+  .hero-logo img {
+    width: 132px;
+    height: 132px;
+    filter: drop-shadow(0 10px 30px rgba(56, 189, 248, 0.28));
+  }
+
+  h1 {
+    font-size: clamp(2.3rem, 6vw, 3.4rem);
+    font-weight: 800;
+    border: none;
+    margin: 1rem 0 0.25rem 0;
+  }
+
+  .hero-tagline {
+    font-size: clamp(1.05rem, 2.5vw, 1.3rem);
+    font-weight: 600;
+    color: var(--bs-secondary-color);
+    margin-bottom: 1rem;
+  }
+
+  .hero-lede {
+    max-width: 46rem;
+    margin: 0 auto 1.6rem auto;
+    font-size: 1.02rem;
+    color: var(--bs-body-color);
+  }
+}
+
+.hero-buttons {
+  display: flex;
+  gap: 0.7rem;
+  justify-content: center;
+  flex-wrap: wrap;
+
+  .btn {
+    font-weight: 600;
+    padding: 0.55rem 1.25rem;
+    border-radius: 999px;
+  }
+
+  .btn-primary {
+    background: linear-gradient(115deg, #{$eosr-teal}, #{$eosr-sky} 60%, #{$eosr-indigo});
+    border: none;
+
+    &:hover {
+      filter: brightness(1.08);
+    }
+  }
+}
+
+// Feature / navigation cards.
+.feature-card {
+  height: 100%;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.9rem;
+  padding: 1.15rem 1.25rem;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  background: var(--bs-body-bg);
+
+  h3,
+  .h3 {
+    font-size: 1.06rem;
+    font-weight: 700;
+    margin: 0 0 0.4rem 0;
+    border: none;
+  }
+
+  p {
+    font-size: 0.92rem;
+    color: var(--bs-secondary-color);
+    margin-bottom: 0;
+  }
+
+  .card-icon {
+    font-size: 1.35rem;
+    line-height: 1;
+    margin-bottom: 0.55rem;
+    display: block;
+  }
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: rgba(20, 184, 166, 0.65);
+    box-shadow: 0 8px 24px rgba(13, 148, 136, 0.12);
+  }
+}
+
+a.card-link,
+a.card-link:hover {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  height: 100%;
+}
+
+// Status badges for the roadmap.
+.status-live,
+.status-shell,
+.status-absent,
+.status-planned {
+  display: inline-block;
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.14em 0.6em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.status-live {
+  color: #0f766e;
+  background: rgba(20, 184, 166, 0.16);
+  border: 1px solid rgba(20, 184, 166, 0.45);
+}
+
+.status-shell {
+  color: #92610a;
+  background: rgba(251, 191, 36, 0.16);
+  border: 1px solid rgba(251, 191, 36, 0.5);
+}
+
+.status-absent {
+  color: #b42d43;
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.4);
+}
+
+.status-planned {
+  color: #0369a1;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+}
+
+// Full-width diagram panel that looks intentional in both color schemes
+// (the SVG itself is dark).
+.diagram-panel {
+  background: #0d1830;
+  border: 1px solid #223251;
+  border-radius: 0.9rem;
+  padding: 1rem;
+
+  img {
+    width: 100%;
+    height: auto;
+  }
+}

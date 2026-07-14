@@ -1,0 +1,178 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "EOS Reimagined"
+  description: "The FOSS alternative to Epic Online Services — a drop-in EOS SDK replacement that wires players together over the local network, with no account, no login, and no cloud."
+  site-url: https://anishgoyal1108.github.io/EOS-Reimagined/
+  repo-url: https://github.com/anishgoyal1108/EOS-Reimagined
+  repo-subdir: wiki
+  repo-branch: foundation
+  repo-actions: [edit, issue]
+  favicon: assets/logo.svg
+  image: assets/logo.svg
+  open-graph: true
+  page-navigation: true
+  back-to-top-navigation: true
+  bread-crumbs: true
+
+  announcement:
+    icon: cone-striped
+    dismissable: true
+    type: primary
+    position: below-navbar
+    content: "**Work in progress** — the multiplayer and social core is live; discovery is LAN-only today. See the [roadmap](project/roadmap.qmd) for exactly what works."
+
+  navbar:
+    logo: assets/logo.svg
+    logo-alt: "EOS Reimagined logo"
+    title: "EOS Reimagined"
+    pinned: true
+    left:
+      - text: "Guide"
+        href: guide/getting-started.qmd
+      - text: "Configuration"
+        href: guide/configuration.qmd
+      - text: "Roadmap"
+        href: project/roadmap.qmd
+      - text: "Internals"
+        href: internals/index.qmd
+    right:
+      - text: "Contributing"
+        href: project/contributing.qmd
+      - icon: github
+        href: https://github.com/anishgoyal1108/EOS-Reimagined
+        aria-label: "GitHub repository"
+
+  search:
+    location: navbar
+    type: overlay
+
+  sidebar:
+    - id: guide
+      title: "Guide"
+      style: docked
+      collapse-level: 2
+      contents:
+        - section: "Using EOS Reimagined"
+          contents:
+            - text: "Getting started"
+              href: guide/getting-started.qmd
+            - text: "Building from source"
+              href: guide/building.qmd
+            - text: "Configuration (eosr.json)"
+              href: guide/configuration.qmd
+            - text: "Identity & profiles"
+              href: guide/identity-and-profiles.qmd
+            - text: "Networking & firewalls"
+              href: guide/networking.qmd
+            - text: "Tracing & diagnostics"
+              href: guide/tracing.qmd
+            - text: "Troubleshooting & FAQ"
+              href: guide/troubleshooting.qmd
+        - section: "Project"
+          contents:
+            - text: "Roadmap & status"
+              href: project/roadmap.qmd
+            - text: "Scope & non-goals"
+              href: project/scope.qmd
+            - text: "Contributing"
+              href: project/contributing.qmd
+    - id: internals
+      title: "Internals"
+      style: docked
+      collapse-level: 2
+      contents:
+        - text: "Overview"
+          href: internals/index.qmd
+        - section: "Core runtime"
+          contents:
+            - text: "Architecture"
+              href: internals/architecture.md
+            - text: "Network protocol"
+              href: internals/protocol.md
+            - text: "ADR 0001 — Mesh identity"
+              href: internals/adr/0001-authenticated-mesh-identity.md
+            - text: "Tracing & config contract"
+              href: internals/alpha-tracing.md
+        - section: "Status ledgers"
+          contents:
+            - text: "Progress manifest"
+              href: internals/progress.md
+            - text: "Export-surface census"
+              href: internals/export-surface-census.md
+        - section: "Identity & social"
+          contents:
+            - text: "Client + Platform bootstrap"
+              href: internals/client.md
+            - text: "Auth"
+              href: internals/auth.md
+            - text: "Connect"
+              href: internals/connect.md
+            - text: "Presence"
+              href: internals/presence.md
+            - text: "Friends"
+              href: internals/friends.md
+            - text: "UserInfo"
+              href: internals/userinfo.md
+        - section: "Multiplayer"
+          contents:
+            - text: "P2P"
+              href: internals/p2p.md
+            - text: "Sessions"
+              href: internals/sessions.md
+            - text: "Lobby"
+              href: internals/lobby.md
+        - section: "Content & economy"
+          contents:
+            - text: "Ecom"
+              href: internals/ecom.md
+            - text: "Achievements, Stats, Leaderboards"
+              href: internals/achievements-stats-leaderboards.md
+            - text: "Storage"
+              href: internals/storage.md
+            - text: "Metrics"
+              href: internals/metrics.md
+        - section: "Other services"
+          contents:
+            - text: "Anti-Cheat"
+              href: internals/anticheat.md
+            - text: "Custom Invites"
+              href: internals/custominvites.md
+            - text: "RTC (voice/data)"
+              href: internals/rtc.md
+            - text: "IntegratedPlatform, UI, Overlay"
+              href: internals/integratedplatform-ui-overlay.md
+            - text: "Misc services"
+              href: internals/misc-services.md
+        - section: "Future work"
+          contents:
+            - text: "External social companion"
+              href: internals/companion-client.md
+
+  page-footer:
+    left: |
+      EOS Reimagined is free software under the [GPL-3.0 license](https://github.com/anishgoyal1108/EOS-Reimagined/blob/main/LICENSE).
+    center: |
+      Not affiliated with or endorsed by Epic Games.
+    right:
+      - icon: github
+        href: https://github.com/anishgoyal1108/EOS-Reimagined
+        aria-label: "GitHub repository"
+
+format:
+  html:
+    theme:
+      light: [cosmo, styles/theme.scss]
+      dark: [darkly, styles/theme.scss, styles/theme-dark.scss]
+    toc: true
+    toc-depth: 3
+    toc-expand: 1
+    code-copy: true
+    code-overflow: scroll
+    smooth-scroll: true
+    link-external-icon: false
+    link-external-newwindow: true
+    fig-responsive: true
+    lang: en

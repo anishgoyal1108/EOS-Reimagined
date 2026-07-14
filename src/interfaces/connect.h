@@ -28,7 +28,7 @@ struct net_envelope;
 // ProductUserId from the configured user and completes asynchronously; the peer roster is built
 // from Connect messages arriving over the network. Every other networked interface depends on
 // the connect/disconnect fan-out this maintains.
-// Spec: EOSSDK_Connect (docs/connect.md), the roster backbone (docs/architecture.md)
+// Spec: EOSSDK_Connect (wiki/internals/connect.md), the roster backbone (wiki/internals/architecture.md)
 class sdk_connect : public i_run_callback, public i_run_network {
 public:
     sdk_connect(sdk_settings& settings, callback_manager& callbacks, message_router& network);

@@ -33,7 +33,7 @@ struct net_envelope;
 // rejecting invitations -- has nothing to manage: a meshed peer is already a friend, so an invite
 // is a no-op that succeeds. And there is no block list: nothing here can block a peer, so the
 // blocked-users list is always empty and its notification never fires.
-// Spec: EOSSDK_Friends (docs/friends.md)
+// Spec: EOSSDK_Friends (wiki/internals/friends.md)
 class sdk_friends : public i_run_callback, public i_run_network {
 public:
     sdk_friends(sdk_settings& settings, callback_manager& callbacks, message_router& network);

@@ -622,7 +622,7 @@ resolved_config resolve_config(const config_source& source, const config_default
         resolve_flag(source, "EOSR_UNLOCK_DLCS", "unlock_dlcs", diagnostics, config.unlock_dlcs);
 
     // Options we accept so an ecosystem config loads, but cannot honour. Identity is derived from the
-    // profile key and recomputed by every peer from the key the handshake proves (docs/adr/0001), so an
+    // profile key and recomputed by every peer from the key the handshake proves (wiki/internals/adr/0001), so an
     // id we merely claimed would be rejected by the peers it is meant to reach.
     reject_unsupported(source, "epicid", "identity is derived from the profile key", diagnostics);
     reject_unsupported(source, "productuserid", "identity is derived from the profile key",

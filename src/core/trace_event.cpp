@@ -11,7 +11,7 @@ namespace eosr {
 namespace {
 
 // The writer is capped below the 64 KiB sink minimum, so a record that would overrun fails to complete
-// and is dropped rather than persisted. Spec: docs/alpha-tracing.md §4, §7.
+// and is dropped rather than persisted. Spec: wiki/internals/alpha-tracing.md §4, §7.
 const std::size_t max_record_bytes = 60000;
 const std::size_t max_body_fields = 32;
 const std::size_t max_label_bytes = 64;

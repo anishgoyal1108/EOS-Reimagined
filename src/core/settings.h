@@ -18,8 +18,8 @@ namespace eosr {
 //
 // The username is a display name and nothing more. It used to seed the identity, which meant anyone
 // who knew a name could answer to that player's id; the key replaced it.
-// Spec: Settings (docs/architecture.md), EOSSDK_Platform option members (docs/client.md),
-// self-certifying identity (docs/adr/0001)
+// Spec: Settings (wiki/internals/architecture.md), EOSSDK_Platform option members (wiki/internals/client.md),
+// self-certifying identity (wiki/internals/adr/0001)
 class sdk_settings {
 public:
     sdk_settings();

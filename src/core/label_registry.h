@@ -27,7 +27,7 @@ enum class label_kind {
 // The registry is bounded: an all-day session that browses thousands of lobbies cannot grow it without
 // end, so at the cap the least-recently-seen entry of that kind is evicted. The counter never rewinds,
 // so an evicted token seen again simply gets a fresh label -- two live objects can never share one.
-// Spec: docs/alpha-tracing.md §4 (labels), §6 (bounded registries).
+// Spec: wiki/internals/alpha-tracing.md §4 (labels), §6 (bounded registries).
 class label_registry {
 public:
     explicit label_registry(std::size_t max_per_kind = 4096);

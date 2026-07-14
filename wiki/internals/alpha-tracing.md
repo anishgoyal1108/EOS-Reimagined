@@ -137,12 +137,12 @@ see each other.
 
 **`epicid` and `productuserid` are accepted and reported, never applied.** Identity here is a keypair,
 not a declaration: every peer *recomputes* a `ProductUserId`/`EpicAccountId` from the static key the
-Noise handshake proved, and drops a connection whose advertised id does not match (`docs/adr/0001` §4,
+Noise handshake proved, and drops a connection whose advertised id does not match (`adr/0001` §4,
 §5). An id we merely claimed would therefore be rejected by exactly the peers it was meant to reach. The
 capability those keys exist to give — *a stable identity you choose and can carry* — is provided
 instead by the profile key itself: it is 64 hex characters, it is the export format, and copying it to
 another machine makes you the same player there. Per-instance identity for a couch-co-op launcher is
-`EOSR_DATA_DIR` plus the exclusive profile slots (`docs/adr/0001` §9), which is what the launcher
+`EOSR_DATA_DIR` plus the exclusive profile slots (`adr/0001` §9), which is what the launcher
 integration is expected to use.
 
 ### Config diagnostics honour `off`

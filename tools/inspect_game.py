@@ -410,6 +410,14 @@ def main():
 
     ref_symbols = set(reference.get("symbols", []))
 
+    # The managed and string scans over-approximate: a #Strings heap holds every name the metadata
+    # mentions, and a raw image holds every EOS_* string in it, so a *type* name like "EOS_Ecom" shows
+    # up beside real entry points. A P/Invoke entry point must be an actual export of the SDK the game
+    # binds against, so when we are given that SDK we intersect against it and the noise drops out.
+    if ref_symbols:
+        pinvoke = {s: m for s, m in pinvoke.items() if s in ref_symbols}
+        dynamic = {s: m for s, m in dynamic.items() if s in ref_symbols}
+
     def missing(mapping):
         return {s: mods for s, mods in sorted(mapping.items()) if s not in our_exports}
 

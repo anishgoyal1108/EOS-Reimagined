@@ -14,7 +14,7 @@ namespace eosr {
 // other entry point checks. It creates no interfaces; those belong to the platform. The flat
 // layer owns the single instance, so the class itself stays free of singleton machinery and
 // can be constructed in isolation by tests.
-// Spec: EOSSDK_Client global state (docs/client.md), EOS_Initialize (docs/architecture.md)
+// Spec: EOSSDK_Client global state (wiki/internals/client.md), EOS_Initialize (wiki/internals/architecture.md)
 class sdk_client {
 public:
     sdk_client();

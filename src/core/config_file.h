@@ -15,7 +15,7 @@ namespace eosr {
 // it). The reader classifies each top-level value into one of these, and the typed reads answer
 // missing / ok / wrong_type from it -- exactly what config_source's file_* methods expect, so a real
 // source is a thin wrapper of getenv plus one of these.
-// Spec: docs/alpha-tracing.md §7.
+// Spec: wiki/internals/alpha-tracing.md §7.
 class config_file {
 public:
     lookup get_string(const std::string& key, std::string& out) const;
@@ -47,7 +47,7 @@ private:
 // -- returns false with `error` set and `out` left empty, so the caller treats the file as absent.
 // A leading UTF-8 BOM is skipped; the top-level value must be an object. Bounds: input <= 64 KiB, any
 // string or number token <= 4 KiB, <= 64 array elements, nesting depth <= 8.
-// Spec: docs/alpha-tracing.md §7.
+// Spec: wiki/internals/alpha-tracing.md §7.
 bool parse_config_file(const std::string& bytes, config_file& out, std::string& error);
 
 } // namespace eosr

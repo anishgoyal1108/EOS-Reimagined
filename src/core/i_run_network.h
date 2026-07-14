@@ -6,7 +6,7 @@ namespace eosr {
 struct net_envelope;
 
 // Implemented by every interface that listens for inbound peer messages.
-// Spec: IRunNetwork / per-interface OnNetworkMessage (docs/architecture.md §4)
+// Spec: IRunNetwork / per-interface OnNetworkMessage (wiki/internals/architecture.md §4)
 class i_run_network {
 public:
     virtual ~i_run_network() = default;

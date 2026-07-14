@@ -23,7 +23,7 @@ class frame_result;
 // completes asynchronously; the interface also mints the auth and id tokens a game copies out.
 // The emulator does not authenticate against a backend, so login always resolves to the local
 // account and the tokens are self-issued.
-// Spec: EOSSDK_Auth (docs/auth.md)
+// Spec: EOSSDK_Auth (wiki/internals/auth.md)
 class sdk_auth : public i_run_callback {
 public:
     sdk_auth(sdk_settings& settings, callback_manager& callbacks);
