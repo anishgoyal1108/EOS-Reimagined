@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <cstdlib>
+#include <ctime>
 #include <limits>
 
 #include <fcntl.h>
@@ -174,6 +175,28 @@ bool create_new_file(const std::string& path) {
 bool directory_exists(const std::string& path) {
     struct stat info;
     return stat(path.c_str(), &info) == 0 && S_ISDIR(info.st_mode);
+}
+
+u64 process_id() {
+    return static_cast<u64>(::getpid());
+}
+
+bool utc_now(utc_time& out) {
+    const time_t now = ::time(0);
+    if (now == static_cast<time_t>(-1)) {
+        return false;
+    }
+    struct tm broken;
+    if (gmtime_r(&now, &broken) == 0) {
+        return false;
+    }
+    out.year = broken.tm_year + 1900;
+    out.month = broken.tm_mon + 1;
+    out.day = broken.tm_mday;
+    out.hour = broken.tm_hour;
+    out.minute = broken.tm_min;
+    out.second = broken.tm_sec;
+    return true;
 }
 
 bool rename_file(const std::string& from, const std::string& to) {

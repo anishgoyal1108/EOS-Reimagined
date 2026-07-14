@@ -176,6 +176,22 @@ bool directory_exists(const std::string& path) {
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
+u64 process_id() {
+    return static_cast<u64>(GetCurrentProcessId());
+}
+
+bool utc_now(utc_time& out) {
+    SYSTEMTIME st;
+    GetSystemTime(&st); // already UTC, no timezone conversion needed
+    out.year = st.wYear;
+    out.month = st.wMonth;
+    out.day = st.wDay;
+    out.hour = st.wHour;
+    out.minute = st.wMinute;
+    out.second = st.wSecond;
+    return true;
+}
+
 bool rename_file(const std::string& from, const std::string& to) {
     return MoveFileExA(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
 }

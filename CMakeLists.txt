@@ -30,6 +30,8 @@ add_library(eosr_core STATIC
     src/common/json_writer.cpp
     src/core/trace_event.cpp
     src/core/trace_sink.cpp
+    src/core/peer_fp.cpp
+    src/core/tracer.cpp
     src/core/config.cpp
     src/core/config_file.cpp
     src/core/system_config_source.cpp

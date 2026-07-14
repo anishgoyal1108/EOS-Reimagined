@@ -42,6 +42,25 @@ bool create_new_file(const std::string& path);
 // directory is provided and must already exist rather than be created by the library.
 bool directory_exists(const std::string& path);
 
+// The OS process id, for the trace envelope and the run id. There is no portable C++ way to get it,
+// so it lives behind the shim (getpid vs GetCurrentProcessId).
+u64 process_id();
+
+// A broken-down UTC time, enough to format both the compact run-id stamp and the ISO-8601 timestamp
+// in runtime.json without a locale or timezone database.
+struct utc_time {
+    int year;    // e.g. 2026
+    int month;   // 1-12
+    int day;     // 1-31
+    int hour;    // 0-23
+    int minute;  // 0-59
+    int second;  // 0-60 (a leap second is possible)
+};
+
+// The current wall-clock time in UTC. False only if the clock is unavailable, in which case `out` is
+// untouched. Behind the shim because C++11 has no portable UTC break-down (gmtime_r vs GetSystemTime).
+bool utc_now(utc_time& out);
+
 // Rename `from` to `to`, replacing an existing `to`. Returns false on failure. Used for log rotation.
 bool rename_file(const std::string& from, const std::string& to);
 

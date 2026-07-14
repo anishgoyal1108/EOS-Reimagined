@@ -5,6 +5,7 @@
 
 #include "core/client.h"
 #include "core/platform.h"
+#include "core/tracer.h"
 
 namespace eosr {
 
@@ -29,6 +30,11 @@ std::vector<sdk_platform*>& retained_platforms() {
 sdk_client& global_client() {
     static sdk_client client;
     return client;
+}
+
+tracer& global_tracer() {
+    static tracer the_tracer;
+    return the_tracer;
 }
 
 sdk_platform* platform_create() {

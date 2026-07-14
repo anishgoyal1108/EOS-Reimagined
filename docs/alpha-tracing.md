@@ -124,6 +124,12 @@ case where `off` is itself the fallback from an unparseable level — **no run d
 created**, and the diagnostic goes to the logger or nowhere. The sink can never be asked to record that
 it could not be opened.
 
+> **Implementation status (lifecycle slice).** Config diagnostics are currently routed to the logger
+> in every case, not yet to a `meta`/`config` trace record. The typed record schema (§4) has no field
+> for *which* config field a diagnostic is about, nor for its *action* (ignored/clamped/truncated), so a
+> faithful `meta`/`config` record awaits two new schema field ids. Until then the diagnostic is a
+> best-effort logger line so nothing is dropped and no lossy record is written.
+
 ---
 
 ## 3. Owned files
@@ -454,4 +460,11 @@ Designed against this contract but built after it:
 5. Instrument one vertical slice first — `EOS_Initialize` → `EOS_Platform_Create` → one asynchronous
    Connect login and its callback — and validate correlation and output there before instrumenting the
    full export surface.
+   - **Done so far:** the `tracer` (`src/core/tracer.{h,cpp}`) is wired into `EOS_Initialize`
+     (resolve config, open the run under the two ownership modes, `runtime.json`, `run_start`),
+     `EOS_Platform_Create` (`meta`/`profile` with the local `peer_fp`), `EOS_Platform_Tick` (flush), and
+     `EOS_Shutdown` (`shutdown` + close). The end-to-end run produces the run directory and records
+     through the real `.so`/`.dll`.
+   - **Still to do:** the async Connect `call`/`return`/`callback` records with a shared `corr` and the
+     handle/id label registry — the per-call instrumentation across the flat trampolines.
 6. The two-process C-ABI probe as the first full consumer.

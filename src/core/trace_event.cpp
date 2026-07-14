@@ -123,8 +123,11 @@ bool field_info(field_id id, const char*& name, trace_value::kind& kind) {
 bool field_allowed(record_kind body, field_id id) {
     switch (body) {
         case rk_meta:
-            return id == field_id::source || id == field_id::reason || id == field_id::level ||
-                   id == field_id::dropped_files || id == field_id::dropped_bytes;
+            // peer_fp rides the meta/profile record (the local pseudonymous fingerprint once the
+            // profile is loaded); the rest carry the config and rotate records.
+            return id == field_id::peer_fp || id == field_id::source || id == field_id::reason ||
+                   id == field_id::level || id == field_id::dropped_files ||
+                   id == field_id::dropped_bytes;
         case rk_net:
             return id == field_id::peer || id == field_id::peer_fp || id == field_id::bytes ||
                    id == field_id::channel || id == field_id::reliability ||

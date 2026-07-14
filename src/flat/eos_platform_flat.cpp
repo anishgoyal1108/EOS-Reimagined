@@ -8,6 +8,7 @@
 #include "core/platform.h"
 #include "core/client.h"
 #include "core/runtime.h"
+#include "core/tracer.h"
 
 namespace {
 
@@ -50,6 +51,9 @@ EOS_DECLARE_FUNC(EOS_HPlatform) EOS_Platform_Create(const EOS_Platform_Options* 
         eosr::platform_destroy();
         return 0;
     }
+    // The profile now exists (create loaded the identity), so the run stream can carry the local
+    // pseudonymous fingerprint. A no-op unless tracing is enabled.
+    eosr::global_tracer().on_profile(platform->settings().product_user_id());
     return reinterpret_cast<EOS_HPlatform>(platform);
 }
 
@@ -67,6 +71,8 @@ EOS_DECLARE_FUNC(void) EOS_Platform_Tick(EOS_HPlatform Handle) {
     eosr::sdk_platform* platform = checked_platform(Handle);
     if (platform != 0) {
         platform->tick();
+        // Persist whatever the tick's callbacks recorded; the sink buffers between these boundaries.
+        eosr::global_tracer().flush();
     }
 }
 
