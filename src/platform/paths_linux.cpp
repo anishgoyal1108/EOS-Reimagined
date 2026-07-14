@@ -162,6 +162,20 @@ bool append_file(const std::string& path, const std::string& data) {
     return ::close(file) == 0;
 }
 
+bool create_new_file(const std::string& path) {
+    // O_EXCL makes the create atomic: if the file already exists the open fails and we touch nothing.
+    const int file = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, owner_only_file);
+    if (file < 0) {
+        return false;
+    }
+    return ::close(file) == 0;
+}
+
+bool directory_exists(const std::string& path) {
+    struct stat info;
+    return stat(path.c_str(), &info) == 0 && S_ISDIR(info.st_mode);
+}
+
 bool rename_file(const std::string& from, const std::string& to) {
     return ::rename(from.c_str(), to.c_str()) == 0;
 }

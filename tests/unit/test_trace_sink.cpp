@@ -1,7 +1,10 @@
 #include "doctest.h"
 
 #include <string>
+#include <thread>
+#include <vector>
 
+#include "common/log.h"
 #include "core/config.h"
 #include "core/trace_event.h"
 #include "core/trace_sink.h"
@@ -10,6 +13,25 @@
 using namespace eosr;
 
 namespace {
+
+std::vector<std::string> sink_logs;
+
+void EOS_CALL capture_sink_log(const EOS_LogMessage* message) {
+    sink_logs.push_back(message->Message);
+}
+
+void begin_log_capture() {
+    sink_logs.clear();
+    logger::instance().set_level(EOS_ELogCategory::EOS_LC_ALL_CATEGORIES,
+                                 EOS_ELogLevel::EOS_LOG_Verbose);
+    logger::instance().set_callback(capture_sink_log);
+}
+
+void end_log_capture() {
+    logger::instance().set_callback(0);
+    logger::instance().set_level(EOS_ELogCategory::EOS_LC_ALL_CATEGORIES,
+                                 EOS_ELogLevel::EOS_LOG_Warning);
+}
 
 // A deterministic envelope source, so the sink's own records are reproducible.
 struct fake_meta : trace_meta_source {
@@ -52,6 +74,14 @@ std::size_t count(const std::string& text, const std::string& needle) {
         pos += needle.size();
     }
     return n;
+}
+
+void write_thread_records(trace_sink* sink, int worker) {
+    for (int i = 0; i < 25; i++) {
+        const std::string line = "{\"worker\":" + std::to_string(worker) +
+                                 ",\"record\":" + std::to_string(i) + "}";
+        sink->write(trace_level::full, line);
+    }
 }
 
 struct sink_fixture {
@@ -119,6 +149,26 @@ TEST_CASE("records above the configured level are dropped") {
     sink.close();
 }
 
+TEST_CASE("concurrent writers preserve every complete line") {
+    sink_fixture fx("concurrent");
+    trace_sink sink;
+    REQUIRE(sink.open(fx.dir, trace_level::full, 65536, 8, &fx.meta));
+
+    std::vector<std::thread> workers;
+    for (int i = 0; i < 4; i++) {
+        workers.push_back(std::thread(write_thread_records, &sink, i));
+    }
+    for (std::size_t i = 0; i < workers.size(); i++) {
+        workers[i].join();
+    }
+    sink.flush();
+
+    const std::string content = slurp(fx.file("trace.jsonl"));
+    CHECK(count(content, "\"worker\"") == 100);
+    CHECK(count(content, "\n") == 101); // run_start plus 100 complete records
+    sink.close();
+}
+
 TEST_CASE("an empty line is skipped") {
     sink_fixture fx("empty");
     trace_sink sink;
@@ -142,6 +192,48 @@ TEST_CASE("the file rotates when a line would overflow the cap") {
     const std::string current = slurp(fx.file("trace.jsonl"));
     CHECK(current.find("\"event\":\"rotate\"") != std::string::npos); // fresh file starts with rotate
     sink.close();
+}
+
+TEST_CASE("rotation and shutdown never leave any file above the byte cap") {
+    sink_fixture fx("hard-cap");
+    const u64 cap = 200;
+    trace_sink sink;
+    REQUIRE(sink.open(fx.dir, trace_level::full, cap, 3, &fx.meta));
+    for (int i = 0; i < 8; i++) {
+        sink.write(trace_level::full, big_line(i));
+    }
+    sink.close();
+
+    const char* const names[] = {
+        "trace.jsonl", "trace.1.jsonl", "trace.2.jsonl", "trace.3.jsonl"
+    };
+    for (std::size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (file_exists(fx.file(names[i]))) {
+            CHECK(slurp(fx.file(names[i])).size() <= cap);
+        }
+    }
+}
+
+TEST_CASE("a sink exclusively owns a new trace file") {
+    sink_fixture fx("exclusive-file");
+    const std::string sentinel = "pre-existing-owner\n";
+    REQUIRE(platform::write_private_file(fx.file("trace.jsonl"), sentinel));
+
+    trace_sink sink;
+    CHECK_FALSE(sink.open(fx.dir, trace_level::full, 65536, 8, &fx.meta));
+    CHECK_FALSE(sink.active());
+    sink.flush();
+    CHECK(slurp(fx.file("trace.jsonl")) == sentinel);
+}
+
+TEST_CASE("an active sink always has a source for its lifecycle records") {
+    sink_fixture fx("missing-meta");
+    trace_sink sink;
+    CHECK_FALSE(sink.open(fx.dir, trace_level::full, 65536, 8, 0));
+    CHECK_FALSE(sink.active());
+    sink.write(trace_level::lifecycle, "{\"line\":1}");
+    sink.flush();
+    CHECK_FALSE(file_exists(fx.file("trace.jsonl")));
 }
 
 TEST_CASE("rotated files are bounded and the drop is recorded") {
@@ -219,6 +311,19 @@ TEST_CASE("a run directory that cannot be created leaves the sink inactive") {
     sink.flush();
 }
 
+TEST_CASE("an open failure produces one best-effort diagnostic") {
+    sink_fixture fx("open-diagnostic");
+    REQUIRE(platform::write_private_file(fx.file("blocker"), "x"));
+    begin_log_capture();
+    trace_sink sink;
+    const bool opened = sink.open(fx.file("blocker/run"), trace_level::full, 65536, 8, &fx.meta);
+    end_log_capture();
+
+    CHECK_FALSE(opened);
+    REQUIRE(sink_logs.size() == 1);
+    CHECK(sink_logs[0].find("trace") != std::string::npos);
+}
+
 TEST_CASE("a write failure disables the sink once, without crashing") {
     sink_fixture fx("write-failure");
     trace_sink sink;
@@ -232,4 +337,42 @@ TEST_CASE("a write failure disables the sink once, without crashing") {
     sink.write(trace_level::full, "{\"more\":1}"); // still a safe no-op
     sink.close();
     platform::rename_file(fx.dir + "-gone", fx.dir); // restore for a re-run
+}
+
+TEST_CASE("a rename failure during rotation disables the sink") {
+    sink_fixture fx("rename-failure");
+    // Occupy trace.1.jsonl with a non-empty directory so the rotation rename onto it must fail on both
+    // platforms. This exercises the multi-step rename path, which mutates the filesystem before it
+    // updates the sink's bookkeeping.
+    REQUIRE(platform::make_directories(fx.file("trace.1.jsonl")));
+    REQUIRE(platform::write_private_file(fx.file("trace.1.jsonl/keep"), "x"));
+
+    trace_sink sink;
+    REQUIRE(sink.open(fx.dir, trace_level::full, 200, 8, &fx.meta));
+    sink.write(trace_level::full, big_line(1));
+    sink.write(trace_level::full, big_line(2)); // forces the rotation whose rename cannot succeed
+    sink.flush();
+    CHECK_FALSE(sink.active()); // disabled cleanly, no crash
+    sink.write(trace_level::full, big_line(3)); // a safe no-op afterwards
+    sink.close();
+}
+
+TEST_CASE("runner mode uses an existing directory and refuses a missing one") {
+    sink_fixture fx("runner");
+    // must_exist against the directory the runner already created: opens normally.
+    {
+        trace_sink sink;
+        REQUIRE(sink.open(fx.dir, trace_level::full, 65536, 8, &fx.meta,
+                          trace_sink::dir_mode::must_exist));
+        CHECK(sink.active());
+        sink.close();
+    }
+    // must_exist against a missing directory: refused, and the library must not fabricate it.
+    const std::string missing = fx.file("no-such-run");
+    trace_sink sink;
+    CHECK_FALSE(sink.open(missing, trace_level::full, 65536, 8, &fx.meta,
+                          trace_sink::dir_mode::must_exist));
+    CHECK_FALSE(sink.active());
+    CHECK_FALSE(platform::directory_exists(missing));
+    CHECK_FALSE(file_exists(missing + "/trace.jsonl"));
 }

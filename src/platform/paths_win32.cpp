@@ -159,6 +159,23 @@ bool append_file(const std::string& path, const std::string& data) {
     return true;
 }
 
+bool create_new_file(const std::string& path) {
+    // CREATE_NEW fails if the file already exists, so the ownership claim is atomic and never clobbers
+    // or appends to a stale run stream.
+    const HANDLE file = CreateFileA(path.c_str(), GENERIC_WRITE, 0, 0, CREATE_NEW,
+                                    FILE_ATTRIBUTE_NORMAL, 0);
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    CloseHandle(file);
+    return true;
+}
+
+bool directory_exists(const std::string& path) {
+    const DWORD attributes = GetFileAttributesA(path.c_str());
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
 bool rename_file(const std::string& from, const std::string& to) {
     return MoveFileExA(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
 }

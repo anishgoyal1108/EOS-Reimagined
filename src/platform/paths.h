@@ -33,6 +33,15 @@ bool path_is_absolute(const std::string& path);
 // failure. Used by the trace sink to flush buffered lines.
 bool append_file(const std::string& path, const std::string& data);
 
+// Create `path` as a new, empty file, failing if it already exists. This is the atomic ownership
+// claim the trace sink makes on its trace.jsonl: an existing file is left untouched and the call
+// returns false, so a stale or colliding run stream is never appended to.
+bool create_new_file(const std::string& path);
+
+// Whether `path` exists and is a directory. Used by the trace sink in runner mode, where the run
+// directory is provided and must already exist rather than be created by the library.
+bool directory_exists(const std::string& path);
+
 // Rename `from` to `to`, replacing an existing `to`. Returns false on failure. Used for log rotation.
 bool rename_file(const std::string& from, const std::string& to);
 

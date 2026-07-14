@@ -19,9 +19,19 @@ std::string trace_sink::numbered_path(u32 index) const {
     return run_dir_ + "/trace." + std::to_string(index) + ".jsonl";
 }
 
-bool trace_sink::open(const std::string& run_dir, trace_level level, u64 max_bytes,
-                      u32 max_rotated_files, trace_meta_source* meta) {
-    std::lock_guard<std::mutex> lock(mutex_);
+void trace_sink::deliver_pending() {
+    std::string message;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        message.swap(pending_diagnostic_);
+    }
+    if (!message.empty()) {
+        log_error(message);
+    }
+}
+
+bool trace_sink::open_locked(const std::string& run_dir, trace_level level, u64 max_bytes,
+                             u32 max_rotated_files, trace_meta_source* meta, dir_mode mode) {
     run_dir_ = run_dir;
     level_ = level;
     max_bytes_ = max_bytes;
@@ -35,14 +45,42 @@ bool trace_sink::open(const std::string& run_dir, trace_level level, u64 max_byt
     closed_ = false;
 
     if (level == trace_level::off) {
-        return false; // off creates nothing
+        return false; // off is a valid disabled state, not a failure: create nothing, say nothing
     }
-    if (!platform::make_directories(run_dir)) {
-        return false; // cannot create the run directory: stay inactive rather than fail the game
+    if (meta == 0) {
+        // Every run stream carries run_start / rotate / shutdown; without a source it could not.
+        pending_diagnostic_ = "trace sink not opened: no metadata source for the run stream";
+        return false;
+    }
+    if (mode == dir_mode::create) {
+        if (!platform::make_directories(run_dir)) {
+            pending_diagnostic_ = "trace sink not opened: could not create the run directory";
+            return false;
+        }
+    } else if (!platform::directory_exists(run_dir)) {
+        // Runner mode: an explicit run directory must already exist; we do not fabricate a missing one.
+        pending_diagnostic_ = "trace sink not opened: the run directory does not exist";
+        return false;
+    }
+    if (!platform::create_new_file(run_dir + "/trace.jsonl")) {
+        // The file already exists (a colliding or stale run) or could not be created. Own it or nothing.
+        pending_diagnostic_ = "trace sink not opened: trace.jsonl already exists or is not writable";
+        return false;
     }
     active_ = true;
     emit_meta_locked("run_start", std::vector<trace_field>());
-    return active_;
+    return true;
+}
+
+bool trace_sink::open(const std::string& run_dir, trace_level level, u64 max_bytes,
+                      u32 max_rotated_files, trace_meta_source* meta, dir_mode mode) {
+    bool opened = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        opened = open_locked(run_dir, level, max_bytes, max_rotated_files, meta, mode);
+    }
+    deliver_pending(); // any startup diagnostic is delivered with the lock released
+    return opened;
 }
 
 bool trace_sink::active() const {
@@ -50,11 +88,12 @@ bool trace_sink::active() const {
     return active_ && !disabled_ && !closed_;
 }
 
-void trace_sink::disable_locked() {
+void trace_sink::disable_locked(const char* reason) {
     disabled_ = true;
     buffer_.clear();
-    // One best-effort diagnostic, then silence -- a sink failure must never generate more sink work.
-    log_error("trace sink disabled after an I/O failure");
+    // Queue one best-effort diagnostic; the caller delivers it after releasing the lock. A sink failure
+    // must never do more sink work, and must never call the logger while holding this mutex.
+    pending_diagnostic_ = reason;
 }
 
 void trace_sink::flush_locked() {
@@ -62,7 +101,7 @@ void trace_sink::flush_locked() {
         return;
     }
     if (!platform::append_file(run_dir_ + "/trace.jsonl", buffer_)) {
-        disable_locked();
+        disable_locked("trace sink disabled after a write failure");
         return;
     }
     buffer_.clear();
@@ -76,6 +115,11 @@ void trace_sink::write_line_locked(const std::string& line) {
     if (current_bytes_ + add > max_bytes_) {
         rotate_locked();
         if (disabled_) {
+            return;
+        }
+        // The fresh file already holds the rotate record. If the line still would not fit beside it, the
+        // cap is too small to hold both; skip the line rather than let the file exceed the cap.
+        if (current_bytes_ + add > max_bytes_) {
             return;
         }
     }
@@ -108,7 +152,7 @@ void trace_sink::rotate_locked() {
         dropped_files = 1;
         dropped_bytes = current_bytes_;
         if (!platform::remove_file(base)) {
-            disable_locked();
+            disable_locked("trace sink disabled after a remove failure during rotation");
             return;
         }
     } else {
@@ -117,7 +161,7 @@ void trace_sink::rotate_locked() {
             dropped_files = 1;
             dropped_bytes = rotated_sizes_.back();
             if (!platform::remove_file(numbered_path(static_cast<u32>(rotated_sizes_.size())))) {
-                disable_locked();
+                disable_locked("trace sink disabled after a remove failure during rotation");
                 return;
             }
             rotated_sizes_.pop_back();
@@ -125,12 +169,12 @@ void trace_sink::rotate_locked() {
         // Shift trace.k -> trace.k+1 from the highest number down, so no rename clobbers another.
         for (u32 k = static_cast<u32>(rotated_sizes_.size()); k >= 1; k--) {
             if (!platform::rename_file(numbered_path(k), numbered_path(k + 1))) {
-                disable_locked();
+                disable_locked("trace sink disabled after a rename failure during rotation");
                 return;
             }
         }
         if (!platform::rename_file(base, numbered_path(1))) {
-            disable_locked();
+            disable_locked("trace sink disabled after a rename failure during rotation");
             return;
         }
         rotated_sizes_.insert(rotated_sizes_.begin(), current_bytes_);
@@ -138,8 +182,8 @@ void trace_sink::rotate_locked() {
 
     current_bytes_ = 0;
     buffer_.clear();
-    // The rotate record heads the fresh file. current_bytes_ is 0 and the record is small, so this
-    // cannot itself re-trigger rotation.
+    // The rotate record heads the fresh file. current_bytes_ is 0, so write_line_locked cannot recurse
+    // into another rotation for any cap that can hold the record at all.
     std::vector<trace_field> fields;
     fields.push_back(make_field(field_id::dropped_files, tv_uint(dropped_files)));
     fields.push_back(make_field(field_id::dropped_bytes, tv_uint(dropped_bytes)));
@@ -147,42 +191,51 @@ void trace_sink::rotate_locked() {
 }
 
 void trace_sink::write(trace_level record_level, const std::string& line) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!active_ || disabled_ || closed_) {
-        return;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!active_ || disabled_ || closed_) {
+            return;
+        }
+        if (static_cast<int>(record_level) > static_cast<int>(level_)) {
+            return; // above the configured verbosity
+        }
+        if (line.empty()) {
+            return; // a serializer that refused a record hands back the empty string
+        }
+        write_line_locked(line);
+        if (record_level == trace_level::errors && !disabled_) {
+            flush_locked(); // errors are persisted at once
+        }
     }
-    if (static_cast<int>(record_level) > static_cast<int>(level_)) {
-        return; // above the configured verbosity
-    }
-    if (line.empty()) {
-        return; // a serializer that refused a record hands back the empty string
-    }
-    write_line_locked(line);
-    if (record_level == trace_level::errors && !disabled_) {
-        flush_locked(); // errors are persisted at once
-    }
+    deliver_pending();
 }
 
 void trace_sink::flush() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!active_ || disabled_ || closed_) {
-        return;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!active_ || disabled_ || closed_) {
+            return;
+        }
+        flush_locked();
     }
-    flush_locked();
+    deliver_pending();
 }
 
 void trace_sink::close() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (closed_ || !active_) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (closed_ || !active_) {
+            closed_ = true;
+            return;
+        }
+        if (!disabled_) {
+            emit_meta_locked("shutdown", std::vector<trace_field>());
+            flush_locked();
+        }
         closed_ = true;
-        return;
+        active_ = false;
     }
-    if (!disabled_) {
-        emit_meta_locked("shutdown", std::vector<trace_field>());
-        flush_locked();
-    }
-    closed_ = true;
-    active_ = false;
+    deliver_pending();
 }
 
 } // namespace eosr

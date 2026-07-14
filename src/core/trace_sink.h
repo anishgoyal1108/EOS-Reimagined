@@ -30,17 +30,24 @@ public:
 // Spec: docs/alpha-tracing.md §4 (rotation, flushing), §6 (failure and lifecycle).
 class trace_sink {
 public:
+    // How the run directory is owned. In manual mode the library creates it and its parents; in runner
+    // mode an external launcher has already created it (via an explicit EOSR_RUN_DIR) and the library
+    // must not create a missing one -- a missing directory is an error, not something to fabricate.
+    enum class dir_mode { create, must_exist };
+
     trace_sink();
     ~trace_sink();
 
     trace_sink(const trace_sink&) = delete;
     trace_sink& operator=(const trace_sink&) = delete;
 
-    // Open for a run. `level` off creates nothing and leaves the sink inactive. `run_dir` must already
-    // exist (the runner mode) or be creatable (the manual mode). `meta` -- which may be null -- supplies
-    // envelopes for the sink's own run_start / rotate / shutdown records. Returns active().
+    // Open for a run. `level` off creates nothing and leaves the sink inactive. `meta` must be non-null
+    // for an enabled sink -- it supplies the envelopes for the sink's own run_start / rotate / shutdown
+    // records, which every run stream carries. The sink exclusively creates trace.jsonl: an existing
+    // file is an error, so a stale or colliding stream is never appended to. On any startup failure it
+    // stays inactive and delivers exactly one best-effort diagnostic. Returns active().
     bool open(const std::string& run_dir, trace_level level, u64 max_bytes, u32 max_rotated_files,
-              trace_meta_source* meta);
+              trace_meta_source* meta, dir_mode mode = dir_mode::create);
 
     // Write one serialized record line (no trailing newline) at its verbosity level. Dropped if the
     // sink is inactive or disabled, the record's level is above the configured threshold, or the line
@@ -56,11 +63,16 @@ public:
     bool active() const;
 
 private:
+    bool open_locked(const std::string& run_dir, trace_level level, u64 max_bytes,
+                     u32 max_rotated_files, trace_meta_source* meta, dir_mode mode);
     void write_line_locked(const std::string& line);
     void flush_locked();
     void rotate_locked();
     void emit_meta_locked(const std::string& event, const std::vector<trace_field>& fields);
-    void disable_locked();
+    void disable_locked(const char* reason);
+    // Hand any queued diagnostic to the logger. Called only with the mutex NOT held, because an EOS log
+    // callback is synchronous and may re-enter the sink -- delivering under the lock would self-deadlock.
+    void deliver_pending();
     std::string numbered_path(u32 index) const;
 
     mutable std::mutex mutex_;
@@ -72,6 +84,7 @@ private:
     std::string buffer_;         // whole lines not yet flushed
     u64 current_bytes_;          // bytes in trace.jsonl, flushed plus buffered
     std::vector<u64> rotated_sizes_;  // sizes of trace.1.jsonl .. trace.N.jsonl, newest first
+    std::string pending_diagnostic_;  // set under the lock, delivered to the logger after releasing it
     bool active_;
     bool disabled_;
     bool closed_;

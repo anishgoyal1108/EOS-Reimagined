@@ -283,6 +283,10 @@ Each level is a strict superset of the one before it, so raising the level only 
   When `N` is `0` there are no numbered files: the previous `trace.jsonl` is discarded and only the
   fresh one is kept. The head `rotate` record is written after the rename and does not itself re-trigger
   the size check, so rotation cannot recurse.
+- **The cap is a hard bound.** No `trace.jsonl` or rotated file ever exceeds `trace_max_bytes`. The
+  enforced minimum makes this moot for resolved config, but the sink is defensive below it: a record
+  that would not fit even beside the fresh file's own `rotate` record is skipped, never written past the
+  cap.
 - **Torn tail.** Each line is a complete write. A reader that meets a truncated final line (process
   killed mid-write) discards exactly that one partial record and keeps everything before it — the
   format is line-delimited precisely so one torn tail costs one record, not the file.
@@ -307,11 +311,19 @@ unless the tester opts in.
 
 ## 6. Failure and lifecycle
 
-**A sink failure is never a game failure.** If a write, flush, or rename fails after the sink opened,
-the sink disables itself: it stops writing, emits **one** best-effort diagnostic through the ordinary
-logger, and every later call is a silent no-op. It never retries per call, never throws into the game,
-and — the load-bearing part — a failure inside the sink does not itself generate a trace event, so a
-full disk cannot cause an unbounded storm of failure records.
+**A sink failure is never a game failure.** If a write, flush, rename, or remove fails after the sink
+opened, the sink disables itself: it stops writing, emits **one** best-effort diagnostic through the
+ordinary logger, and every later call is a silent no-op. It never retries per call, never throws into
+the game, and — the load-bearing part — a failure inside the sink does not itself generate a trace
+event, so a full disk cannot cause an unbounded storm of failure records. The diagnostic is queued
+under the sink's lock and delivered only after the lock is released: an EOS log callback is fired
+synchronously and may re-enter the SDK, so logging while holding the lock could self-deadlock.
+
+**A startup failure is inactive, not fatal.** `open` requires a metadata source (an enabled sink
+always emits `run_start` / `rotate` / `shutdown`, so it cannot run without one) and exclusively creates
+`trace.jsonl` (an existing file is left untouched — a stale or colliding run stream is never appended
+to). A missing run directory, a missing source, or a pre-existing trace file leaves the sink inactive
+and produces the same single best-effort diagnostic. `off` is not a failure and says nothing.
 
 **Per-run state resets on every `EOS_Initialize`.** The `run_id`, the `seq` counter, the `corr`
 counter, the logical thread-label map, the handle/id label registries, and the resolved config are all
@@ -401,11 +413,18 @@ env are needed:
 - **Rotation limits** — zero, one, minimum, maximum, and a cap smaller than the rotate record have
   defined validation/fallback behaviour, and `trace_max_rotated_files` yields an exact total of
   rotated-plus-live files on disk.
+- **Hard byte cap** — after any rotation and at shutdown, no live or rotated file exceeds
+  `trace_max_bytes`; a record that cannot fit beside a fresh file's `rotate` record is skipped.
+- **Exclusive ownership** — an enabled sink refuses to open over a pre-existing `trace.jsonl`, leaving
+  it untouched, and requires a metadata source; an open failure delivers exactly one diagnostic.
+- **Directory ownership** — manual mode creates the run directory; runner mode opens an existing one
+  and refuses (without fabricating) a missing one.
 - **Torn tail** — a file whose last line is a partial write parses as every complete record before it.
 - **JSON output** — escaping is correct and output is always valid UTF-8 even for invalid-UTF-8 input.
 - **No re-entrancy** — a sink write failure cannot itself generate more trace events.
-- **Mid-run sink failure** — write, flush, and rename failures remain non-fatal, disable or degrade the
-  sink exactly once, and do not retry or log recursively on every later EOS call.
+- **Mid-run sink failure** — write, flush, rename, and remove failures remain non-fatal, disable or
+  degrade the sink exactly once, deliver their diagnostic with the sink lock released so a re-entrant
+  log callback cannot deadlock, and do not retry or log recursively on every later EOS call.
 - **Lifecycle reset** — failed/double initialize, shutdown, and initialize-after-shutdown close the old
   sink and reset run identity, sequence/correlation counters, logical thread labels, and config state.
 - **Label churn** — releasing and reusing handle addresses never aliases two live objects in the trace,
