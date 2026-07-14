@@ -125,6 +125,19 @@ file_read read_file_capped(const std::string& path, std::size_t max_bytes, std::
     return file_read::ok;
 }
 
+bool path_is_absolute(const std::string& path) {
+    if (path.empty()) {
+        return false;
+    }
+    if (path[0] == '/' || path[0] == '\\') {
+        return true; // rooted on the current drive
+    }
+    // A drive-absolute path needs a separator after the colon (C:\ or C:/). C:traces is drive-relative.
+    const char c = path[0];
+    return path.size() >= 3 && path[1] == ':' && (path[2] == '/' || path[2] == '\\') &&
+           ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
+}
+
 file_lock::file_lock() : handle_(-1), held_(false) {
 }
 

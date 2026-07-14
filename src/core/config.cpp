@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <limits>
 
+#include "platform/paths.h"
+
 namespace eosr {
 
 namespace {
@@ -232,20 +234,6 @@ u32 clamp_rotated(i64 value, std::vector<config_diagnostic>& diagnostics, const 
 
 } // namespace
 
-bool is_absolute_path(const std::string& path) {
-    if (path.empty()) {
-        return false;
-    }
-    if (path[0] == '/' || path[0] == '\\') {
-        return true;
-    }
-    // A Windows drive-absolute path needs a slash after the colon (C:\ or C:/). C:traces is
-    // drive-relative -- it depends on the current directory on drive C -- so it is not absolute.
-    const char c = path[0];
-    return path.size() >= 3 && path[1] == ':' && (path[2] == '/' || path[2] == '\\') &&
-           ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
-}
-
 resolved_config resolve_config(const config_source& source, const config_defaults& defaults) {
     resolved_config config;
     config.data_dir = defaults.data_dir;
@@ -454,7 +442,8 @@ resolved_config resolve_config(const config_source& source, const config_default
                 add_diag(diagnostics, "trace_dir", used, bad, "ignored");
             }
         }
-        config.trace_dir = is_absolute_path(dir) ? dir : (config.data_dir + "/" + dir);
+        config.trace_dir =
+            platform::path_is_absolute(dir) ? dir : (config.data_dir + "/" + dir);
     }
 
     // run_dir: the runner override, or empty for the auto <trace_dir>/<run_id>.

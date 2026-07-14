@@ -100,7 +100,9 @@ file_read read_file_capped(const std::string& path, std::size_t max_bytes, std::
     out.clear();
     const int file = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
     if (file < 0) {
-        return (errno == ENOENT) ? file_read::missing : file_read::unreadable;
+        // ENOTDIR (a path component is a regular file) means the target does not exist, same as
+        // ENOENT -- and the same as Win32's ERROR_PATH_NOT_FOUND, so the diagnostic matches.
+        return (errno == ENOENT || errno == ENOTDIR) ? file_read::missing : file_read::unreadable;
     }
     // Read at most one byte past the cap, which is enough to tell "larger than max_bytes" apart from
     // "exactly max_bytes" without reading the whole oversized file. Guard the +1 against wrapping at
@@ -132,6 +134,11 @@ file_read read_file_capped(const std::string& path, std::size_t max_bytes, std::
     }
     out.swap(buffer);
     return file_read::ok;
+}
+
+bool path_is_absolute(const std::string& path) {
+    // On POSIX only a leading slash is absolute; backslash and drive letters are ordinary bytes.
+    return !path.empty() && path[0] == '/';
 }
 
 file_lock::file_lock() : handle_(-1), held_(false) {

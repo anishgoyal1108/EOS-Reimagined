@@ -65,8 +65,9 @@ void system_config_source::load_file(const std::string& data_dir) {
     if (config_env_present_ && !config_env_value_.empty()) {
         // A relative EOSR_CONFIG resolves against data_dir, never the process cwd -- which varies
         // wildly between launchers -- so the same setting means the same file everywhere.
-        path = is_absolute_path(config_env_value_) ? config_env_value_
-                                                   : (data_dir + "/" + config_env_value_);
+        path = platform::path_is_absolute(config_env_value_)
+                   ? config_env_value_
+                   : (data_dir + "/" + config_env_value_);
         explicit_path = true;
     } else {
         path = data_dir + "/eosr.json";

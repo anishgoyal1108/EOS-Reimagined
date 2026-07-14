@@ -92,10 +92,6 @@ struct config_defaults {
 // Spec: docs/alpha-tracing.md §2.
 resolved_config resolve_config(const config_source& source, const config_defaults& defaults);
 
-// Whether `path` is absolute: a leading slash or backslash, or a Windows drive with a slash after the
-// colon (C:\ or C:/). A drive-relative form like C:traces is not absolute. Pure string analysis.
-bool is_absolute_path(const std::string& path);
-
 } // namespace eosr
 
 #endif

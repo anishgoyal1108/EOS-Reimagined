@@ -320,13 +320,20 @@ TEST_CASE("a relative trace dir resolves against data dir, an absolute one is us
     absolute.envs["EOSR_TRACE_DIR"] = "/var/log/eosr";
     CHECK(resolve_config(absolute, defaults).trace_dir == "/var/log/eosr");
 
-    fake_source windows;
-    windows.envs["EOSR_TRACE_DIR"] = "C:\\traces";
-    CHECK(resolve_config(windows, defaults).trace_dir == "C:\\traces"); // drive-letter absolute
+    // Absoluteness follows the host platform's path rules, since that is where the paths are used.
+#if defined(_WIN32)
+    fake_source drive_absolute;
+    drive_absolute.envs["EOSR_TRACE_DIR"] = "C:\\traces";
+    CHECK(resolve_config(drive_absolute, defaults).trace_dir == "C:\\traces");
 
     fake_source drive_relative;
-    drive_relative.envs["EOSR_TRACE_DIR"] = "C:traces";
+    drive_relative.envs["EOSR_TRACE_DIR"] = "C:traces"; // drive-relative, not absolute
     CHECK(resolve_config(drive_relative, defaults).trace_dir == "/data/C:traces");
+#else
+    fake_source backslash;
+    backslash.envs["EOSR_TRACE_DIR"] = "C:\\traces"; // ordinary bytes on POSIX, so relative
+    CHECK(resolve_config(backslash, defaults).trace_dir == "/data/C:\\traces");
+#endif
 }
 
 TEST_CASE("the run directory comes from EOSR_RUN_DIR or is left for the auto path") {

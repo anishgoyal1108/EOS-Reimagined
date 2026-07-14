@@ -23,6 +23,12 @@ enum class file_read {
 // absent required one as an error.
 file_read read_file_capped(const std::string& path, std::size_t max_bytes, std::string& out);
 
+// Whether `path` is absolute under THIS platform's rules -- so a relative config or trace path can be
+// resolved against a base directory rather than the process cwd. On POSIX that is a leading '/', and
+// a backslash is an ordinary filename byte; on Windows it is a leading '/' or '\', or a drive letter
+// with a separator after the colon (C:\ or C:/). Pure string analysis, no I/O.
+bool path_is_absolute(const std::string& path);
+
 // Where this instance keeps its profile. EOSR_DATA_DIR overrides it, which is how a launcher hands
 // each local copy of a game its own profile -- and so its own identity -- without the copies having
 // to agree on anything. Otherwise it is the user's per-application data directory. Empty when the OS

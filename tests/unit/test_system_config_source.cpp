@@ -166,6 +166,15 @@ TEST_CASE("bounded reads handle exact, over-limit, and maximum-size caps") {
     CHECK(out == "abcd");
 }
 
+TEST_CASE("a path below a non-directory component is missing, not unreadable") {
+    source_fixture fx("read-not-directory");
+    const std::string parent = fx.write("regular-file", "not a directory");
+    std::string out;
+    CHECK(platform::read_file_capped(parent + "/child", 64, out) ==
+          platform::file_read::missing);
+    CHECK(out.empty());
+}
+
 TEST_CASE("the environment is snapshotted at construction") {
     source_fixture fx("env-snapshot");
     set_env("EOSR_DISPLAY_NAME", "Snapshot");
@@ -222,3 +231,16 @@ TEST_CASE("a relative EOSR_CONFIG resolves against the data directory") {
     CHECK(value == "FromRelative");
     CHECK(source.diagnostics().empty());
 }
+#if !defined(_WIN32)
+TEST_CASE("a POSIX config name beginning with backslash is still relative") {
+    source_fixture fx("posix-backslash-relative");
+    fx.write("\\nested.json", "{ \"display_name\": \"FromBackslashName\" }");
+    set_env("EOSR_CONFIG", "\\nested.json");
+
+    system_config_source source(fx.dir);
+    std::string value;
+    CHECK(source.file_string("display_name", value) == lookup::ok);
+    CHECK(value == "FromBackslashName");
+    CHECK(source.diagnostics().empty());
+}
+#endif
