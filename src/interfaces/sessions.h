@@ -123,7 +123,7 @@ public:
 
     // Notifications the invite path needs. They register and never fire until invites land.
     EOS_NotificationId add_stub_notification(void* client_data, completion_delegate delegate,
-                                             std::size_t info_size);
+                                             std::size_t info_size, const char* event);
     void remove_notification(EOS_NotificationId id);
     void queue_stub_result(void* client_data, completion_delegate delegate, std::size_t info_size);
 

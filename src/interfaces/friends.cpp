@@ -246,7 +246,7 @@ EOS_NotificationId sdk_friends::add_notify_friends_update(
     info->TargetUserId = 0;
     info->PreviousStatus = EOS_EFriendsStatus::EOS_FS_NotFriends;
     info->CurrentStatus = EOS_EFriendsStatus::EOS_FS_NotFriends;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), "FriendsUpdate");
 }
 
 void sdk_friends::remove_notify_friends_update(EOS_NotificationId id) {
@@ -283,7 +283,7 @@ EOS_NotificationId sdk_friends::add_notify_blocked_users_update(
     info->LocalUserId = 0;
     info->TargetUserId = 0;
     info->bBlocked = EOS_FALSE;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), "BlockedUsersUpdate");
 }
 
 void sdk_friends::remove_notify_blocked_users_update(EOS_NotificationId id) {

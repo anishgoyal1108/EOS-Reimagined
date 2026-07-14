@@ -33,7 +33,8 @@ public:
     void add_callback(i_run_callback* owner, std::unique_ptr<frame_result> result);
 
     // Take ownership of a persistent notification; returns its id (never 0).
-    EOS_NotificationId add_notification(i_run_callback* owner, std::unique_ptr<frame_result> result);
+    EOS_NotificationId add_notification(i_run_callback* owner, std::unique_ptr<frame_result> result,
+                                        const char* event);
     void remove_notification(i_run_callback* owner, EOS_NotificationId id);
     void remove_all_notifications(i_run_callback* owner);
 

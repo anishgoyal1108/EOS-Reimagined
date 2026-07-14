@@ -524,12 +524,12 @@ namespace {
 template <class info_type, class delegate_type>
 EOS_NotificationId register_connection_notify(callback_manager& callbacks, i_run_callback* owner,
                                               callback_type_id type, void* client_data,
-                                              delegate_type delegate) {
+                                              delegate_type delegate, const char* event) {
     std::unique_ptr<frame_result> result(new frame_result());
     info_type* info = static_cast<info_type*>(result->create_callback(
         type, sizeof(info_type), reinterpret_cast<completion_delegate>(delegate)));
     info->ClientData = client_data;
-    return callbacks.add_notification(owner, std::move(result));
+    return callbacks.add_notification(owner, std::move(result), event);
 }
 
 } // namespace
@@ -542,7 +542,8 @@ EOS_NotificationId sdk_p2p::add_notify_connection_request(
     }
     const EOS_NotificationId id =
         register_connection_notify<EOS_P2P_OnIncomingConnectionRequestInfo>(
-            callbacks_, this, cb_connection_request, client_data, delegate);
+            callbacks_, this, cb_connection_request, client_data, delegate,
+            "P2PConnectionRequest");
     remember_filter(id, socket_filter);
     return id;
 }
@@ -555,7 +556,8 @@ EOS_NotificationId sdk_p2p::add_notify_connection_established(
     }
     const EOS_NotificationId id =
         register_connection_notify<EOS_P2P_OnPeerConnectionEstablishedInfo>(
-            callbacks_, this, cb_connection_established, client_data, delegate);
+            callbacks_, this, cb_connection_established, client_data, delegate,
+            "P2PConnectionEstablished");
     remember_filter(id, socket_filter);
     return id;
 }
@@ -567,7 +569,7 @@ EOS_NotificationId sdk_p2p::add_notify_connection_closed(
         return EOS_INVALID_NOTIFICATIONID;
     }
     const EOS_NotificationId id = register_connection_notify<EOS_P2P_OnRemoteConnectionClosedInfo>(
-        callbacks_, this, cb_connection_closed, client_data, delegate);
+        callbacks_, this, cb_connection_closed, client_data, delegate, "P2PConnectionClosed");
     remember_filter(id, socket_filter);
     return id;
 }
@@ -580,7 +582,8 @@ EOS_NotificationId sdk_p2p::add_notify_connection_interrupted(
     }
     const EOS_NotificationId id =
         register_connection_notify<EOS_P2P_OnPeerConnectionInterruptedInfo>(
-            callbacks_, this, cb_connection_interrupted, client_data, delegate);
+            callbacks_, this, cb_connection_interrupted, client_data, delegate,
+            "P2PConnectionInterrupted");
     remember_filter(id, socket_filter);
     return id;
 }
@@ -593,7 +596,8 @@ EOS_NotificationId sdk_p2p::add_notify_incoming_packet_queue_full(
     // The incoming queue is only bounded once a game sets a limit; until a packet would overflow
     // that limit this notification stays registered and silent.
     return register_connection_notify<EOS_P2P_OnIncomingPacketQueueFullInfo>(
-        callbacks_, this, cb_packet_queue_full, client_data, delegate);
+        callbacks_, this, cb_packet_queue_full, client_data, delegate,
+        "P2PIncomingPacketQueueFull");
 }
 
 void sdk_p2p::remove_notify(EOS_NotificationId id) {

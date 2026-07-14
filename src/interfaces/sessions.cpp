@@ -399,7 +399,7 @@ void sdk_sessions::queue_stub_result(void* client_data, completion_delegate dele
 
 EOS_NotificationId sdk_sessions::add_stub_notification(void* client_data,
                                                        completion_delegate delegate,
-                                                       std::size_t info_size) {
+                                                       std::size_t info_size, const char* event) {
     if (delegate == 0) {
         return EOS_INVALID_NOTIFICATIONID;
     }
@@ -409,7 +409,7 @@ EOS_NotificationId sdk_sessions::add_stub_notification(void* client_data,
     // the invite path does not happen yet.
     void** client = static_cast<void**>(payload);
     *client = client_data;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), event);
 }
 
 void sdk_sessions::remove_notification(EOS_NotificationId id) {

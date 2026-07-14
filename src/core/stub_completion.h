@@ -26,7 +26,7 @@ void stub_complete(void* client_data, completion_delegate delegate, std::size_t 
 // Register a notification that never fires, and hand back a real id. The game gets something it can
 // pair a Remove call with, rather than an invalid id it may treat as an error.
 EOS_NotificationId stub_add_notification(void* client_data, completion_delegate delegate,
-                                         std::size_t info_size);
+                                         std::size_t info_size, const char* event);
 void stub_remove_notification(EOS_NotificationId id);
 
 } // namespace eosr

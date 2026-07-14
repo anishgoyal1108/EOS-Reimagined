@@ -435,6 +435,16 @@ void tracer::record_callback(const std::string& fn, const std::string& corr,
     sink_.write(at, serialize_callback(next_envelope(), fn, corr, result, payload));
 }
 
+void tracer::record_notify(const std::string& event, const std::string& action,
+                           const std::string& token, const std::vector<trace_field>& fields) {
+    if (!enabled() || token.empty()) {
+        return;
+    }
+    const std::string id = label(label_kind::notif, token);
+    sink_.write(trace_level::lifecycle,
+                serialize_notify(next_envelope(), event, action, id, fields));
+}
+
 void tracer::record_net(const std::string& event, const std::vector<trace_field>& fields,
                         bool failure) {
     if (!enabled()) {

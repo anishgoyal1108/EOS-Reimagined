@@ -125,6 +125,19 @@ def output_initializers(params):
     return "".join(lines)
 
 
+def notification_event(name):
+    match = re.match(r"EOS_(.+)_AddNotify(.+)$", name)
+    if not match:
+        return name[4:] if name.startswith("EOS_") else name
+    family = match.group(1).replace("_", "")
+    event = match.group(2)
+    overlap = 0
+    for size in range(1, min(len(family), len(event)) + 1):
+        if family[-size:] == event[:size]:
+            overlap = size
+    return family + event[overlap:]
+
+
 def stub_body(name, ret, params, delegate_info):
     """The honest answer for one unimplemented export."""
     unused = "".join("    (void)%s;\n" % param_name(p) for p in params if param_name(p))
@@ -153,7 +166,8 @@ def stub_body(name, ret, params, delegate_info):
             return (
                 unused
                 + "    return eosr::stub_add_notification(ClientData,\n"
-                "        reinterpret_cast<eosr::completion_delegate>(%s), sizeof(%s));\n" % (delegate, info)
+                "        reinterpret_cast<eosr::completion_delegate>(%s), sizeof(%s), \"%s\");\n"
+                % (delegate, info, notification_event(name))
             )
         return unused + "    return EOS_INVALID_NOTIFICATIONID;\n"
 

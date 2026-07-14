@@ -401,7 +401,8 @@ EOS_NotificationId sdk_ui::add_notify_display_settings_updated(
     info->ClientData = client_data;
     info->bIsVisible = EOS_FALSE;
     info->bIsExclusiveInput = EOS_FALSE;
-    const EOS_NotificationId id = callbacks_.add_notification(this, std::move(result));
+    const EOS_NotificationId id =
+        callbacks_.add_notification(this, std::move(result), "DisplaySettingsUpdated");
     if (id != EOS_INVALID_NOTIFICATIONID) {
         pending_initial_delivery_.push_back(id);
     }
@@ -421,7 +422,8 @@ EOS_NotificationId sdk_ui::add_notify_memory_monitor(
                                 reinterpret_cast<completion_delegate>(delegate)));
     info->ClientData = client_data;
     info->SystemMemoryMonitorReport = 0;
-    const EOS_NotificationId id = callbacks_.add_notification(this, std::move(result));
+    const EOS_NotificationId id =
+        callbacks_.add_notification(this, std::move(result), "MemoryMonitor");
     if (id != EOS_INVALID_NOTIFICATIONID) {
         pending_initial_delivery_.push_back(id);
     }
@@ -441,7 +443,7 @@ EOS_NotificationId sdk_ui::add_notify_on_screen_keyboard_requested(
             cb_keyboard_requested, sizeof(EOS_UI_OnScreenKeyboardRequestedCallbackInfo),
             reinterpret_cast<completion_delegate>(delegate)));
     info->ClientData = client_data;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), "OnScreenKeyboardRequested");
 }
 
 void sdk_ui::remove_notify(EOS_NotificationId id) {

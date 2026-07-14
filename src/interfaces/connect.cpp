@@ -271,7 +271,7 @@ EOS_NotificationId sdk_connect::add_notify_login_status_changed(
     info->LocalUserId = 0;
     info->PreviousStatus = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
     info->CurrentStatus = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), "ConnectLoginStatusChanged");
 }
 
 void sdk_connect::remove_notify_login_status_changed(EOS_NotificationId id) {
@@ -291,7 +291,7 @@ EOS_NotificationId sdk_connect::add_notify_auth_expiration(
                                     reinterpret_cast<completion_delegate>(delegate)));
     info->ClientData = client_data;
     info->LocalUserId = 0;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), "ConnectAuthExpiration");
 }
 
 void sdk_connect::remove_notify_auth_expiration(EOS_NotificationId id) {

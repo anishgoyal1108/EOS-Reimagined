@@ -80,7 +80,7 @@ public:
     // Register a notification that never fires (invites, RTC, overlay -- deferred), so a game that
     // subscribes still gets a valid id and does not break.
     EOS_NotificationId add_stub_notification(void* client_data, completion_delegate delegate,
-                                             std::size_t info_size);
+                                             std::size_t info_size, const char* event);
     // Report a stubbed async completion (invites, RTC) as EOS_NotImplemented.
     void queue_stub_result(void* client_data, completion_delegate delegate, std::size_t info_size);
 

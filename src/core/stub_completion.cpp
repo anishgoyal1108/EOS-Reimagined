@@ -59,7 +59,7 @@ void stub_complete(void* client_data, completion_delegate delegate, std::size_t 
 }
 
 EOS_NotificationId stub_add_notification(void* client_data, completion_delegate delegate,
-                                         std::size_t info_size) {
+                                         std::size_t info_size, const char* event) {
     callback_manager* callbacks = engine();
     if (callbacks == 0 || delegate == 0) {
         return EOS_INVALID_NOTIFICATIONID;
@@ -70,7 +70,7 @@ EOS_NotificationId stub_add_notification(void* client_data, completion_delegate 
     (void)client_data;
     std::unique_ptr<frame_result> result(new frame_result());
     result->create_callback(0, info_size, delegate);
-    return callbacks->add_notification(&owner(), std::move(result));
+    return callbacks->add_notification(&owner(), std::move(result), event);
 }
 
 void stub_remove_notification(EOS_NotificationId id) {

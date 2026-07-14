@@ -25,10 +25,14 @@ namespace {
 bool g_login_fired = false;
 EOS_EResult g_login_result = EOS_EResult::EOS_UnexpectedError;
 EOS_ProductUserId g_login_user = nullptr;
+int g_status_changed = 0;
 void EOS_CALL on_login(const EOS_Connect_LoginCallbackInfo* info) {
     g_login_fired = true;
     g_login_result = info->ResultCode;
     g_login_user = info->LocalUserId;
+}
+void EOS_CALL on_status_changed(const EOS_Connect_LoginStatusChangedCallbackInfo*) {
+    g_status_changed++;
 }
 
 void set_env(const char* name, const char* value) {
@@ -163,9 +167,17 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     // completion fires. This is what the call/return/callback correlation is checked against below.
     RESOLVE(fn_get_connect, EOS_Platform_GetConnectInterface);
     RESOLVE(fn_login, EOS_Connect_Login);
+    RESOLVE(fn_add_status, EOS_Connect_AddNotifyLoginStatusChanged);
+    RESOLVE(fn_remove_status, EOS_Connect_RemoveNotifyLoginStatusChanged);
     RESOLVE(fn_puid_to_string, EOS_ProductUserId_ToString);
     EOS_HConnect connect = fn_get_connect(platform);
     REQUIRE((connect != nullptr));
+
+    EOS_Connect_AddNotifyLoginStatusChangedOptions notify_opts = {};
+    notify_opts.ApiVersion = EOS_CONNECT_ADDNOTIFYLOGINSTATUSCHANGED_API_LATEST;
+    const EOS_NotificationId status_id =
+        fn_add_status(connect, &notify_opts, nullptr, on_status_changed);
+    REQUIRE(status_id != EOS_INVALID_NOTIFICATIONID);
 
     EOS_Connect_Credentials creds = {};
     creds.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
@@ -181,6 +193,7 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     }
     CHECK(g_login_fired);
     CHECK(g_login_result == EOS_EResult::EOS_Success);
+    CHECK(g_status_changed == 1);
     REQUIRE((g_login_user != nullptr));
 
     char raw_user_buffer[128] = {};
@@ -194,6 +207,8 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     // of the first things an in-game alpha probe needs to explain, not a reason for the probe itself
     // to go silent. The emulator already treats this as a safe no-op.
     fn_login(nullptr, &login, nullptr, on_login);
+
+    fn_remove_status(connect, status_id);
 
     fn_release(platform);
     REQUIRE(fn_shutdown() == EOS_EResult::EOS_Success);
@@ -255,6 +270,20 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     CHECK(count_records(lines, "call", "EOS_Connect_Login") == 2);
     CHECK(count_records(lines, "return", "EOS_Connect_Login") == 2);
     CHECK(count_records(lines, "callback", "EOS_Connect_Login") == 1);
+
+    const std::string registered = find_line(lines, "\"action\":\"register\"");
+    const std::string fired = find_line(lines, "\"action\":\"fire\"");
+    const std::string removed = find_line(lines, "\"action\":\"remove\"");
+    REQUIRE_FALSE(registered.empty());
+    REQUIRE_FALSE(fired.empty());
+    REQUIRE_FALSE(removed.empty());
+    CHECK(field_of(registered, "event") == "ConnectLoginStatusChanged");
+    CHECK(field_of(fired, "event") == "ConnectLoginStatusChanged");
+    CHECK(field_of(removed, "event") == "ConnectLoginStatusChanged");
+    CHECK(field_of(registered, "id") == field_of(fired, "id"));
+    CHECK(field_of(fired, "id") == field_of(removed, "id"));
+    CHECK(parse_seq(registered) < parse_seq(fired));
+    CHECK(parse_seq(fired) < parse_seq(removed));
 
     // The kind of credential is recorded; the token is not. The local user is a label, not an id.
     CHECK(call.find("\"cred_type\":\"EOS_ECT_DEVICEID_ACCESS_TOKEN\"") != std::string::npos);

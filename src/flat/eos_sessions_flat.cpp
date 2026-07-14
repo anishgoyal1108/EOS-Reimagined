@@ -43,13 +43,14 @@ void stub_async(void* client_data, delegate_type delegate, std::size_t info_size
 }
 
 template <class delegate_type>
-EOS_NotificationId stub_notify(void* client_data, delegate_type delegate, std::size_t info_size) {
+EOS_NotificationId stub_notify(void* client_data, delegate_type delegate, std::size_t info_size,
+                               const char* event) {
     eosr::sdk_sessions* sessions = live_sessions();
     if (sessions == 0) {
         return EOS_INVALID_NOTIFICATIONID;
     }
     return sessions->add_stub_notification(
-        client_data, reinterpret_cast<eosr::completion_delegate>(delegate), info_size);
+        client_data, reinterpret_cast<eosr::completion_delegate>(delegate), info_size, event);
 }
 
 } // namespace
@@ -427,7 +428,8 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Sessions_AddNotifySessionInviteReceived
                                                                        void* ClientData, const EOS_Sessions_OnSessionInviteReceivedCallback Handler) {
     (void)Handle;
     (void)Options;
-    return stub_notify(ClientData, Handler, sizeof(EOS_Sessions_SessionInviteReceivedCallbackInfo));
+    return stub_notify(ClientData, Handler, sizeof(EOS_Sessions_SessionInviteReceivedCallbackInfo),
+                       "SessionInviteReceived");
 }
 
 EOS_DECLARE_FUNC(void) EOS_Sessions_RemoveNotifySessionInviteReceived(EOS_HSessions Handle, EOS_NotificationId InId) {
@@ -442,7 +444,8 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Sessions_AddNotifySessionInviteAccepted
                                                                        void* ClientData, const EOS_Sessions_OnSessionInviteAcceptedCallback Handler) {
     (void)Handle;
     (void)Options;
-    return stub_notify(ClientData, Handler, sizeof(EOS_Sessions_SessionInviteAcceptedCallbackInfo));
+    return stub_notify(ClientData, Handler, sizeof(EOS_Sessions_SessionInviteAcceptedCallbackInfo),
+                       "SessionInviteAccepted");
 }
 
 EOS_DECLARE_FUNC(void) EOS_Sessions_RemoveNotifySessionInviteAccepted(EOS_HSessions Handle, EOS_NotificationId InId) {
@@ -457,7 +460,8 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Sessions_AddNotifySessionInviteRejected
                                                                        void* ClientData, const EOS_Sessions_OnSessionInviteRejectedCallback Handler) {
     (void)Handle;
     (void)Options;
-    return stub_notify(ClientData, Handler, sizeof(EOS_Sessions_SessionInviteRejectedCallbackInfo));
+    return stub_notify(ClientData, Handler, sizeof(EOS_Sessions_SessionInviteRejectedCallbackInfo),
+                       "SessionInviteRejected");
 }
 
 EOS_DECLARE_FUNC(void) EOS_Sessions_RemoveNotifySessionInviteRejected(EOS_HSessions Handle, EOS_NotificationId InId) {
@@ -472,7 +476,8 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Sessions_AddNotifyJoinSessionAccepted(E
                                                                        void* ClientData, const EOS_Sessions_OnJoinSessionAcceptedCallback Handler) {
     (void)Handle;
     (void)Options;
-    return stub_notify(ClientData, Handler, sizeof(EOS_Sessions_JoinSessionAcceptedCallbackInfo));
+    return stub_notify(ClientData, Handler, sizeof(EOS_Sessions_JoinSessionAcceptedCallbackInfo),
+                       "JoinSessionAccepted");
 }
 
 EOS_DECLARE_FUNC(void) EOS_Sessions_RemoveNotifyJoinSessionAccepted(EOS_HSessions Handle, EOS_NotificationId InId) {
@@ -487,7 +492,8 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Sessions_AddNotifyLeaveSessionRequested
                                                                        void* ClientData, const EOS_Sessions_OnLeaveSessionRequestedCallback Handler) {
     (void)Handle;
     (void)Options;
-    return stub_notify(ClientData, Handler, sizeof(EOS_Sessions_LeaveSessionRequestedCallbackInfo));
+    return stub_notify(ClientData, Handler, sizeof(EOS_Sessions_LeaveSessionRequestedCallbackInfo),
+                       "LeaveSessionRequested");
 }
 
 EOS_DECLARE_FUNC(void) EOS_Sessions_RemoveNotifyLeaveSessionRequested(EOS_HSessions Handle, EOS_NotificationId InId) {
@@ -502,7 +508,9 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Sessions_AddNotifySendSessionNativeInvi
                                                                        void* ClientData, const EOS_Sessions_OnSendSessionNativeInviteRequestedCallback Handler) {
     (void)Handle;
     (void)Options;
-    return stub_notify(ClientData, Handler, sizeof(EOS_Sessions_SendSessionNativeInviteRequestedCallbackInfo));
+    return stub_notify(ClientData, Handler,
+                       sizeof(EOS_Sessions_SendSessionNativeInviteRequestedCallbackInfo),
+                       "SendSessionNativeInviteRequested");
 }
 
 EOS_DECLARE_FUNC(void) EOS_Sessions_RemoveNotifySendSessionNativeInviteRequested(EOS_HSessions Handle, EOS_NotificationId InId) {
@@ -512,4 +520,3 @@ EOS_DECLARE_FUNC(void) EOS_Sessions_RemoveNotifySendSessionNativeInviteRequested
         sessions->remove_notification(InId);
     }
 }
-

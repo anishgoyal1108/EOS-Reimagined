@@ -476,7 +476,7 @@ EOS_NotificationId sdk_presence::add_notify_on_presence_changed(
                                             reinterpret_cast<completion_delegate>(delegate));
     void** client = static_cast<void**>(payload);
     *client = client_data;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), "PresenceChanged");
 }
 
 void sdk_presence::remove_notify_on_presence_changed(EOS_NotificationId id) {
@@ -496,7 +496,7 @@ EOS_NotificationId sdk_presence::add_notify_join_game_accepted(
                                             reinterpret_cast<completion_delegate>(delegate));
     void** client = static_cast<void**>(payload);
     *client = client_data;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), "JoinGameAccepted");
 }
 
 void sdk_presence::remove_notify_join_game_accepted(EOS_NotificationId id) {

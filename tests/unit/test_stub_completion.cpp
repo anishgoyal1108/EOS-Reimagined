@@ -74,7 +74,7 @@ TEST_CASE("a stubbed notification returns a real id and never fires") {
     int client_data = 0;
     const EOS_NotificationId id = stub_add_notification(
         &client_data, reinterpret_cast<completion_delegate>(on_notify),
-        sizeof(EOS_Ecom_QueryOwnershipCallbackInfo));
+        sizeof(EOS_Ecom_QueryOwnershipCallbackInfo), "StubNotification");
     CHECK(id != EOS_INVALID_NOTIFICATIONID); // a game may treat an invalid id as an error
 
     for (int i = 0; i < 4; i++) {
@@ -96,8 +96,8 @@ TEST_CASE("a stub before the platform exists is a safe no-op") {
     int client_data = 0;
     stub_complete(&client_data, reinterpret_cast<completion_delegate>(on_complete), 64);
     CHECK_FALSE(g_fired);
-    CHECK(stub_add_notification(&client_data, reinterpret_cast<completion_delegate>(on_notify), 64) ==
-          EOS_INVALID_NOTIFICATIONID);
+    CHECK(stub_add_notification(&client_data, reinterpret_cast<completion_delegate>(on_notify), 64,
+                                "StubNotification") == EOS_INVALID_NOTIFICATIONID);
     stub_remove_notification(1); // no crash
 }
 

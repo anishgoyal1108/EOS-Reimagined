@@ -378,7 +378,7 @@ EOS_NotificationId sdk_auth::add_notify_login_status_changed(
     info->LocalUserId = 0;
     info->PrevStatus = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
     info->CurrentStatus = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), "AuthLoginStatusChanged");
 }
 
 void sdk_auth::remove_notify_login_status_changed(EOS_NotificationId id) {

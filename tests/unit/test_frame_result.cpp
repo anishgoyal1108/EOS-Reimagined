@@ -88,6 +88,16 @@ TEST_CASE("recreating a callback clears stale delivery state") {
     CHECK(r.remove_on_timeout() == false);
 }
 
+TEST_CASE("recreating a callback clears stale notification identity") {
+    frame_result r;
+    r.create_callback(sample_type_id, sizeof(sample_info), on_cb);
+    r.set_notification_trace("FirstEvent", "1");
+
+    r.create_callback(sample_type_id, sizeof(sample_info), on_cb);
+    CHECK(r.notification_event().empty());
+    CHECK(r.notification_token().empty());
+}
+
 TEST_CASE("copy deep-copies the payload") {
     frame_result r;
     sample_info* info = static_cast<sample_info*>(

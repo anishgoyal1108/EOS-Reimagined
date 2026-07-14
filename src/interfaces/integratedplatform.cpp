@@ -272,7 +272,8 @@ EOS_NotificationId sdk_integrated_platform::add_notify_user_login_status_changed
     info->CurrentLoginStatus = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
     // Unlike the overlay's notifications, this one carries no promise of an initial call, so we do
     // not invent one.
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result),
+                                       "IntegratedPlatformUserLoginStatusChanged");
 }
 
 void sdk_integrated_platform::remove_notify_user_login_status_changed(EOS_NotificationId id) {

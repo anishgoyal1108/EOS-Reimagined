@@ -51,7 +51,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Achievements_AddNotifyAchievementsUnloc
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_Achievements_OnAchievementsUnlockedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_Achievements_OnAchievementsUnlockedCallbackInfo), "AchievementsUnlocked");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Achievements_AddNotifyAchievementsUnlockedV2(EOS_HAchievements Handle, const EOS_Achievements_AddNotifyAchievementsUnlockedV2Options* Options, void* ClientData, const EOS_Achievements_OnAchievementsUnlockedCallbackV2 NotificationFn) {
@@ -60,7 +60,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Achievements_AddNotifyAchievementsUnloc
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_Achievements_OnAchievementsUnlockedCallbackV2Info));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_Achievements_OnAchievementsUnlockedCallbackV2Info), "AchievementsUnlockedV2");
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyAchievementDefinitionByAchievementId(EOS_HAchievements Handle, const EOS_Achievements_CopyAchievementDefinitionByAchievementIdOptions* Options, EOS_Achievements_Definition ** OutDefinition) {
@@ -209,7 +209,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyClientIntegrit
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatClient_OnClientIntegrityViolatedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatClient_OnClientIntegrityViolatedCallbackInfo), "AntiCheatClientIntegrityViolated");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyMessageToPeer(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_AddNotifyMessageToPeerOptions* Options, void* ClientData, EOS_AntiCheatClient_OnMessageToPeerCallback NotificationFn) {
@@ -218,7 +218,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyMessageToPeer(
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnMessageToClientCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnMessageToClientCallbackInfo), "AntiCheatClientMessageToPeer");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyMessageToServer(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_AddNotifyMessageToServerOptions* Options, void* ClientData, EOS_AntiCheatClient_OnMessageToServerCallback NotificationFn) {
@@ -227,7 +227,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyMessageToServe
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatClient_OnMessageToServerCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatClient_OnMessageToServerCallbackInfo), "AntiCheatClientMessageToServer");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyPeerActionRequired(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_AddNotifyPeerActionRequiredOptions* Options, void* ClientData, EOS_AntiCheatClient_OnPeerActionRequiredCallback NotificationFn) {
@@ -236,7 +236,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyPeerActionRequ
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientActionRequiredCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientActionRequiredCallbackInfo), "AntiCheatClientPeerActionRequired");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyPeerAuthStatusChanged(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_AddNotifyPeerAuthStatusChangedOptions* Options, void* ClientData, EOS_AntiCheatClient_OnPeerAuthStatusChangedCallback NotificationFn) {
@@ -245,7 +245,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyPeerAuthStatus
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientAuthStatusChangedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientAuthStatusChangedCallbackInfo), "AntiCheatClientPeerAuthStatusChanged");
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_BeginSession(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_BeginSessionOptions* Options) {
@@ -374,7 +374,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatServer_AddNotifyClientActionRe
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientActionRequiredCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientActionRequiredCallbackInfo), "AntiCheatServerClientActionRequired");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatServer_AddNotifyClientAuthStatusChanged(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_AddNotifyClientAuthStatusChangedOptions* Options, void* ClientData, EOS_AntiCheatServer_OnClientAuthStatusChangedCallback NotificationFn) {
@@ -383,7 +383,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatServer_AddNotifyClientAuthStat
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientAuthStatusChangedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientAuthStatusChangedCallbackInfo), "AntiCheatServerClientAuthStatusChanged");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatServer_AddNotifyMessageToClient(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_AddNotifyMessageToClientOptions* Options, void* ClientData, EOS_AntiCheatServer_OnMessageToClientCallback NotificationFn) {
@@ -392,7 +392,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatServer_AddNotifyMessageToClien
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnMessageToClientCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnMessageToClientCallbackInfo), "AntiCheatServerMessageToClient");
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_BeginSession(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_BeginSessionOptions* Options) {
@@ -567,7 +567,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyCustomInviteAcce
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnCustomInviteAcceptedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnCustomInviteAcceptedCallbackInfo), "CustomInvitesCustomInviteAccepted");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyCustomInviteReceived(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyCustomInviteReceivedOptions* Options, void* ClientData, const EOS_CustomInvites_OnCustomInviteReceivedCallback NotificationFn) {
@@ -576,7 +576,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyCustomInviteRece
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnCustomInviteReceivedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnCustomInviteReceivedCallbackInfo), "CustomInvitesCustomInviteReceived");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyCustomInviteRejected(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyCustomInviteRejectedOptions* Options, void* ClientData, const EOS_CustomInvites_OnCustomInviteRejectedCallback NotificationFn) {
@@ -585,7 +585,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyCustomInviteReje
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_CustomInviteRejectedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_CustomInviteRejectedCallbackInfo), "CustomInvitesCustomInviteRejected");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinAccepted(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyRequestToJoinAcceptedOptions* Options, void* ClientData, const EOS_CustomInvites_OnRequestToJoinAcceptedCallback NotificationFn) {
@@ -594,7 +594,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinAcc
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnRequestToJoinAcceptedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnRequestToJoinAcceptedCallbackInfo), "CustomInvitesRequestToJoinAccepted");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinReceived(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyRequestToJoinReceivedOptions* Options, void* ClientData, const EOS_CustomInvites_OnRequestToJoinReceivedCallback NotificationFn) {
@@ -603,7 +603,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinRec
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_RequestToJoinReceivedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_RequestToJoinReceivedCallbackInfo), "CustomInvitesRequestToJoinReceived");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinRejected(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyRequestToJoinRejectedOptions* Options, void* ClientData, const EOS_CustomInvites_OnRequestToJoinRejectedCallback NotificationFn) {
@@ -612,7 +612,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinRej
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnRequestToJoinRejectedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnRequestToJoinRejectedCallbackInfo), "CustomInvitesRequestToJoinRejected");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinResponseReceived(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyRequestToJoinResponseReceivedOptions* Options, void* ClientData, const EOS_CustomInvites_OnRequestToJoinResponseReceivedCallback NotificationFn) {
@@ -621,7 +621,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinRes
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_RequestToJoinResponseReceivedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_RequestToJoinResponseReceivedCallbackInfo), "CustomInvitesRequestToJoinResponseReceived");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifySendCustomNativeInviteRequested(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifySendCustomNativeInviteRequestedOptions* Options, void* ClientData, const EOS_CustomInvites_OnSendCustomNativeInviteRequestedCallback NotificationFn) {
@@ -630,7 +630,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifySendCustomNative
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_SendCustomNativeInviteRequestedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_SendCustomNativeInviteRequestedCallbackInfo), "CustomInvitesSendCustomNativeInviteRequested");
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_CustomInvites_DisableRequestToJoin(EOS_HCustomInvites Handle, const EOS_CustomInvites_DisableRequestToJoinOptions* Options) {
@@ -1019,7 +1019,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_KWS_AddNotifyPermissionsUpdateReceived(
     (void)ClientData;
     (void)NotificationFn;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_KWS_PermissionsUpdateReceivedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_KWS_PermissionsUpdateReceivedCallbackInfo), "KWSPermissionsUpdateReceived");
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_KWS_CopyPermissionByIndex(EOS_HKWS Handle, const EOS_KWS_CopyPermissionByIndexOptions* Options, EOS_KWS_PermissionStatus ** OutPermission) {
@@ -1459,7 +1459,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTC_AddNotifyDisconnected(EOS_HRTC Hand
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_DisconnectedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_DisconnectedCallbackInfo), "RTCDisconnected");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTC_AddNotifyParticipantStatusChanged(EOS_HRTC Handle, const EOS_RTC_AddNotifyParticipantStatusChangedOptions* Options, void* ClientData, const EOS_RTC_OnParticipantStatusChangedCallback CompletionDelegate) {
@@ -1468,7 +1468,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTC_AddNotifyParticipantStatusChanged(E
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_ParticipantStatusChangedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_ParticipantStatusChangedCallbackInfo), "RTCParticipantStatusChanged");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTC_AddNotifyRoomBeforeJoin(EOS_HRTC Handle, const EOS_RTC_AddNotifyRoomBeforeJoinOptions* Options, void* ClientData, const EOS_RTC_OnRoomBeforeJoinCallback CompletionDelegate) {
@@ -1477,7 +1477,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTC_AddNotifyRoomBeforeJoin(EOS_HRTC Ha
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_RoomBeforeJoinCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_RoomBeforeJoinCallbackInfo), "RTCRoomBeforeJoin");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTC_AddNotifyRoomStatisticsUpdated(EOS_HRTC Handle, const EOS_RTC_AddNotifyRoomStatisticsUpdatedOptions* Options, void* ClientData, const EOS_RTC_OnRoomStatisticsUpdatedCallback CompletionDelegate) {
@@ -1486,7 +1486,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTC_AddNotifyRoomStatisticsUpdated(EOS_
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_RoomStatisticsUpdatedInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_RoomStatisticsUpdatedInfo), "RTCRoomStatisticsUpdated");
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTC_BlockParticipant(EOS_HRTC Handle, const EOS_RTC_BlockParticipantOptions* Options, void* ClientData, const EOS_RTC_OnBlockParticipantCallback CompletionDelegate) {
@@ -1617,7 +1617,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioBeforeRender(EOS
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioBeforeRenderCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioBeforeRenderCallbackInfo), "RTCAudioBeforeRender");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioBeforeSend(EOS_HRTCAudio Handle, const EOS_RTCAudio_AddNotifyAudioBeforeSendOptions* Options, void* ClientData, const EOS_RTCAudio_OnAudioBeforeSendCallback CompletionDelegate) {
@@ -1626,7 +1626,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioBeforeSend(EOS_H
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioBeforeSendCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioBeforeSendCallbackInfo), "RTCAudioBeforeSend");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioDevicesChanged(EOS_HRTCAudio Handle, const EOS_RTCAudio_AddNotifyAudioDevicesChangedOptions* Options, void* ClientData, const EOS_RTCAudio_OnAudioDevicesChangedCallback CompletionDelegate) {
@@ -1635,7 +1635,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioDevicesChanged(E
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioDevicesChangedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioDevicesChangedCallbackInfo), "RTCAudioDevicesChanged");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioInputState(EOS_HRTCAudio Handle, const EOS_RTCAudio_AddNotifyAudioInputStateOptions* Options, void* ClientData, const EOS_RTCAudio_OnAudioInputStateCallback CompletionDelegate) {
@@ -1644,7 +1644,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioInputState(EOS_H
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioInputStateCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioInputStateCallbackInfo), "RTCAudioInputState");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioOutputState(EOS_HRTCAudio Handle, const EOS_RTCAudio_AddNotifyAudioOutputStateOptions* Options, void* ClientData, const EOS_RTCAudio_OnAudioOutputStateCallback CompletionDelegate) {
@@ -1653,7 +1653,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioOutputState(EOS_
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioOutputStateCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioOutputStateCallbackInfo), "RTCAudioOutputState");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyParticipantUpdated(EOS_HRTCAudio Handle, const EOS_RTCAudio_AddNotifyParticipantUpdatedOptions* Options, void* ClientData, const EOS_RTCAudio_OnParticipantUpdatedCallback CompletionDelegate) {
@@ -1662,7 +1662,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyParticipantUpdated(EO
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_ParticipantUpdatedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_ParticipantUpdatedCallbackInfo), "RTCAudioParticipantUpdated");
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAudio_CopyInputDeviceInformationByIndex(EOS_HRTCAudio Handle, const EOS_RTCAudio_CopyInputDeviceInformationByIndexOptions* Options, EOS_RTCAudio_InputDeviceInformation ** OutInputDeviceInformation) {
@@ -1894,7 +1894,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCData_AddNotifyDataReceived(EOS_HRTCD
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCData_DataReceivedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCData_DataReceivedCallbackInfo), "RTCDataReceived");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCData_AddNotifyParticipantUpdated(EOS_HRTCData Handle, const EOS_RTCData_AddNotifyParticipantUpdatedOptions* Options, void* ClientData, const EOS_RTCData_OnParticipantUpdatedCallback CompletionDelegate) {
@@ -1903,7 +1903,7 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCData_AddNotifyParticipantUpdated(EOS
     (void)ClientData;
     (void)CompletionDelegate;
     return eosr::stub_add_notification(ClientData,
-        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCData_ParticipantUpdatedCallbackInfo));
+        reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCData_ParticipantUpdatedCallbackInfo), "RTCDataParticipantUpdated");
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCData_RemoveNotifyDataReceived(EOS_HRTCData Handle, EOS_NotificationId NotificationId) {

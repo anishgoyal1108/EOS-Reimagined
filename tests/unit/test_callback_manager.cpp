@@ -102,13 +102,16 @@ TEST_CASE("notifications: nonzero id, lookup by type, and removal") {
     recorder rec;
     std::unique_ptr<frame_result> note_owner = make_result(on_a, false);
     frame_result* note = note_owner.get();
-    const EOS_NotificationId id = mgr.add_notification(&rec, std::move(note_owner));
+    const EOS_NotificationId id =
+        mgr.add_notification(&rec, std::move(note_owner), "TestNotification");
     CHECK(id != 0);
 
     std::vector<EOS_NotificationId> got = mgr.notification_ids(&rec, type_id);
     REQUIRE(got.size() == 1);
     CHECK(got[0] == id);
     CHECK((mgr.find_notification(&rec, id) == note));
+    CHECK(note->notification_event() == "TestNotification");
+    CHECK_FALSE(note->notification_token().empty());
 
     CHECK(mgr.notification_ids(&rec, type_id + 1).size() == 0);
 

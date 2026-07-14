@@ -1,5 +1,7 @@
 #include "core/callback_manager.h"
 
+#include <atomic>
+
 #include "common/eos_names.h"
 #include "core/runtime.h"
 #include "core/tracer.h"
@@ -8,6 +10,7 @@ namespace eosr {
 
 // The first valid notification id; 0 is EOS_INVALID_NOTIFICATIONID.
 static const EOS_NotificationId first_notification_id = 1;
+static std::atomic<u64> next_notification_trace_token(1);
 
 callback_manager::callback_manager()
     : max_tick_budget_(0)
@@ -59,21 +62,39 @@ void callback_manager::add_callback(i_run_callback* owner, std::unique_ptr<frame
 }
 
 EOS_NotificationId callback_manager::add_notification(i_run_callback* owner,
-                                                      std::unique_ptr<frame_result> result) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    const EOS_NotificationId id = next_notification_id_;
-    next_notification_id_++;
-    notifications_[owner][id] = std::move(result);
+                                                      std::unique_ptr<frame_result> result,
+                                                      const char* event) {
+    const std::string event_name = event != 0 ? event : std::string();
+    const std::string token = std::to_string(next_notification_trace_token.fetch_add(1));
+    result->set_notification_trace(event_name, token);
+    EOS_NotificationId id;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        id = next_notification_id_++;
+        notifications_[owner][id] = std::move(result);
+    }
+    global_tracer().record_notify(event_name, "register", token, std::vector<trace_field>());
     return id;
 }
 
 void callback_manager::remove_notification(i_run_callback* owner, EOS_NotificationId id) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    std::map<i_run_callback*, std::map<EOS_NotificationId, std::unique_ptr<frame_result>>>::iterator it =
-        notifications_.find(owner);
-    if (it != notifications_.end()) {
-        it->second.erase(id);
+    std::string event;
+    std::string token;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        std::map<i_run_callback*, std::map<EOS_NotificationId, std::unique_ptr<frame_result>>>::iterator it =
+            notifications_.find(owner);
+        if (it != notifications_.end()) {
+            std::map<EOS_NotificationId, std::unique_ptr<frame_result>>::iterator note =
+                it->second.find(id);
+            if (note != it->second.end()) {
+                event = note->second->notification_event();
+                token = note->second->notification_token();
+                it->second.erase(note);
+            }
+        }
     }
+    global_tracer().record_notify(event, "remove", token, std::vector<trace_field>());
 }
 
 void callback_manager::clear() {

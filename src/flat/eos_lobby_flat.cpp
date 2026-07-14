@@ -41,13 +41,14 @@ void stub_async(void* client_data, delegate_type delegate, std::size_t info_size
 }
 
 template <class delegate_type>
-EOS_NotificationId stub_notify(void* client_data, delegate_type delegate, std::size_t info_size) {
+EOS_NotificationId stub_notify(void* client_data, delegate_type delegate, std::size_t info_size,
+                               const char* event) {
     eosr::sdk_lobby* lobby = live_lobby();
     if (lobby == 0) {
         return EOS_INVALID_NOTIFICATIONID;
     }
     return lobby->add_stub_notification(
-        client_data, reinterpret_cast<eosr::completion_delegate>(delegate), info_size);
+        client_data, reinterpret_cast<eosr::completion_delegate>(delegate), info_size, event);
 }
 
 } // namespace
@@ -220,27 +221,36 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_LobbySearch_SetTargetUserId(EOS_HLobbySearch H
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Lobby_AddNotifyJoinLobbyAccepted(EOS_HLobby Handle, const EOS_Lobby_AddNotifyJoinLobbyAcceptedOptions* Options, void* ClientData, const EOS_Lobby_OnJoinLobbyAcceptedCallback NotificationFn) {
     (void)Handle; (void)Options;
-    return stub_notify(ClientData, NotificationFn, sizeof(EOS_Lobby_JoinLobbyAcceptedCallbackInfo));
+    return stub_notify(ClientData, NotificationFn, sizeof(EOS_Lobby_JoinLobbyAcceptedCallbackInfo),
+                       "JoinLobbyAccepted");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Lobby_AddNotifyLeaveLobbyRequested(EOS_HLobby Handle, const EOS_Lobby_AddNotifyLeaveLobbyRequestedOptions* Options, void* ClientData, const EOS_Lobby_OnLeaveLobbyRequestedCallback NotificationFn) {
     (void)Handle; (void)Options;
-    return stub_notify(ClientData, NotificationFn, sizeof(EOS_Lobby_LeaveLobbyRequestedCallbackInfo));
+    return stub_notify(ClientData, NotificationFn,
+                       sizeof(EOS_Lobby_LeaveLobbyRequestedCallbackInfo),
+                       "LeaveLobbyRequested");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Lobby_AddNotifyLobbyInviteAccepted(EOS_HLobby Handle, const EOS_Lobby_AddNotifyLobbyInviteAcceptedOptions* Options, void* ClientData, const EOS_Lobby_OnLobbyInviteAcceptedCallback NotificationFn) {
     (void)Handle; (void)Options;
-    return stub_notify(ClientData, NotificationFn, sizeof(EOS_Lobby_LobbyInviteAcceptedCallbackInfo));
+    return stub_notify(ClientData, NotificationFn,
+                       sizeof(EOS_Lobby_LobbyInviteAcceptedCallbackInfo),
+                       "LobbyInviteAccepted");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Lobby_AddNotifyLobbyInviteReceived(EOS_HLobby Handle, const EOS_Lobby_AddNotifyLobbyInviteReceivedOptions* Options, void* ClientData, const EOS_Lobby_OnLobbyInviteReceivedCallback NotificationFn) {
     (void)Handle; (void)Options;
-    return stub_notify(ClientData, NotificationFn, sizeof(EOS_Lobby_LobbyInviteReceivedCallbackInfo));
+    return stub_notify(ClientData, NotificationFn,
+                       sizeof(EOS_Lobby_LobbyInviteReceivedCallbackInfo),
+                       "LobbyInviteReceived");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Lobby_AddNotifyLobbyInviteRejected(EOS_HLobby Handle, const EOS_Lobby_AddNotifyLobbyInviteRejectedOptions* Options, void* ClientData, const EOS_Lobby_OnLobbyInviteRejectedCallback NotificationFn) {
     (void)Handle; (void)Options;
-    return stub_notify(ClientData, NotificationFn, sizeof(EOS_Lobby_LobbyInviteRejectedCallbackInfo));
+    return stub_notify(ClientData, NotificationFn,
+                       sizeof(EOS_Lobby_LobbyInviteRejectedCallbackInfo),
+                       "LobbyInviteRejected");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Lobby_AddNotifyLobbyMemberStatusReceived(EOS_HLobby Handle, const EOS_Lobby_AddNotifyLobbyMemberStatusReceivedOptions* Options, void* ClientData, const EOS_Lobby_OnLobbyMemberStatusReceivedCallback NotificationFn) {
@@ -263,12 +273,16 @@ EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Lobby_AddNotifyLobbyUpdateReceived(EOS_
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Lobby_AddNotifyRTCRoomConnectionChanged(EOS_HLobby Handle, const EOS_Lobby_AddNotifyRTCRoomConnectionChangedOptions* Options, void* ClientData, const EOS_Lobby_OnRTCRoomConnectionChangedCallback NotificationFn) {
     (void)Handle; (void)Options;
-    return stub_notify(ClientData, NotificationFn, sizeof(EOS_Lobby_RTCRoomConnectionChangedCallbackInfo));
+    return stub_notify(ClientData, NotificationFn,
+                       sizeof(EOS_Lobby_RTCRoomConnectionChangedCallbackInfo),
+                       "LobbyRTCRoomConnectionChanged");
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Lobby_AddNotifySendLobbyNativeInviteRequested(EOS_HLobby Handle, const EOS_Lobby_AddNotifySendLobbyNativeInviteRequestedOptions* Options, void* ClientData, const EOS_Lobby_OnSendLobbyNativeInviteRequestedCallback NotificationFn) {
     (void)Handle; (void)Options;
-    return stub_notify(ClientData, NotificationFn, sizeof(EOS_Lobby_SendLobbyNativeInviteRequestedCallbackInfo));
+    return stub_notify(ClientData, NotificationFn,
+                       sizeof(EOS_Lobby_SendLobbyNativeInviteRequestedCallbackInfo),
+                       "SendLobbyNativeInviteRequested");
 }
 
 EOS_DECLARE_FUNC(void) EOS_Lobby_Attribute_Release(EOS_Lobby_Attribute* LobbyAttribute) {
@@ -477,4 +491,3 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Lobby_UpdateLobbyModification(EOS_HLobby Handl
     }
     return lobby->update_lobby_modification(Options, OutLobbyModificationHandle);
 }
-

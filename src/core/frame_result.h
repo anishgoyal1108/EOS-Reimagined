@@ -71,6 +71,13 @@ public:
     const std::vector<trace_field>& trace_payload() const { return trace_payload_; }
     bool has_payload() const { return !payload_.empty(); }
 
+    void set_notification_trace(const std::string& event, const std::string& token) {
+        notification_event_ = event;
+        notification_token_ = token;
+    }
+    const std::string& notification_event() const { return notification_event_; }
+    const std::string& notification_token() const { return notification_token_; }
+
     callback_type_id type_id() const { return type_id_; }
     bool done() const { return done_; }
     void set_done(bool value) { done_ = value; }
@@ -86,6 +93,8 @@ private:
     std::string trace_fn_;
     std::string trace_corr_;
     std::vector<trace_field> trace_payload_;
+    std::string notification_event_;
+    std::string notification_token_;
     bool done_;
     bool remove_on_timeout_;
 };

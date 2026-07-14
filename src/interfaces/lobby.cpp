@@ -1278,7 +1278,7 @@ EOS_NotificationId sdk_lobby::add_notify_lobby_update_received(
                                             sizeof(EOS_Lobby_LobbyUpdateReceivedCallbackInfo),
                                             reinterpret_cast<completion_delegate>(delegate));
     *static_cast<void**>(payload) = client_data;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), "LobbyUpdateReceived");
 }
 
 EOS_NotificationId sdk_lobby::add_notify_lobby_member_update_received(
@@ -1291,7 +1291,7 @@ EOS_NotificationId sdk_lobby::add_notify_lobby_member_update_received(
                                             sizeof(EOS_Lobby_LobbyMemberUpdateReceivedCallbackInfo),
                                             reinterpret_cast<completion_delegate>(delegate));
     *static_cast<void**>(payload) = client_data;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), "LobbyMemberUpdateReceived");
 }
 
 EOS_NotificationId sdk_lobby::add_notify_lobby_member_status_received(
@@ -1304,7 +1304,7 @@ EOS_NotificationId sdk_lobby::add_notify_lobby_member_status_received(
                                             sizeof(EOS_Lobby_LobbyMemberStatusReceivedCallbackInfo),
                                             reinterpret_cast<completion_delegate>(delegate));
     *static_cast<void**>(payload) = client_data;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), "LobbyMemberStatusReceived");
 }
 
 void sdk_lobby::remove_notify(EOS_NotificationId id) {
@@ -1312,14 +1312,14 @@ void sdk_lobby::remove_notify(EOS_NotificationId id) {
 }
 
 EOS_NotificationId sdk_lobby::add_stub_notification(void* client_data, completion_delegate delegate,
-                                                    std::size_t info_size) {
+                                                    std::size_t info_size, const char* event) {
     if (delegate == 0) {
         return EOS_INVALID_NOTIFICATIONID;
     }
     std::unique_ptr<frame_result> result(new frame_result());
     void* payload = result->create_callback(cb_notification, info_size, delegate);
     *static_cast<void**>(payload) = client_data;
-    return callbacks_.add_notification(this, std::move(result));
+    return callbacks_.add_notification(this, std::move(result), event);
 }
 
 void sdk_lobby::queue_stub_result(void* client_data, completion_delegate delegate,
