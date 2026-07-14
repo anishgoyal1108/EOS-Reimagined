@@ -138,6 +138,39 @@ bool path_is_absolute(const std::string& path) {
            ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
 }
 
+bool append_file(const std::string& path, const std::string& data) {
+    const HANDLE file = CreateFileA(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, 0, OPEN_ALWAYS,
+                                    FILE_ATTRIBUTE_NORMAL, 0);
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    std::size_t written = 0;
+    while (written < data.size()) {
+        DWORD count = 0;
+        if (!WriteFile(file, data.data() + written, static_cast<DWORD>(data.size() - written),
+                       &count, 0) ||
+            count == 0) {
+            CloseHandle(file);
+            return false;
+        }
+        written += count;
+    }
+    CloseHandle(file);
+    return true;
+}
+
+bool rename_file(const std::string& from, const std::string& to) {
+    return MoveFileExA(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
+}
+
+bool remove_file(const std::string& path) {
+    if (DeleteFileA(path.c_str())) {
+        return true;
+    }
+    const DWORD last = GetLastError();
+    return last == ERROR_FILE_NOT_FOUND || last == ERROR_PATH_NOT_FOUND;
+}
+
 file_lock::file_lock() : handle_(-1), held_(false) {
 }
 

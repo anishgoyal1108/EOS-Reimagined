@@ -11,6 +11,7 @@ add_executable(unit_tests
     unit/test_handle_store.cpp
     unit/test_json_writer.cpp
     unit/test_trace_event.cpp
+    unit/test_trace_sink.cpp
     unit/test_config.cpp
     unit/test_config_file.cpp
     unit/test_system_config_source.cpp

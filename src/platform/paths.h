@@ -29,6 +29,17 @@ file_read read_file_capped(const std::string& path, std::size_t max_bytes, std::
 // with a separator after the colon (C:\ or C:/). Pure string analysis, no I/O.
 bool path_is_absolute(const std::string& path);
 
+// Append `data` to `path`, creating it if absent. The whole write is one call; returns false on any
+// failure. Used by the trace sink to flush buffered lines.
+bool append_file(const std::string& path, const std::string& data);
+
+// Rename `from` to `to`, replacing an existing `to`. Returns false on failure. Used for log rotation.
+bool rename_file(const std::string& from, const std::string& to);
+
+// Remove `path`. Returns true if it is gone afterwards (an already-absent file is success), false only
+// on a real error.
+bool remove_file(const std::string& path);
+
 // Where this instance keeps its profile. EOSR_DATA_DIR overrides it, which is how a launcher hands
 // each local copy of a game its own profile -- and so its own identity -- without the copies having
 // to agree on anything. Otherwise it is the user's per-application data directory. Empty when the OS

@@ -141,6 +141,35 @@ bool path_is_absolute(const std::string& path) {
     return !path.empty() && path[0] == '/';
 }
 
+bool append_file(const std::string& path, const std::string& data) {
+    const int file = ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, owner_only_file);
+    if (file < 0) {
+        return false;
+    }
+    std::size_t written = 0;
+    while (written < data.size()) {
+        const ssize_t count = ::write(file, data.data() + written, data.size() - written);
+        if (count > 0) {
+            written += static_cast<std::size_t>(count);
+            continue;
+        }
+        if (count < 0 && errno == EINTR) {
+            continue;
+        }
+        ::close(file);
+        return false;
+    }
+    return ::close(file) == 0;
+}
+
+bool rename_file(const std::string& from, const std::string& to) {
+    return ::rename(from.c_str(), to.c_str()) == 0;
+}
+
+bool remove_file(const std::string& path) {
+    return ::unlink(path.c_str()) == 0 || errno == ENOENT;
+}
+
 file_lock::file_lock() : handle_(-1), held_(false) {
 }
 
