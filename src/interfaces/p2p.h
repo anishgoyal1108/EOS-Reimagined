@@ -27,7 +27,7 @@ class frame_result;
 // fire on the tick when connection events arrive over the network. Cross-peer delivery of a sent
 // packet rides on the peer mesh, which lands with the networked-discovery milestone; the receive
 // path, the packet queue, and the connection state machine are implemented and driven here.
-// Spec: EOSSDK_P2P (wiki/internals/p2p.md), the P2P data path (wiki/internals/protocol.md)
+// Spec: EOSSDK_P2P (wiki/developers/internals/p2p.qmd), the P2P data path (wiki/developers/internals/protocol.qmd)
 class sdk_p2p : public i_run_callback, public i_run_network {
 public:
     sdk_p2p(sdk_settings& settings, callback_manager& callbacks, message_router& network);

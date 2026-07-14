@@ -13,7 +13,7 @@ namespace eosr {
 // order is deterministic; string output is always valid UTF-8, with control characters and the JSON
 // metacharacters escaped and any invalid input byte replaced by U+FFFD rather than passed through. We
 // only ever write JSON (the trace and the owned files), so there is no reader here.
-// Spec: wiki/internals/alpha-tracing.md §7.
+// Spec: wiki/developers/internals/alpha-tracing.qmd §7.
 class json_writer {
 public:
     // `max_bytes` caps the serialized output: once it would be exceeded the writer goes invalid and

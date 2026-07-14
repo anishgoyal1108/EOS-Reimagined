@@ -18,7 +18,7 @@ namespace eosr {
 // Drives the async model: per-tick frames, one-shot completion callbacks, and persistent
 // notifications. Owns every frame_result via unique_ptr; interfaces hold non-owning
 // pointers while a request is pending.
-// Spec: Callback_Manager (wiki/internals/architecture.md §5)
+// Spec: Callback_Manager (wiki/developers/internals/architecture.qmd §5)
 class callback_manager {
 public:
     callback_manager();

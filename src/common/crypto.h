@@ -23,7 +23,7 @@ std::string base64url_encode(const std::string& text);
 // make ("ab", "c") and ("a", "bc") the same input, so two different peers -- or two different
 // games -- could derive one identity or one handshake transcript. Fixed-width numbers are fields
 // too, so a value can never be mistaken for the length of the next one.
-// Spec: enc()/lp() (wiki/internals/adr/0001 §4)
+// Spec: enc()/lp() (wiki/developers/internals/adr/0001 §4)
 class canonical_encoder {
 public:
     canonical_encoder& field(const u8* data, std::size_t len);
@@ -40,7 +40,7 @@ private:
     std::vector<u8> buffer_;
 };
 
-// --- Primitives for the authenticated mesh (wiki/internals/adr/0001) ---
+// --- Primitives for the authenticated mesh (wiki/developers/internals/adr/0001) ---
 //
 // These wrap the vendored Monocypher; that dependency lives only in crypto.cpp and never escapes
 // this interface. Key material is raw bytes so callers control its lifetime and can wipe it.

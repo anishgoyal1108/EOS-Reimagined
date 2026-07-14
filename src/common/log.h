@@ -15,7 +15,7 @@ namespace eosr {
 // process-global functions, so the state they configure lives in one shared instance used
 // by the flat layer and by internal callers that emit diagnostics. A message reaches the
 // game only when its level passes the threshold configured for its category.
-// Spec: Logging Interface (wiki/internals/architecture.md), EOSSDK_Client::SetupLogs (wiki/internals/client.md)
+// Spec: Logging Interface (wiki/developers/internals/architecture.qmd), EOSSDK_Client::SetupLogs (wiki/developers/internals/client.qmd)
 class logger {
 public:
     static logger& instance();

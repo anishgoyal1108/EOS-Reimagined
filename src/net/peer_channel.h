@@ -13,14 +13,14 @@ namespace eosr {
 // What the handshake binds itself to: the protocol, the wire version, and the title. Two peers that
 // disagree on any of it never finish a handshake, so a different game -- or a different version of
 // this one -- cannot be talked into a session by claiming otherwise.
-// Spec: prologue (wiki/internals/adr/0001 §5)
+// Spec: prologue (wiki/developers/internals/adr/0001 §5)
 std::vector<u8> mesh_prologue(const std::string& product_id, const std::string& sandbox_id,
                               const std::string& deployment_id);
 
 // Remembers which datagram sequences we have already opened, over a sliding window of the 64 most
 // recent. An unreliable path is allowed to reorder within that; a sequence older than the window is
 // not late, it is a replay, and one we have already seen is a replay whether it is late or not.
-// Spec: replay window (wiki/internals/adr/0001 §7)
+// Spec: replay window (wiki/developers/internals/adr/0001 §7)
 class replay_window {
 public:
     replay_window();
@@ -40,7 +40,7 @@ private:
 // proved it holds, with a counter that makes a replayed, reordered, or truncated frame simply fail
 // to open. The peer's identity is *recomputed* from the static key the handshake authenticated -- a
 // claimed id is never read off the wire and believed.
-// Spec: wiki/internals/adr/0001 §5, §6, §7
+// Spec: wiki/developers/internals/adr/0001 §5, §6, §7
 class peer_channel {
 public:
     enum step {

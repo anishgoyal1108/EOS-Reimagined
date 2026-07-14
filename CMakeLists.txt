@@ -15,7 +15,7 @@ option(BUILD_TESTING "Build the test suite" ON)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/compiler_warnings.cmake)
 
 # Vendored, audited crypto primitives (X25519, ChaCha20-Poly1305) for the authenticated mesh. Built
-# in its own target so project warnings do not apply to third-party source. See docs/adr/0001.
+# in its own target so project warnings do not apply to third-party source. See wiki/developers/internals/adr/0001.
 add_subdirectory(third_party/monocypher)
 
 # A precise, artifact-specific build id for the trace and runtime.json metadata: a base version plus

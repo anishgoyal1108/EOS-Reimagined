@@ -32,7 +32,7 @@ class callback_manager;
 // renderer: the plan is an external companion that sends the click over a local channel and lets the
 // SDK fire the ordinary notification on the game's own tick. Until that lands, the three accepted
 // notifications register and never fire, and AcknowledgeEventId knows no events.
-// Spec: EOSSDK_UI (wiki/internals/integratedplatform-ui-overlay.md), wiki/internals/companion-client.md
+// Spec: EOSSDK_UI (wiki/developers/internals/integratedplatform-ui-overlay.qmd), wiki/developers/internals/companion-client.qmd
 class sdk_ui : public i_run_callback {
 public:
     sdk_ui(sdk_settings& settings, callback_manager& callbacks);

@@ -316,7 +316,7 @@ EOS_EResult sdk_ui::set_display_preference(const EOS_UI_SetDisplayPreferenceOpti
 
 // A UI event is minted when a player accepts a join from the overlay. Nothing produces one yet, so
 // no id a game hands us is one we issued. The external companion is what will start issuing them --
-// see wiki/internals/companion-client.md -- and this is the call that will consume them.
+// see wiki/developers/internals/companion-client.qmd -- and this is the call that will consume them.
 EOS_EResult sdk_ui::acknowledge_event_id(const EOS_UI_AcknowledgeEventIdOptions* options) {
     if (options == 0 || !version_ok(options->ApiVersion, EOS_UI_ACKNOWLEDGEEVENTID_API_LATEST)) {
         return EOS_EResult::EOS_InvalidParameters;

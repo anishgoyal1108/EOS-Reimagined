@@ -14,7 +14,7 @@ namespace {
 const char* const protocol_name = "Noise_XX_25519_ChaChaPoly_SHA256";
 
 // The label the P2P data path's keys are derived under, keeping them independent of the two
-// transport keys Split hands back. Spec: wiki/internals/adr/0001 §7
+// transport keys Split hands back. Spec: wiki/developers/internals/adr/0001 §7
 const char* const udp_subkey_domain = "eosr-udp-subkey-v1";
 
 const std::size_t hash_len = 32;

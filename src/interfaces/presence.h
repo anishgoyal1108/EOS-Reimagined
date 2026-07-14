@@ -27,7 +27,7 @@ class message_router;
 // "join" string that lets you drop into whatever they are playing. Each peer knows its own presence
 // and tells the others; a query is a question answered by whoever owns that account.
 // Presence is keyed by Epic account id (the Auth identity), not the product user id.
-// Spec: EOSSDK_Presence (wiki/internals/presence.md), presence protocol (wiki/internals/protocol.md)
+// Spec: EOSSDK_Presence (wiki/developers/internals/presence.qmd), presence protocol (wiki/developers/internals/protocol.qmd)
 class sdk_presence : public i_run_callback, public i_run_network {
 public:
     sdk_presence(sdk_settings& settings, callback_manager& callbacks, message_router& network);

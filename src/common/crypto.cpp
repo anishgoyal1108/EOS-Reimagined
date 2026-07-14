@@ -171,7 +171,7 @@ std::string base64url_encode(const std::string& text) {
     return base64url_encode(reinterpret_cast<const u8*>(text.data()), text.size());
 }
 
-// --- Authenticated-mesh primitives, over the vendored Monocypher (wiki/internals/adr/0001) ---
+// --- Authenticated-mesh primitives, over the vendored Monocypher (wiki/developers/internals/adr/0001) ---
 
 void x25519_public_key(u8 out_public[x25519_key_len], const u8 secret[x25519_key_len]) {
     crypto_x25519_public_key(out_public, secret);

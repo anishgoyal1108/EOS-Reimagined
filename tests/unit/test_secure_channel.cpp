@@ -359,7 +359,7 @@ TEST_CASE("Noise transport counter never wraps to zero") {
 // If it reused the transport keys, a UDP sequence opening at zero and a TCP counter at zero would
 // be the same (key, nonce) -- two different plaintexts under one keystream, which is the one thing
 // a stream cipher must never do.
-// Spec: transport-key separation (wiki/internals/adr/0001 §7, §11)
+// Spec: transport-key separation (wiki/developers/internals/adr/0001 §7, §11)
 TEST_CASE("the UDP keys are independent of the transport keys") {
     u8 a_s[32];
     u8 b_s[32];

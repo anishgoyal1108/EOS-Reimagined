@@ -201,7 +201,7 @@ TEST_CASE("a generated X25519 keypair agrees on a shared secret") {
 // Every hashed input in the authenticated mesh is length-prefixed. A raw concatenation would make
 // ("ab","c") and ("a","bc") one and the same input, so two different peers -- or two different
 // games -- could derive one identity, or one handshake transcript, and never notice.
-// Spec: enc()/lp() (wiki/internals/adr/0001 §4, §11)
+// Spec: enc()/lp() (wiki/developers/internals/adr/0001 §4, §11)
 TEST_CASE("the canonical encoder length-prefixes every field") {
     canonical_encoder encoder;
     encoder.field("ab").field("c").field("");

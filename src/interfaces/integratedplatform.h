@@ -72,7 +72,7 @@ void release_integrated_platform_container(EOS_HIntegratedPlatformOptionsContain
 // user's login status now is; that needs no Steam, only somewhere to keep it and a notification to
 // fire when it changes. So a game that manages its own platform identity gets real behaviour, and a
 // game that expects the SDK to talk to Steam gets an honest NotConfigured.
-// Spec: EOSSDK_IntegratedPlatform (wiki/internals/integratedplatform-ui-overlay.md)
+// Spec: EOSSDK_IntegratedPlatform (wiki/developers/internals/integratedplatform-ui-overlay.qmd)
 class sdk_integrated_platform : public i_run_callback {
 public:
     explicit sdk_integrated_platform(callback_manager& callbacks);

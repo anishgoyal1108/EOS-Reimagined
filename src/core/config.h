@@ -9,7 +9,7 @@
 namespace eosr {
 
 // How much the trace sink records. Ordered: each level is a strict superset of the one before it.
-// Spec: wiki/internals/alpha-tracing.md §4.
+// Spec: wiki/developers/internals/alpha-tracing.qmd §4.
 enum class trace_level {
     off,
     errors,
@@ -58,7 +58,7 @@ struct config_diagnostic {
 
 // The fully resolved run configuration. Pure data: resolve_config produces it with no I/O, so it can
 // be built and checked in tests without an environment or a filesystem.
-// Spec: wiki/internals/alpha-tracing.md §2.
+// Spec: wiki/developers/internals/alpha-tracing.qmd §2.
 // Every scalar carries its default in-class, so a default-built resolved_config (a test's, or the
 // process-global one before EOS_Initialize resolves it) is well-defined rather than indeterminate.
 struct resolved_config {
@@ -113,7 +113,7 @@ struct config_defaults {
 // default. An override that fails validation at any layer is discarded and resolution falls through
 // to the next; an environment variable set to empty is unset. No I/O, no globals -- given the same
 // inputs it returns the same result.
-// Spec: wiki/internals/alpha-tracing.md §2.
+// Spec: wiki/developers/internals/alpha-tracing.qmd §2.
 resolved_config resolve_config(const config_source& source, const config_defaults& defaults);
 
 } // namespace eosr

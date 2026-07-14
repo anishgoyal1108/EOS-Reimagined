@@ -279,7 +279,7 @@ TEST_CASE("a memory-monitor notification reports the current state on the next t
 
 // A UI event is minted when a player accepts a join from the overlay. Nothing mints one yet, so no
 // id a game hands us is one we issued -- which is NotFound, not a malformed call. The external
-// companion is what will start issuing them (wiki/internals/companion-client.md).
+// companion is what will start issuing them (wiki/developers/internals/companion-client.qmd).
 TEST_CASE("no ui event exists to acknowledge yet") {
     ui_fixture fx;
     EOS_UI_AcknowledgeEventIdOptions options = {};

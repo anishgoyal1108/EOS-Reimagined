@@ -11,7 +11,7 @@ namespace eosr {
 // The Noise CipherState: a 32-byte key and a 64-bit nonce counter, encrypting with our AEAD
 // (IETF ChaCha20-Poly1305). The Noise nonce is 0x00000000 || le64(counter). An unkeyed state
 // passes data through unchanged, exactly as Noise's EncryptWithAd/DecryptWithAd do before a key is
-// established. Spec: Noise Protocol Framework, wiki/internals/adr/0001.
+// established. Spec: Noise Protocol Framework, wiki/developers/internals/adr/0001.
 class cipher_state {
 public:
     cipher_state();
@@ -75,7 +75,7 @@ public:
     // The UDP keys come out of here rather than from the caller because they are derived from the
     // secret chaining key, which this object holds and discards. They are independent of the two
     // transport keys, so a UDP sequence starting at zero can never collide with a TCP counter at
-    // zero. Spec: wiki/internals/adr/0001 §7
+    // zero. Spec: wiki/developers/internals/adr/0001 §7
     bool split(cipher_state& send, cipher_state& recv, u8 udp_send[32], u8 udp_recv[32]);
     // The transport keys alone, for a caller with no UDP path to key.
     bool split(cipher_state& send, cipher_state& recv);

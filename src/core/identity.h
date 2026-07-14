@@ -18,7 +18,7 @@ constexpr int max_local_profiles = 10;
 
 // The ids a static public key certifies. The router recomputes these from the key the handshake
 // proved a peer holds, so an id a peer merely claims is never believed.
-// Spec: identity derivation (wiki/internals/adr/0001 §4)
+// Spec: identity derivation (wiki/developers/internals/adr/0001 §4)
 std::string derive_epic_account_id(const u8 public_key[profile_key_len]);
 std::string derive_product_user_id(const u8 public_key[profile_key_len],
                                    const std::string& product_id, const std::string& sandbox_id,
@@ -31,7 +31,7 @@ std::string derive_product_user_id(const u8 public_key[profile_key_len],
 // Several copies of one game on one machine each take an exclusive profile slot, exactly as they
 // each take a discovery slot, and for the same reason: sharing one profile would give them one id,
 // and they would each mistake the other's advertisement for their own and never meet.
-// Spec: wiki/internals/adr/0001 §4, §9
+// Spec: wiki/developers/internals/adr/0001 §4, §9
 class identity {
 public:
     identity();

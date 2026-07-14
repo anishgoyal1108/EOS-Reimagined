@@ -87,7 +87,7 @@ TEST_CASE("the title moves the product user id but not the epic account id") {
 // Every hashed input is length-prefixed, so no two distinct field lists share an encoding. Hashing
 // a raw concatenation instead would give ("ab","c","") and ("a","bc","") one product user id, and
 // two players in two different sandboxes could collide on a single identity.
-// Spec: encoding non-ambiguity (wiki/internals/adr/0001 §11)
+// Spec: encoding non-ambiguity (wiki/developers/internals/adr/0001 §11)
 TEST_CASE("field boundaries cannot be shifted between product users") {
     identity profile;
     REQUIRE(profile.adopt_key(key_of(5).data()));

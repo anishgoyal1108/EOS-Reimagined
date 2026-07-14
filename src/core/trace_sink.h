@@ -27,7 +27,7 @@ public:
 // Off means it creates nothing. A write, flush, or rename failure disables the sink once -- it stops
 // writing and every later call is a silent no-op, and a failure never generates more work. A record
 // larger than a fresh file, or a serializer that returned the empty string, is skipped, not truncated.
-// Spec: wiki/internals/alpha-tracing.md §4 (rotation, flushing), §6 (failure and lifecycle).
+// Spec: wiki/developers/internals/alpha-tracing.qmd §4 (rotation, flushing), §6 (failure and lifecycle).
 class trace_sink {
 public:
     // How the run directory is owned. In manual mode the library creates it and its parents; in runner

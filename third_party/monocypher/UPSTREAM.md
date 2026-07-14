@@ -1,7 +1,7 @@
 # Monocypher — vendored upstream
 
 Vendored for the elliptic-curve (X25519) and AEAD (ChaCha20-Poly1305) primitives used by the
-Authenticated Mesh Identity milestone (`docs/adr/0001-authenticated-mesh-identity.md`). We do not
+Authenticated Mesh Identity milestone (`wiki/developers/internals/adr/0001-authenticated-mesh-identity.qmd`). We do not
 hand-roll these; see the ADR for the rationale.
 
 - **Version:** 4.0.3
