@@ -19,6 +19,13 @@ struct fake_source : config_source {
     std::map<std::string, i64> file_ints;
     std::map<std::string, std::pair<i64, i64> > file_pairs;
 
+    // A key lives in at most one of the typed maps, so "present in some other map" is exactly the
+    // wrong-type case the real JSON source will report.
+    bool present(const std::string& key) const {
+        return file_strings.count(key) != 0 || file_ints.count(key) != 0 ||
+               file_pairs.count(key) != 0;
+    }
+
     bool env(const std::string& name, std::string& out) const {
         std::map<std::string, std::string>::const_iterator it = envs.find(name);
         if (it == envs.end()) {
@@ -27,30 +34,30 @@ struct fake_source : config_source {
         out = it->second;
         return true;
     }
-    bool file_string(const std::string& key, std::string& out) const {
+    lookup file_string(const std::string& key, std::string& out) const {
         std::map<std::string, std::string>::const_iterator it = file_strings.find(key);
-        if (it == file_strings.end()) {
-            return false;
+        if (it != file_strings.end()) {
+            out = it->second;
+            return lookup::ok;
         }
-        out = it->second;
-        return true;
+        return present(key) ? lookup::wrong_type : lookup::missing;
     }
-    bool file_int(const std::string& key, i64& out) const {
+    lookup file_int(const std::string& key, i64& out) const {
         std::map<std::string, i64>::const_iterator it = file_ints.find(key);
-        if (it == file_ints.end()) {
-            return false;
+        if (it != file_ints.end()) {
+            out = it->second;
+            return lookup::ok;
         }
-        out = it->second;
-        return true;
+        return present(key) ? lookup::wrong_type : lookup::missing;
     }
-    bool file_int_pair(const std::string& key, i64& first, i64& second) const {
+    lookup file_int_pair(const std::string& key, i64& first, i64& second) const {
         std::map<std::string, std::pair<i64, i64> >::const_iterator it = file_pairs.find(key);
-        if (it == file_pairs.end()) {
-            return false;
+        if (it != file_pairs.end()) {
+            first = it->second.first;
+            second = it->second.second;
+            return lookup::ok;
         }
-        first = it->second.first;
-        second = it->second.second;
-        return true;
+        return present(key) ? lookup::wrong_type : lookup::missing;
     }
 };
 
@@ -64,7 +71,11 @@ config_defaults make_defaults() {
 
 bool has_diagnostic(const resolved_config& config, const std::string& needle) {
     for (std::size_t i = 0; i < config.diagnostics.size(); i++) {
-        if (config.diagnostics[i].find(needle) != std::string::npos) {
+        const config_diagnostic& diagnostic = config.diagnostics[i];
+        const std::string joined = diagnostic.field + " " + diagnostic.source + " " +
+                                   diagnostic.reason + " " + diagnostic.action + " " +
+                                   diagnostic.message;
+        if (joined.find(needle) != std::string::npos) {
             return true;
         }
     }
@@ -154,6 +165,22 @@ TEST_CASE("the display name is bounded to both EOS caps") {
     invalid.file_strings["display_name"] = "GoodName";
     config = resolve_config(invalid, defaults);
     CHECK(config.display_name == "GoodName"); // invalid rejected, falls through
+}
+
+TEST_CASE("parsed strings containing an embedded NUL do not reach C or filesystem APIs") {
+    config_defaults defaults = make_defaults();
+
+    fake_source display;
+    display.file_strings["display_name"] = std::string("Ali\0ce", 6);
+    resolved_config config = resolve_config(display, defaults);
+    CHECK(config.display_name == "Player");
+    CHECK(has_diagnostic(config, "display_name"));
+
+    fake_source path;
+    path.file_strings["trace_dir"] = std::string("visible\0hidden", 14);
+    config = resolve_config(path, defaults);
+    CHECK(config.trace_dir == "/data/traces");
+    CHECK(has_diagnostic(config, "trace_dir"));
 }
 
 TEST_CASE("trace level parses its four values and rejects others") {
@@ -259,6 +286,29 @@ TEST_CASE("instance label accepts a slug and rejects unsafe values") {
     }
 }
 
+TEST_CASE("an invalid environment label falls through to the file label") {
+    config_defaults defaults = make_defaults();
+    fake_source source;
+    source.envs["EOSR_INSTANCE_LABEL"] = "../unsafe";
+    source.file_strings["instance_label"] = "from-file";
+
+    const resolved_config config = resolve_config(source, defaults);
+    CHECK(config.instance_label == "from-file");
+    CHECK(has_diagnostic(config, "instance_label"));
+}
+
+TEST_CASE("a known file key with the wrong type produces a diagnostic") {
+    config_defaults defaults = make_defaults();
+    fake_source source;
+    // This models {"trace_max_bytes":"not-an-integer"}. The typed source can currently report only
+    // "not an integer value was returned", which is indistinguishable from a missing key.
+    source.file_strings["trace_max_bytes"] = "not-an-integer";
+
+    const resolved_config config = resolve_config(source, defaults);
+    CHECK(config.trace_max_bytes == 67108864u);
+    CHECK(has_diagnostic(config, "trace_max_bytes"));
+}
+
 TEST_CASE("a relative trace dir resolves against data dir, an absolute one is used as-is") {
     config_defaults defaults = make_defaults();
 
@@ -273,6 +323,10 @@ TEST_CASE("a relative trace dir resolves against data dir, an absolute one is us
     fake_source windows;
     windows.envs["EOSR_TRACE_DIR"] = "C:\\traces";
     CHECK(resolve_config(windows, defaults).trace_dir == "C:\\traces"); // drive-letter absolute
+
+    fake_source drive_relative;
+    drive_relative.envs["EOSR_TRACE_DIR"] = "C:traces";
+    CHECK(resolve_config(drive_relative, defaults).trace_dir == "/data/C:traces");
 }
 
 TEST_CASE("the run directory comes from EOSR_RUN_DIR or is left for the auto path") {

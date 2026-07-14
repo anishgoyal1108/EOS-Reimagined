@@ -23,6 +23,26 @@ struct discovery_range {
     u16 last;
 };
 
+// The outcome of a typed file lookup. A parsed key can be absent, present with the expected type, or
+// present with a different JSON type -- and the last is a config error the contract must report, so
+// it cannot be folded into "absent".
+enum class lookup {
+    missing,
+    ok,
+    wrong_type
+};
+
+// A structured note about a field resolution had to reject, clamp, or truncate. Stable fields so the
+// alpha tooling can compare runs across games by machine, not by matching prose; `message` is an
+// optional human sentence. These become meta/config trace records once the sink exists.
+struct config_diagnostic {
+    std::string field;     // the config field, e.g. "trace_max_bytes"
+    std::string source;    // "environment" or "file"
+    std::string reason;    // e.g. "wrong type", "not an integer", "embedded NUL", "out of range"
+    std::string action;    // "ignored", "clamped", or "truncated"
+    std::string message;   // optional human-readable detail
+};
+
 // The fully resolved run configuration. Pure data: resolve_config produces it with no I/O, so it can
 // be built and checked in tests without an environment or a filesystem.
 // Spec: docs/alpha-tracing.md §2.
@@ -36,9 +56,8 @@ struct resolved_config {
     u32 trace_max_rotated_files;           // rotated files kept, not counting the live one
     discovery_range discovery_ports;
     std::string instance_label;            // path-safe slug, or empty when unset
-    // One human-readable note per field that was rejected, clamped, or truncated. These become
-    // meta/config trace records once the sink exists; here they just record what resolution did.
-    std::vector<std::string> diagnostics;
+    // One entry per field that was rejected, clamped, or truncated -- what resolution did and why.
+    std::vector<config_diagnostic> diagnostics;
 };
 
 // The environment and the parsed config file, abstracted so resolution touches neither directly.
@@ -51,11 +70,12 @@ public:
     // string, which resolution then treats as unset. `out` is untouched when false.
     virtual bool env(const std::string& name, std::string& out) const = 0;
 
-    // Typed reads of the parsed config file. Each returns true only when the key exists with that
-    // exact shape; a missing key, or one of another shape, returns false, and the field falls through.
-    virtual bool file_string(const std::string& key, std::string& out) const = 0;
-    virtual bool file_int(const std::string& key, i64& out) const = 0;
-    virtual bool file_int_pair(const std::string& key, i64& first, i64& second) const = 0;
+    // Typed reads of the parsed config file. `ok` fills `out`; `wrong_type` means the key exists with
+    // a different JSON type (a config error to report); `missing` means it is absent. Resolution
+    // distinguishes the last two so a mistyped key produces a diagnostic rather than a silent default.
+    virtual lookup file_string(const std::string& key, std::string& out) const = 0;
+    virtual lookup file_int(const std::string& key, i64& out) const = 0;
+    virtual lookup file_int_pair(const std::string& key, i64& first, i64& second) const = 0;
 };
 
 // The non-config inputs resolution needs: the platform's already-resolved data directory (which is

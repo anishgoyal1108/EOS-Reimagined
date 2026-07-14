@@ -18,6 +18,16 @@ const std::size_t max_label_chars = 32;
 const i64 max_port = 65535;
 const i64 max_port_span = 64;
 
+void add_diag(std::vector<config_diagnostic>& diagnostics, const std::string& field,
+              const char* source, const char* reason, const char* action) {
+    config_diagnostic diagnostic;
+    diagnostic.field = field;
+    diagnostic.source = source;
+    diagnostic.reason = reason;
+    diagnostic.action = action;
+    diagnostics.push_back(diagnostic);
+}
+
 // Present and non-empty. An environment variable set to the empty string is unset, per the contract.
 bool env_value(const config_source& source, const char* name, std::string& out) {
     std::string value;
@@ -34,7 +44,7 @@ bool parse_int(const std::string& text, i64& out) {
         return false;
     }
     std::size_t i = 0;
-    bool negative = (text[0] == '-');
+    const bool negative = (text[0] == '-');
     if (negative) {
         if (text.size() == 1) {
             return false;
@@ -101,6 +111,28 @@ bool utf8_valid(const std::string& text) {
     return true;
 }
 
+bool has_nul(const std::string& text) {
+    return text.find('\0') != std::string::npos;
+}
+
+// Why a string is unfit for a C-string field, or empty if it is fit. An embedded NUL truncates the
+// value at the C ABI, so a name or path that carries one is not the value it appears to be.
+const char* text_reject_reason(const std::string& text) {
+    if (has_nul(text)) {
+        return "embedded NUL";
+    }
+    if (!utf8_valid(text)) {
+        return "invalid UTF-8";
+    }
+    return 0;
+}
+
+// Paths need not be UTF-8, but an embedded NUL still means the path the filesystem sees differs from
+// the configured one.
+const char* path_reject_reason(const std::string& text) {
+    return has_nul(text) ? "embedded NUL" : 0;
+}
+
 // Cut `text` (already valid UTF-8) to at most `max_chars` codepoints and `max_bytes` bytes, never
 // splitting a codepoint.
 std::string utf8_truncate(const std::string& text, std::size_t max_chars, std::size_t max_bytes) {
@@ -132,9 +164,10 @@ bool is_absolute_path(const std::string& path) {
     if (path[0] == '/' || path[0] == '\\') {
         return true;
     }
-    // A Windows drive-letter path (C:\ or C:/) is absolute too.
+    // A Windows drive-absolute path needs a slash after the colon (C:\ or C:/). C:traces is
+    // drive-relative -- it depends on the current directory on drive C -- so it is not absolute.
     const char c = path[0];
-    return path.size() >= 2 && path[1] == ':' &&
+    return path.size() >= 3 && path[1] == ':' && (path[2] == '/' || path[2] == '\\') &&
            ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
 }
 
@@ -187,25 +220,25 @@ bool valid_ports(i64 first, i64 last, discovery_range& out) {
     return true;
 }
 
-u64 clamp_bytes(i64 value, std::vector<std::string>& diagnostics) {
+u64 clamp_bytes(i64 value, std::vector<config_diagnostic>& diagnostics, const char* source) {
     if (value < static_cast<i64>(min_max_bytes)) {
-        diagnostics.push_back("trace_max_bytes below the minimum, clamped up");
+        add_diag(diagnostics, "trace_max_bytes", source, "below minimum", "clamped");
         return min_max_bytes;
     }
     if (static_cast<u64>(value) > max_max_bytes) {
-        diagnostics.push_back("trace_max_bytes above the maximum, clamped down");
+        add_diag(diagnostics, "trace_max_bytes", source, "above maximum", "clamped");
         return max_max_bytes;
     }
     return static_cast<u64>(value);
 }
 
-u32 clamp_rotated(i64 value, std::vector<std::string>& diagnostics) {
+u32 clamp_rotated(i64 value, std::vector<config_diagnostic>& diagnostics, const char* source) {
     if (value < 0) {
-        diagnostics.push_back("trace_max_rotated_files negative, clamped to zero");
+        add_diag(diagnostics, "trace_max_rotated_files", source, "negative", "clamped");
         return 0;
     }
     if (value > static_cast<i64>(max_rotated)) {
-        diagnostics.push_back("trace_max_rotated_files above the maximum, clamped down");
+        add_diag(diagnostics, "trace_max_rotated_files", source, "above maximum", "clamped");
         return max_rotated;
     }
     return static_cast<u32>(value);
@@ -216,38 +249,46 @@ u32 clamp_rotated(i64 value, std::vector<std::string>& diagnostics) {
 resolved_config resolve_config(const config_source& source, const config_defaults& defaults) {
     resolved_config config;
     config.data_dir = defaults.data_dir;
+    config.display_name = "Player";
     config.level = trace_level::off;
     config.trace_max_bytes = default_max_bytes;
     config.trace_max_rotated_files = default_rotated;
     config.discovery_ports = defaults.default_ports;
 
+    std::vector<config_diagnostic>& diagnostics = config.diagnostics;
     std::string raw;
 
-    // display_name: valid UTF-8, bounded to both EOS caps.
-    config.display_name = "Player";
+    // display_name: valid UTF-8 with no embedded NUL, bounded to both EOS caps.
     {
         std::string candidate;
-        bool have = false;
+        const char* used = 0;
         if (env_value(source, "EOSR_DISPLAY_NAME", raw)) {
-            if (utf8_valid(raw)) {
+            const char* bad = text_reject_reason(raw);
+            if (bad == 0) {
                 candidate = raw;
-                have = true;
+                used = "environment";
             } else {
-                config.diagnostics.push_back("display_name: invalid UTF-8 in environment, ignored");
+                add_diag(diagnostics, "display_name", "environment", bad, "ignored");
             }
         }
-        if (!have && source.file_string("display_name", raw) && !raw.empty()) {
-            if (utf8_valid(raw)) {
-                candidate = raw;
-                have = true;
-            } else {
-                config.diagnostics.push_back("display_name: invalid UTF-8 in file, ignored");
+        if (used == 0) {
+            const lookup found = source.file_string("display_name", raw);
+            if (found == lookup::ok && !raw.empty()) {
+                const char* bad = text_reject_reason(raw);
+                if (bad == 0) {
+                    candidate = raw;
+                    used = "file";
+                } else {
+                    add_diag(diagnostics, "display_name", "file", bad, "ignored");
+                }
+            } else if (found == lookup::wrong_type) {
+                add_diag(diagnostics, "display_name", "file", "wrong type", "ignored");
             }
         }
-        if (have) {
+        if (used != 0) {
             const std::string bounded = utf8_truncate(candidate, max_display_chars, max_display_bytes);
             if (bounded.size() != candidate.size()) {
-                config.diagnostics.push_back("display_name: truncated to the EOS length cap");
+                add_diag(diagnostics, "display_name", used, "exceeds length cap", "truncated");
             }
             config.display_name = bounded;
         }
@@ -261,14 +302,19 @@ resolved_config resolve_config(const config_source& source, const config_default
             if (parse_level(raw, level)) {
                 have = true;
             } else {
-                config.diagnostics.push_back("trace_level: unrecognized value in environment, ignored");
+                add_diag(diagnostics, "trace_level", "environment", "unrecognized value", "ignored");
             }
         }
-        if (!have && source.file_string("trace_level", raw)) {
-            if (parse_level(raw, level)) {
-                have = true;
-            } else {
-                config.diagnostics.push_back("trace_level: unrecognized value in file, ignored");
+        if (!have) {
+            const lookup found = source.file_string("trace_level", raw);
+            if (found == lookup::ok) {
+                if (parse_level(raw, level)) {
+                    have = true;
+                } else {
+                    add_diag(diagnostics, "trace_level", "file", "unrecognized value", "ignored");
+                }
+            } else if (found == lookup::wrong_type) {
+                add_diag(diagnostics, "trace_level", "file", "wrong type", "ignored");
             }
         }
         if (have) {
@@ -279,38 +325,49 @@ resolved_config resolve_config(const config_source& source, const config_default
     // trace_max_bytes.
     {
         i64 value;
-        bool have = false;
+        const char* used = 0;
         if (env_value(source, "EOSR_TRACE_MAX_BYTES", raw)) {
             if (parse_int(raw, value)) {
-                have = true;
+                used = "environment";
             } else {
-                config.diagnostics.push_back("trace_max_bytes: not an integer in environment, ignored");
+                add_diag(diagnostics, "trace_max_bytes", "environment", "not an integer", "ignored");
             }
         }
-        if (!have && source.file_int("trace_max_bytes", value)) {
-            have = true;
+        if (used == 0) {
+            const lookup found = source.file_int("trace_max_bytes", value);
+            if (found == lookup::ok) {
+                used = "file";
+            } else if (found == lookup::wrong_type) {
+                add_diag(diagnostics, "trace_max_bytes", "file", "wrong type", "ignored");
+            }
         }
-        if (have) {
-            config.trace_max_bytes = clamp_bytes(value, config.diagnostics);
+        if (used != 0) {
+            config.trace_max_bytes = clamp_bytes(value, diagnostics, used);
         }
     }
 
     // trace_max_rotated_files.
     {
         i64 value;
-        bool have = false;
+        const char* used = 0;
         if (env_value(source, "EOSR_TRACE_MAX_ROTATED", raw)) {
             if (parse_int(raw, value)) {
-                have = true;
+                used = "environment";
             } else {
-                config.diagnostics.push_back("trace_max_rotated_files: not an integer, ignored");
+                add_diag(diagnostics, "trace_max_rotated_files", "environment", "not an integer",
+                         "ignored");
             }
         }
-        if (!have && source.file_int("trace_max_rotated_files", value)) {
-            have = true;
+        if (used == 0) {
+            const lookup found = source.file_int("trace_max_rotated_files", value);
+            if (found == lookup::ok) {
+                used = "file";
+            } else if (found == lookup::wrong_type) {
+                add_diag(diagnostics, "trace_max_rotated_files", "file", "wrong type", "ignored");
+            }
         }
-        if (have) {
-            config.trace_max_rotated_files = clamp_rotated(value, config.diagnostics);
+        if (used != 0) {
+            config.trace_max_rotated_files = clamp_rotated(value, diagnostics, used);
         }
     }
 
@@ -324,16 +381,21 @@ resolved_config resolve_config(const config_source& source, const config_default
             if (parse_port_range(raw, first, last) && valid_ports(first, last, range)) {
                 have = true;
             } else {
-                config.diagnostics.push_back("discovery_ports: invalid range in environment, ignored");
+                add_diag(diagnostics, "discovery_ports", "environment", "invalid range", "ignored");
             }
         }
-        i64 first;
-        i64 last;
-        if (!have && source.file_int_pair("discovery_ports", first, last)) {
-            if (valid_ports(first, last, range)) {
-                have = true;
-            } else {
-                config.diagnostics.push_back("discovery_ports: invalid range in file, ignored");
+        if (!have) {
+            i64 first;
+            i64 last;
+            const lookup found = source.file_int_pair("discovery_ports", first, last);
+            if (found == lookup::ok) {
+                if (valid_ports(first, last, range)) {
+                    have = true;
+                } else {
+                    add_diag(diagnostics, "discovery_ports", "file", "invalid range", "ignored");
+                }
+            } else if (found == lookup::wrong_type) {
+                add_diag(diagnostics, "discovery_ports", "file", "wrong type", "ignored");
             }
         }
         if (have) {
@@ -341,19 +403,28 @@ resolved_config resolve_config(const config_source& source, const config_default
         }
     }
 
-    // instance_label: a path-safe slug or unset.
+    // instance_label: a path-safe slug or unset. An invalid environment value still yields to the file.
     {
+        bool have = false;
         if (env_value(source, "EOSR_INSTANCE_LABEL", raw)) {
             if (valid_label(raw)) {
                 config.instance_label = raw;
+                have = true;
             } else {
-                config.diagnostics.push_back("instance_label: not a path-safe slug, ignored");
+                add_diag(diagnostics, "instance_label", "environment", "not a path-safe slug",
+                         "ignored");
             }
-        } else if (source.file_string("instance_label", raw) && !raw.empty()) {
-            if (valid_label(raw)) {
-                config.instance_label = raw;
-            } else {
-                config.diagnostics.push_back("instance_label: not a path-safe slug in file, ignored");
+        }
+        if (!have) {
+            const lookup found = source.file_string("instance_label", raw);
+            if (found == lookup::ok && !raw.empty()) {
+                if (valid_label(raw)) {
+                    config.instance_label = raw;
+                } else {
+                    add_diag(diagnostics, "instance_label", "file", "not a path-safe slug", "ignored");
+                }
+            } else if (found == lookup::wrong_type) {
+                add_diag(diagnostics, "instance_label", "file", "wrong type", "ignored");
             }
         }
     }
@@ -361,18 +432,39 @@ resolved_config resolve_config(const config_source& source, const config_default
     // trace_dir: relative resolves against data_dir; absolute is used as-is.
     {
         std::string dir = "traces";
-        std::string file_value;
+        const char* used = 0;
+        std::string candidate;
         if (env_value(source, "EOSR_TRACE_DIR", raw)) {
-            dir = raw;
-        } else if (source.file_string("trace_dir", file_value) && !file_value.empty()) {
-            dir = file_value;
+            candidate = raw;
+            used = "environment";
+        } else {
+            const lookup found = source.file_string("trace_dir", raw);
+            if (found == lookup::ok && !raw.empty()) {
+                candidate = raw;
+                used = "file";
+            } else if (found == lookup::wrong_type) {
+                add_diag(diagnostics, "trace_dir", "file", "wrong type", "ignored");
+            }
+        }
+        if (used != 0) {
+            const char* bad = path_reject_reason(candidate);
+            if (bad == 0) {
+                dir = candidate;
+            } else {
+                add_diag(diagnostics, "trace_dir", used, bad, "ignored");
+            }
         }
         config.trace_dir = is_absolute_path(dir) ? dir : (config.data_dir + "/" + dir);
     }
 
     // run_dir: the runner override, or empty for the auto <trace_dir>/<run_id>.
     if (env_value(source, "EOSR_RUN_DIR", raw)) {
-        config.run_dir = raw;
+        const char* bad = path_reject_reason(raw);
+        if (bad == 0) {
+            config.run_dir = raw;
+        } else {
+            add_diag(diagnostics, "run_dir", "environment", bad, "ignored");
+        }
     }
 
     return config;
