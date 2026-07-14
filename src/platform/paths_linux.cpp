@@ -10,6 +10,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 namespace eosr {
@@ -40,6 +41,16 @@ std::string home_directory() {
 }
 
 } // namespace
+
+bool system_versions(std::string& os_version, std::string& wine_version) {
+    struct utsname info;
+    if (uname(&info) != 0) {
+        return false;
+    }
+    os_version = info.release;
+    wine_version.clear();
+    return !os_version.empty();
+}
 
 std::string user_data_directory() {
     const std::string override_directory = from_env("EOSR_DATA_DIR");

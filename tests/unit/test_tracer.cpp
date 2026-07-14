@@ -129,10 +129,22 @@ TEST_CASE("manual mode creates the run directory and its owned files") {
     CHECK(runtime.find("\"trace_level\":\"lifecycle\"") != std::string::npos);
     CHECK(runtime.find("\"instance_label\":\"alice\"") != std::string::npos);
     CHECK(runtime.find("\"discovery_ports\":[55789,55798]") != std::string::npos);
+    CHECK(runtime.find("\"version\":null") == std::string::npos);
+    CHECK(runtime.find("\"wine\":") != std::string::npos);
 
     t.stop();
     CHECK_FALSE(t.active());
     CHECK(slurp(dir + "/trace.jsonl").find("shutdown") != std::string::npos);
+}
+
+TEST_CASE("the platform reports a runtime OS version") {
+    std::string os_version;
+    std::string wine_version;
+    CHECK(platform::system_versions(os_version, wine_version));
+    CHECK_FALSE(os_version.empty());
+#if !defined(_WIN32)
+    CHECK(wine_version.empty());
+#endif
 }
 
 TEST_CASE("runner mode opens the given directory") {

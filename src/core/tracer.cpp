@@ -186,6 +186,9 @@ std::string tracer::resolve_manual_run_dir(const std::string& trace_dir) {
 bool tracer::write_runtime_json(const std::string& run_dir, const resolved_config& config) const {
     platform::utc_time now;
     const std::string created = platform::utc_now(now) ? iso_stamp(now) : std::string();
+    std::string os_version;
+    std::string wine_version;
+    platform::system_versions(os_version, wine_version);
 
     json_writer writer;
     writer.begin_object();
@@ -205,8 +208,16 @@ bool tracer::write_runtime_json(const std::string& run_dir, const resolved_confi
     writer.key("os");
     writer.begin_object();
     writer.field_string("name", os_name);
-    writer.field_null("version"); // best-effort: the OS version and Wine detection come later
-    writer.field_null("wine");
+    if (os_version.empty()) {
+        writer.field_null("version");
+    } else {
+        writer.field_string("version", os_version);
+    }
+    if (wine_version.empty()) {
+        writer.field_null("wine");
+    } else {
+        writer.field_string("wine", wine_version);
+    }
     writer.end_object();
     writer.key("config");
     writer.begin_object();

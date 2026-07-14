@@ -223,6 +223,14 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     CHECK(runtime.find("\"schema_version\":1") != std::string::npos);
     CHECK(runtime.find("\"emulator_build\":\"eosr ") != std::string::npos);
     CHECK(runtime.find("\"trace_level\":\"lifecycle\"") != std::string::npos);
+    CHECK(runtime.find("\"version\":null") == std::string::npos);
+    std::string expected_os;
+    std::string expected_wine;
+    REQUIRE(system_versions(expected_os, expected_wine));
+    CHECK(runtime.find("\"version\":\"" + expected_os + "\"") != std::string::npos);
+    if (!expected_wine.empty()) {
+        CHECK(runtime.find("\"wine\":\"" + expected_wine + "\"") != std::string::npos);
+    }
 
     // The trace is parseable JSONL, in run_start -> profile -> shutdown order, with a strictly
     // increasing sequence from zero.

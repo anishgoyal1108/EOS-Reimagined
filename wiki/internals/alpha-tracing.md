@@ -513,8 +513,8 @@ Designed against this contract but built after it:
      call, `callback_manager` stamps it onto any result queued during that call, and emits the
      `callback` record when the result fires a tick later. So an interface never carries a correlation
      id itself, and instrumenting the next export is a change to its trampoline alone.
-   - **Also done:** authenticated mesh lifecycle, Sessions/Lobby search, P2P open/close, and
-     notification register/fire/remove records, with real-socket and loaded-library coverage.
-   - **Still to do:** the remaining exports (the same trampoline pattern) and OS version / Wine
-     detection for `runtime.json`.
+   - **Also done:** authenticated mesh lifecycle, Sessions/Lobby search, P2P open/close,
+     notification register/fire/remove records, and runtime OS/Wine detection, with real-socket and
+     loaded-library coverage.
+   - **Still to do:** the remaining exports using the same trampoline pattern.
 6. The two-process C-ABI probe as the first full consumer.

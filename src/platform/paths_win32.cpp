@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
+#include <sstream>
 
 #include <windows.h>
 
@@ -23,7 +25,53 @@ bool is_drive(const std::string& component) {
     return component.size() == 2 && component[1] == ':';
 }
 
+struct rtl_os_version_info {
+    ULONG size;
+    ULONG major;
+    ULONG minor;
+    ULONG build;
+    ULONG platform;
+    WCHAR service_pack[128];
+};
+
 } // namespace
+
+bool system_versions(std::string& os_version, std::string& wine_version) {
+    os_version.clear();
+    wine_version.clear();
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (ntdll == 0) {
+        return false;
+    }
+
+    typedef LONG (WINAPI *rtl_get_version_fn)(rtl_os_version_info*);
+    const FARPROC version_address = GetProcAddress(ntdll, "RtlGetVersion");
+    rtl_get_version_fn get_version = 0;
+    static_assert(sizeof(get_version) == sizeof(version_address), "function pointer size mismatch");
+    std::memcpy(&get_version, &version_address, sizeof(get_version));
+    if (get_version != 0) {
+        rtl_os_version_info info = {};
+        info.size = sizeof(info);
+        if (get_version(&info) == 0) {
+            std::ostringstream version;
+            version << info.major << '.' << info.minor << '.' << info.build;
+            os_version = version.str();
+        }
+    }
+
+    typedef const char* (__cdecl *wine_get_version_fn)();
+    const FARPROC wine_address = GetProcAddress(ntdll, "wine_get_version");
+    wine_get_version_fn get_wine = 0;
+    static_assert(sizeof(get_wine) == sizeof(wine_address), "function pointer size mismatch");
+    std::memcpy(&get_wine, &wine_address, sizeof(get_wine));
+    if (get_wine != 0) {
+        const char* value = get_wine();
+        if (value != 0) {
+            wine_version = value;
+        }
+    }
+    return !os_version.empty();
+}
 
 std::string user_data_directory() {
     const std::string override_directory = from_env("EOSR_DATA_DIR");

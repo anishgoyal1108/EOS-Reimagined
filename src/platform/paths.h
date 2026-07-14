@@ -46,6 +46,9 @@ bool directory_exists(const std::string& path);
 // so it lives behind the shim (getpid vs GetCurrentProcessId).
 u64 process_id();
 
+// Best-effort runtime version strings for alpha manifests. `wine_version` is empty outside Wine.
+bool system_versions(std::string& os_version, std::string& wine_version);
+
 // A broken-down UTC time, enough to format both the compact run-id stamp and the ISO-8601 timestamp
 // in runtime.json without a locale or timezone database.
 struct utc_time {
