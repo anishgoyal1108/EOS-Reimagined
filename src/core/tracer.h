@@ -8,6 +8,8 @@
 #include <string>
 #include <thread>
 
+#include "eos_common.h"
+
 #include "common/types.h"
 #include "core/config.h"          // resolved_config, trace_level
 #include "core/label_registry.h"  // label_kind, label_registry
@@ -24,7 +26,7 @@ namespace eosr {
 //
 // The class is free of process-global machinery so a test can drive one directly against a temporary
 // directory; the flat layer owns the single process instance (global_tracer()).
-// Spec: wiki/internals/alpha-tracing.md §1 (run directory), §2 (config), §3 (runtime.json), §4/§6 (records,
+// Spec: wiki/developers/internals/alpha-tracing.qmd §1 (run directory), §2 (config), §3 (runtime.json), §4/§6 (records,
 // lifecycle).
 class tracer : public trace_meta_source {
 public:
@@ -70,6 +72,7 @@ public:
 
     // The stable opaque label for a handle or id, so neither ever reaches the file raw.
     std::string label(label_kind kind, const std::string& token);
+    std::string label_pointer(label_kind kind, const void* pointer);
 
     // --- The ambient call context ---
     //
@@ -182,6 +185,7 @@ public:
 
     // What this function returned. Defaults to void, which is what an async EOS function gives back.
     void returns(const trace_return& value) { value_ = value; }
+    void returns_handle(const void* value, label_kind kind);
 
 private:
     tracer& tracer_;
@@ -191,6 +195,28 @@ private:
     call_mode mode_;
     bool active_;  // tracing was on when the call began; it stays that way for the whole call
 };
+
+EOS_EResult traced_result(trace_scope& scope, EOS_EResult value);
+EOS_Bool traced_bool(trace_scope& scope, EOS_Bool value);
+const char* traced_string(trace_scope& scope, const char* value);
+
+template <class T>
+T traced_count(trace_scope& scope, T value) {
+    scope.returns(return_count(static_cast<u64>(value)));
+    return value;
+}
+
+template <class T>
+T traced_enum(trace_scope& scope, T value, const char* name) {
+    scope.returns(return_enum(name != 0 ? name : ""));
+    return value;
+}
+
+template <class T>
+T traced_handle(trace_scope& scope, T value, label_kind kind) {
+    scope.returns_handle(static_cast<const void*>(value), kind);
+    return value;
+}
 
 } // namespace eosr
 

@@ -5,6 +5,7 @@
 
 #include "eos_sdk.h"
 
+#include "common/eos_names.h"
 #include "core/platform.h"
 #include "core/client.h"
 #include "core/runtime.h"
@@ -43,8 +44,11 @@ EOS_EResult copy_out(const std::string& text, char* out_buffer, int32_t* in_out_
 } // namespace
 
 EOS_DECLARE_FUNC(EOS_HPlatform) EOS_Platform_Create(const EOS_Platform_Options* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_Create",
+                                 Options != 0 ? Options->ApiVersion : 0, eosr::call_mode::sync);
     if (Options == 0 || !eosr::global_client().is_initialized()) {
-        return 0;
+        return eosr::traced_handle(eosr_trace, static_cast<EOS_HPlatform>(0),
+                                   eosr::label_kind::handle);
     }
     eosr::sdk_platform* platform = eosr::platform_create();
     // The emulator configuration EOS_Initialize resolved: the player's display name and language, the
@@ -52,15 +56,19 @@ EOS_DECLARE_FUNC(EOS_HPlatform) EOS_Platform_Create(const EOS_Platform_Options* 
     platform->set_run_config(eosr::global_run_config());
     if (!platform->create(Options)) {
         eosr::platform_destroy();
-        return 0;
+        return eosr::traced_handle(eosr_trace, static_cast<EOS_HPlatform>(0),
+                                   eosr::label_kind::handle);
     }
     // The profile now exists (create loaded the identity), so the run stream can carry the local
     // pseudonymous fingerprint. A no-op unless tracing is enabled.
     eosr::global_tracer().on_profile(platform->settings().product_user_id());
-    return reinterpret_cast<EOS_HPlatform>(platform);
+    return eosr::traced_handle(eosr_trace, reinterpret_cast<EOS_HPlatform>(platform),
+                               eosr::label_kind::handle);
 }
 
 EOS_DECLARE_FUNC(void) EOS_Platform_Release(EOS_HPlatform Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_Release", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
     if (platform != 0) {
         platform->release();
@@ -71,6 +79,8 @@ EOS_DECLARE_FUNC(void) EOS_Platform_Release(EOS_HPlatform Handle) {
 }
 
 EOS_DECLARE_FUNC(void) EOS_Platform_Tick(EOS_HPlatform Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_Tick", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
     if (platform != 0) {
         platform->tick();
@@ -80,22 +90,28 @@ EOS_DECLARE_FUNC(void) EOS_Platform_Tick(EOS_HPlatform Handle) {
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_CheckForLauncherAndRestart(EOS_HPlatform Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(),
+                                 "EOS_Platform_CheckForLauncherAndRestart", 0,
+                                 eosr::call_mode::sync);
     // We are never launched by the Epic launcher, so there is nothing to relaunch. Returning
     // EOS_Success would tell the game to quit and restart; EOS_NoChange tells it to carry on.
     if (checked_platform(Handle) == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
-    return EOS_EResult::EOS_NoChange;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NoChange);
 }
 
 // Every EOS_Platform_Get<X>Interface follows the same shape: resolve the platform, hand back
 // the stored interface object as the matching opaque handle. A getter on an invalid platform
 // returns null, which the caller must be prepared for anyway.
-#define EOSR_INTERFACE_GETTER(fn_name, handle_type, iface_id)                    \
-    EOS_DECLARE_FUNC(handle_type) fn_name(EOS_HPlatform Handle) {                 \
-        eosr::sdk_platform* platform = checked_platform(Handle);                 \
-        void* iface = (platform != 0) ? platform->interface_handle(iface_id) : 0; \
-        return reinterpret_cast<handle_type>(iface);                             \
+#define EOSR_INTERFACE_GETTER(fn_name, handle_type, iface_id)                         \
+    EOS_DECLARE_FUNC(handle_type) fn_name(EOS_HPlatform Handle) {                      \
+        eosr::trace_scope eosr_trace(eosr::global_tracer(), #fn_name, 0,               \
+                                     eosr::call_mode::sync);                           \
+        eosr::sdk_platform* platform = checked_platform(Handle);                       \
+        void* iface = (platform != 0) ? platform->interface_handle(iface_id) : 0;       \
+        return eosr::traced_handle(eosr_trace, reinterpret_cast<handle_type>(iface),   \
+                                   eosr::label_kind::handle);                          \
     }
 
 EOSR_INTERFACE_GETTER(EOS_Platform_GetMetricsInterface, EOS_HMetrics, eosr::if_metrics)
@@ -136,27 +152,41 @@ EOSR_INTERFACE_GETTER(EOS_Platform_GetIntegratedPlatformInterface, EOS_HIntegrat
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_SetApplicationStatus(EOS_HPlatform Handle,
                                                                 const EOS_EApplicationStatus NewStatus) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_SetApplicationStatus", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
-    return (platform != 0) ? platform->set_application_status(NewStatus)
-                           : EOS_EResult::EOS_InvalidParameters;
+    const EOS_EResult result = (platform != 0) ? platform->set_application_status(NewStatus)
+                                               : EOS_EResult::EOS_InvalidParameters;
+    return eosr::traced_result(eosr_trace, result);
 }
 
 EOS_DECLARE_FUNC(EOS_EApplicationStatus) EOS_Platform_GetApplicationStatus(EOS_HPlatform Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_GetApplicationStatus", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
-    return (platform != 0) ? platform->application_status()
-                           : EOS_EApplicationStatus::EOS_AS_Foreground;
+    const EOS_EApplicationStatus result = (platform != 0)
+                                              ? platform->application_status()
+                                              : EOS_EApplicationStatus::EOS_AS_Foreground;
+    return eosr::traced_enum(eosr_trace, result, eosr::application_status_name(result));
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_SetNetworkStatus(EOS_HPlatform Handle,
                                                             const EOS_ENetworkStatus NewStatus) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_SetNetworkStatus", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
-    return (platform != 0) ? platform->set_network_status(NewStatus)
-                           : EOS_EResult::EOS_InvalidParameters;
+    const EOS_EResult result = (platform != 0) ? platform->set_network_status(NewStatus)
+                                               : EOS_EResult::EOS_InvalidParameters;
+    return eosr::traced_result(eosr_trace, result);
 }
 
 EOS_DECLARE_FUNC(EOS_ENetworkStatus) EOS_Platform_GetNetworkStatus(EOS_HPlatform Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_GetNetworkStatus", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
-    return (platform != 0) ? platform->network_status() : EOS_ENetworkStatus::EOS_NS_Online;
+    const EOS_ENetworkStatus result =
+        (platform != 0) ? platform->network_status() : EOS_ENetworkStatus::EOS_NS_Online;
+    return eosr::traced_enum(eosr_trace, result, eosr::network_status_name(result));
 }
 
 // --- Country and locale ---
@@ -167,51 +197,61 @@ EOS_DECLARE_FUNC(EOS_ENetworkStatus) EOS_Platform_GetNetworkStatus(EOS_HPlatform
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_SetOverrideCountryCode(EOS_HPlatform Handle,
                                                                   const char* NewCountryCode) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_SetOverrideCountryCode", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
     if (platform == 0 || NewCountryCode == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
     // An overlong code is an invalid code, which is what the setter's contract calls it. LimitExceeded
     // is the getters' word, and it means something a caller can act on -- "your buffer was too small,
     // here is the size" -- which is not what happened here.
     if (std::strlen(NewCountryCode) >= EOS_COUNTRYCODE_MAX_LENGTH) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
     platform->settings().set_override_country(NewCountryCode);
-    return EOS_EResult::EOS_Success;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_Success);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetOverrideCountryCode(EOS_HPlatform Handle,
                                                                   char* OutBuffer,
                                                                   int32_t* InOutBufferLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_GetOverrideCountryCode", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
     if (platform == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
-    return copy_out(platform->settings().override_country(), OutBuffer, InOutBufferLength);
+    return eosr::traced_result(
+        eosr_trace, copy_out(platform->settings().override_country(), OutBuffer, InOutBufferLength));
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_SetOverrideLocaleCode(EOS_HPlatform Handle,
                                                                  const char* NewLocaleCode) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_SetOverrideLocaleCode", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
     if (platform == 0 || NewLocaleCode == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
     if (std::strlen(NewLocaleCode) >= EOS_LOCALECODE_MAX_LENGTH) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
     platform->settings().set_override_locale(NewLocaleCode);
-    return EOS_EResult::EOS_Success;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_Success);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetOverrideLocaleCode(EOS_HPlatform Handle,
                                                                  char* OutBuffer,
                                                                  int32_t* InOutBufferLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_GetOverrideLocaleCode", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
     if (platform == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
-    return copy_out(platform->settings().override_locale(), OutBuffer, InOutBufferLength);
+    return eosr::traced_result(
+        eosr_trace, copy_out(platform->settings().override_locale(), OutBuffer, InOutBufferLength));
 }
 
 // The active code is the override, and there is nothing else it could be: an account we could look
@@ -221,30 +261,34 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetActiveCountryCode(EOS_HPlatform Ha
                                                                 EOS_EpicAccountId /*LocalUserId*/,
                                                                 char* OutBuffer,
                                                                 int32_t* InOutBufferLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_GetActiveCountryCode", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
     if (platform == 0 || OutBuffer == 0 || InOutBufferLength == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
     const std::string& country = platform->settings().override_country();
     if (country.empty()) {
-        return EOS_EResult::EOS_NotFound;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
     }
-    return copy_out(country, OutBuffer, InOutBufferLength);
+    return eosr::traced_result(eosr_trace, copy_out(country, OutBuffer, InOutBufferLength));
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetActiveLocaleCode(EOS_HPlatform Handle,
                                                                EOS_EpicAccountId /*LocalUserId*/,
                                                                char* OutBuffer,
                                                                int32_t* InOutBufferLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_GetActiveLocaleCode", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
     if (platform == 0 || OutBuffer == 0 || InOutBufferLength == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
     const std::string& locale = platform->settings().override_locale();
     if (locale.empty()) {
-        return EOS_EResult::EOS_NotFound;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
     }
-    return copy_out(locale, OutBuffer, InOutBufferLength);
+    return eosr::traced_result(eosr_trace, copy_out(locale, OutBuffer, InOutBufferLength));
 }
 
 // The header says plainly that this is Windows only and answers EOS_NotImplemented anywhere else.
@@ -266,13 +310,15 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetActiveLocaleCode(EOS_HPlatform Han
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetDesktopCrossplayStatus(
     EOS_HPlatform Handle, const EOS_Platform_GetDesktopCrossplayStatusOptions* Options,
     EOS_Platform_DesktopCrossplayStatusInfo* OutDesktopCrossplayStatusInfo) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Platform_GetDesktopCrossplayStatus",
+                                 Options != 0 ? Options->ApiVersion : 0, eosr::call_mode::sync);
     eosr::sdk_platform* platform = checked_platform(Handle);
     if (platform == 0 || Options == 0 || OutDesktopCrossplayStatusInfo == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
     if (Options->ApiVersion <= 0 ||
         Options->ApiVersion > EOS_PLATFORM_GETDESKTOPCROSSPLAYSTATUS_API_LATEST) {
-        return EOS_EResult::EOS_IncompatibleVersion;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_IncompatibleVersion);
     }
 #if defined(_WIN32)
     OutDesktopCrossplayStatusInfo->Status = EOS_EDesktopCrossplayStatus::EOS_DCS_OK;
@@ -281,8 +327,8 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Platform_GetDesktopCrossplayStatus(
     // error screens, so leaving it as whatever the game happened to have there is not an option. The
     // reference emulator writes -1, and so do we.
     OutDesktopCrossplayStatusInfo->ServiceInitResult = -1;
-    return EOS_EResult::EOS_Success;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_Success);
 #else
-    return EOS_EResult::EOS_NotImplemented;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotImplemented);
 #endif
 }

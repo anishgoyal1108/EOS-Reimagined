@@ -1,8 +1,11 @@
 #include "core/tracer.h"
 
+#include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
+#include "common/eos_names.h"
 #include "common/json_writer.h"
 #include "common/log.h"
 #include "core/peer_fp.h"
@@ -343,6 +346,14 @@ std::string tracer::label(label_kind kind, const std::string& token) {
     return labels_.label(kind, token);
 }
 
+std::string tracer::label_pointer(label_kind kind, const void* pointer) {
+    if (pointer == 0) {
+        return std::string();
+    }
+    const u64 value = static_cast<u64>(reinterpret_cast<std::uintptr_t>(pointer));
+    return label(kind, std::to_string(value));
+}
+
 std::string tracer::begin_async_call(const std::string& fn, i32 api,
                                      const std::vector<trace_field>& args) {
     if (!enabled()) {
@@ -541,6 +552,29 @@ trace_scope::~trace_scope() {
         return;
     }
     tracer_.record_return(fn_, std::string(), value_);
+}
+
+void trace_scope::returns_handle(const void* value, label_kind kind) {
+    if (value == 0) {
+        returns(return_null_handle());
+        return;
+    }
+    returns(return_handle(tracer_.label_pointer(kind, value)));
+}
+
+EOS_EResult traced_result(trace_scope& scope, EOS_EResult value) {
+    scope.returns(return_result(static_cast<i32>(value), result_name(value)));
+    return value;
+}
+
+EOS_Bool traced_bool(trace_scope& scope, EOS_Bool value) {
+    scope.returns(return_bool(value != EOS_FALSE));
+    return value;
+}
+
+const char* traced_string(trace_scope& scope, const char* value) {
+    scope.returns(return_length(value != 0 ? std::strlen(value) : 0));
+    return value;
 }
 
 } // namespace eosr

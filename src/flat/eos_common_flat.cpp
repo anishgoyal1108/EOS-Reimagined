@@ -11,6 +11,8 @@
 #include "eos_version.h"
 
 #include "common/ids.h"
+#include "core/runtime.h"
+#include "core/tracer.h"
 
 namespace {
 
@@ -36,54 +38,80 @@ EOS_EResult id_to_string(const std::string& id_str, bool valid, char* out_buffer
 } // namespace
 
 EOS_DECLARE_FUNC(const char*) EOS_EResult_ToString(EOS_EResult Result) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_EResult_ToString", 0,
+                                 eosr::call_mode::sync);
     // The same mapping the trace records use, so the exported name and the traced name cannot drift.
-    return eosr::result_name(Result);
+    return eosr::traced_string(eosr_trace, eosr::result_name(Result));
 }
 
 EOS_DECLARE_FUNC(EOS_Bool) EOS_EpicAccountId_IsValid(EOS_EpicAccountId AccountId) {
-    return (AccountId != 0 && AccountId->valid) ? EOS_TRUE : EOS_FALSE;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_EpicAccountId_IsValid", 0,
+                                 eosr::call_mode::sync);
+    return eosr::traced_bool(eosr_trace,
+                             (AccountId != 0 && AccountId->valid) ? EOS_TRUE : EOS_FALSE);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_EpicAccountId_ToString(EOS_EpicAccountId AccountId,
                                                          char* OutBuffer, int32_t* InOutBufferLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_EpicAccountId_ToString", 0,
+                                 eosr::call_mode::sync);
     const bool valid = (AccountId != 0 && AccountId->valid);
-    return id_to_string(valid ? AccountId->id_str : std::string(), valid, OutBuffer, InOutBufferLength);
+    return eosr::traced_result(
+        eosr_trace,
+        id_to_string(valid ? AccountId->id_str : std::string(), valid, OutBuffer,
+                     InOutBufferLength));
 }
 
 EOS_DECLARE_FUNC(EOS_EpicAccountId) EOS_EpicAccountId_FromString(const char* AccountIdString) {
-    if (AccountIdString == 0) {
-        return 0;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_EpicAccountId_FromString", 0,
+                                 eosr::call_mode::sync);
+    EOS_EpicAccountId result = 0;
+    if (AccountIdString != 0) {
+        result = eosr::id_registry::instance().get_epic_account_id(AccountIdString);
     }
-    return eosr::id_registry::instance().get_epic_account_id(AccountIdString);
+    return eosr::traced_handle(eosr_trace, result, eosr::label_kind::eaid);
 }
 
 EOS_DECLARE_FUNC(EOS_Bool) EOS_ProductUserId_IsValid(EOS_ProductUserId AccountId) {
-    return (AccountId != 0 && AccountId->valid) ? EOS_TRUE : EOS_FALSE;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_ProductUserId_IsValid", 0,
+                                 eosr::call_mode::sync);
+    return eosr::traced_bool(eosr_trace,
+                             (AccountId != 0 && AccountId->valid) ? EOS_TRUE : EOS_FALSE);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_ProductUserId_ToString(EOS_ProductUserId AccountId,
                                                          char* OutBuffer, int32_t* InOutBufferLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_ProductUserId_ToString", 0,
+                                 eosr::call_mode::sync);
     const bool valid = (AccountId != 0 && AccountId->valid);
-    return id_to_string(valid ? AccountId->id_str : std::string(), valid, OutBuffer, InOutBufferLength);
+    return eosr::traced_result(
+        eosr_trace,
+        id_to_string(valid ? AccountId->id_str : std::string(), valid, OutBuffer,
+                     InOutBufferLength));
 }
 
 EOS_DECLARE_FUNC(EOS_ProductUserId) EOS_ProductUserId_FromString(const char* ProductUserIdString) {
-    if (ProductUserIdString == 0) {
-        return 0;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_ProductUserId_FromString", 0,
+                                 eosr::call_mode::sync);
+    EOS_ProductUserId result = 0;
+    if (ProductUserIdString != 0) {
+        result = eosr::id_registry::instance().get_product_user_id(ProductUserIdString);
     }
-    return eosr::id_registry::instance().get_product_user_id(ProductUserIdString);
+    return eosr::traced_handle(eosr_trace, result, eosr::label_kind::puid);
 }
 
 // A result says the operation is finished unless the callback that carried it is going to be called
 // again -- which is only ever the retry and the two interactive-login continuations.
 EOS_DECLARE_FUNC(EOS_Bool) EOS_EResult_IsOperationComplete(EOS_EResult Result) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_EResult_IsOperationComplete", 0,
+                                 eosr::call_mode::sync);
     switch (Result) {
         case EOS_EResult::EOS_OperationWillRetry:
         case EOS_EResult::EOS_Auth_PinGrantCode:
         case EOS_EResult::EOS_Auth_MFARequired:
-            return EOS_FALSE;
+            return eosr::traced_bool(eosr_trace, EOS_FALSE);
         default:
-            return EOS_TRUE;
+            return eosr::traced_bool(eosr_trace, EOS_TRUE);
     }
 }
 
@@ -92,11 +120,13 @@ EOS_DECLARE_FUNC(EOS_Bool) EOS_EResult_IsOperationComplete(EOS_EResult Result) {
 EOS_DECLARE_FUNC(EOS_EResult) EOS_ByteArray_ToString(const uint8_t* ByteArray, const uint32_t Length,
                                                      char* OutBuffer,
                                                      uint32_t* InOutBufferLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_ByteArray_ToString", 0,
+                                 eosr::call_mode::sync);
     // A zero length is not an empty success: the header lists InvalidParameters for "a null pointer
     // or invalid length", and the reference SDK refuses a zero length outright. There is nothing to
     // encode, and a caller asking us to encode nothing has made a mistake it would rather hear about.
     if (OutBuffer == 0 || InOutBufferLength == 0 || ByteArray == 0 || Length == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
     // Two characters a byte, plus room for the null. We have to know that fits in the length we
     // report *before* computing it: past this, the multiply wraps, and the wrapped value looks like
@@ -104,12 +134,12 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_ByteArray_ToString(const uint8_t* ByteArray, c
     // would send the loop below walking gigabytes off the end of both buffers.
     const uint32_t max_encodable_length = (0xffffffffu - 1) / 2;
     if (Length > max_encodable_length) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
     const uint32_t needed = (Length * 2) + 1;
     if (*InOutBufferLength < needed) {
         *InOutBufferLength = needed;
-        return EOS_EResult::EOS_LimitExceeded;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_LimitExceeded);
     }
     static const char digits[] = "0123456789ABCDEF";
     for (uint32_t i = 0; i < Length; i++) {
@@ -118,7 +148,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_ByteArray_ToString(const uint8_t* ByteArray, c
     }
     OutBuffer[Length * 2] = '\0';
     *InOutBufferLength = needed;
-    return EOS_EResult::EOS_Success;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_Success);
 }
 
 // A continuance token is minted by an interactive login continuation, and there is nothing here to
@@ -128,42 +158,32 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_ByteArray_ToString(const uint8_t* ByteArray, c
 EOS_DECLARE_FUNC(EOS_EResult) EOS_ContinuanceToken_ToString(EOS_ContinuanceToken ContinuanceToken,
                                                             char* OutBuffer,
                                                             int32_t* InOutBufferLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_ContinuanceToken_ToString", 0,
+                                 eosr::call_mode::sync);
     if (OutBuffer == 0 || InOutBufferLength == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
     (void)ContinuanceToken;
-    return EOS_EResult::EOS_InvalidUser;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidUser);
 }
 
 EOS_DECLARE_FUNC(const char*) EOS_EApplicationStatus_ToString(EOS_EApplicationStatus Status) {
-    switch (Status) {
-        case EOS_EApplicationStatus::EOS_AS_BackgroundConstrained:
-            return "EOS_AS_BackgroundConstrained";
-        case EOS_EApplicationStatus::EOS_AS_BackgroundUnconstrained:
-            return "EOS_AS_BackgroundUnconstrained";
-        case EOS_EApplicationStatus::EOS_AS_BackgroundSuspended:
-            return "EOS_AS_BackgroundSuspended";
-        case EOS_EApplicationStatus::EOS_AS_Foreground:
-            return "EOS_AS_Foreground";
-    }
-    return "EOS_AS_Foreground";
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_EApplicationStatus_ToString", 0,
+                                 eosr::call_mode::sync);
+    return eosr::traced_string(eosr_trace, eosr::application_status_name(Status));
 }
 
 EOS_DECLARE_FUNC(const char*) EOS_ENetworkStatus_ToString(EOS_ENetworkStatus Status) {
-    switch (Status) {
-        case EOS_ENetworkStatus::EOS_NS_Disabled:
-            return "EOS_NS_Disabled";
-        case EOS_ENetworkStatus::EOS_NS_Offline:
-            return "EOS_NS_Offline";
-        case EOS_ENetworkStatus::EOS_NS_Online:
-            return "EOS_NS_Online";
-    }
-    return "EOS_NS_Online";
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_ENetworkStatus_ToString", 0,
+                                 eosr::call_mode::sync);
+    return eosr::traced_string(eosr_trace, eosr::network_status_name(Status));
 }
 
 // The version of the SDK we answer as. A game asking this is asking what API it may expect, so we
 // name the headers we are built against -- the version string the real SDK would have produced from
 // the very same header.
 EOS_DECLARE_FUNC(const char*) EOS_GetVersion(void) {
-    return EOS_VERSION_STRING;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_GetVersion", 0,
+                                 eosr::call_mode::sync);
+    return eosr::traced_string(eosr_trace, EOS_VERSION_STRING);
 }

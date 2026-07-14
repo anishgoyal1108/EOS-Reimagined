@@ -314,11 +314,33 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
         expected++;
     }
 
+    const char* bootstrap_functions[] = {
+        "EOS_Initialize",
+        "EOS_Platform_Create",
+        "EOS_Platform_GetConnectInterface",
+        "EOS_ProductUserId_ToString",
+        "EOS_Shutdown"
+    };
+    for (std::size_t i = 0; i < sizeof(bootstrap_functions) / sizeof(bootstrap_functions[0]); i++) {
+        CHECK(count_records(lines, "call", bootstrap_functions[i]) == 1);
+        CHECK(count_records(lines, "return", bootstrap_functions[i]) == 1);
+    }
+    const std::string platform_create_return = find_line(
+        lines, "\"kind\":\"return\",\"fn\":\"EOS_Platform_Create\"");
+    CHECK(platform_create_return.find("\"value\":{\"type\":\"handle\",\"v\":\"handle#") !=
+          std::string::npos);
+    const std::string shutdown_return =
+        find_line(lines, "\"kind\":\"return\",\"fn\":\"EOS_Shutdown\"");
+    CHECK(shutdown_return.find("\"name\":\"EOS_Success\"") != std::string::npos);
+
     // The asynchronous login: its call, its synchronous return, and the callback that completed it a
     // tick later all carry one correlation id, so a reader can stitch the operation back together.
-    const std::string call = find_line(lines, "\"kind\":\"call\"");
-    const std::string ret = find_line(lines, "\"kind\":\"return\"");
-    const std::string callback = find_line(lines, "\"kind\":\"callback\"");
+    const std::string call =
+        find_line(lines, "\"kind\":\"call\",\"fn\":\"EOS_Connect_Login\"");
+    const std::string ret =
+        find_line(lines, "\"kind\":\"return\",\"fn\":\"EOS_Connect_Login\"");
+    const std::string callback =
+        find_line(lines, "\"kind\":\"callback\",\"fn\":\"EOS_Connect_Login\"");
     REQUIRE_FALSE(call.empty());
     REQUIRE_FALSE(ret.empty());
     REQUIRE_FALSE(callback.empty());

@@ -11,7 +11,7 @@ namespace eosr {
 namespace {
 
 // The writer is capped below the 64 KiB sink minimum, so a record that would overrun fails to complete
-// and is dropped rather than persisted. Spec: wiki/internals/alpha-tracing.md §4, §7.
+// and is dropped rather than persisted. Spec: wiki/developers/internals/alpha-tracing.qmd §4, §7.
 const std::size_t max_record_bytes = 60000;
 const std::size_t max_body_fields = 32;
 const std::size_t max_label_bytes = 64;
@@ -250,7 +250,7 @@ bool return_value_ok(const trace_return& value) {
     const std::string& t = value.value_type;
     const trace_value::kind k = value.value.type;
     if (t == "bool") return k == trace_value::v_flag;
-    if (t == "count") return k == trace_value::v_uint;
+    if (t == "count" || t == "length") return k == trace_value::v_uint;
     if (t == "handle" || t == "notification_id") return k == trace_value::v_label;
     if (t == "enum") return k == trace_value::v_enum;
     return false;
@@ -331,6 +331,13 @@ trace_return return_count(u64 value) {
     trace_return r;
     r.type = trace_return::r_value;
     r.value_type = "count";
+    r.value = tv_uint(value);
+    return r;
+}
+trace_return return_length(u64 value) {
+    trace_return r;
+    r.type = trace_return::r_value;
+    r.value_type = "length";
     r.value = tv_uint(value);
     return r;
 }

@@ -60,4 +60,27 @@ const char* connection_closed_reason_name(EOS_EConnectionClosedReason reason) {
     return "EOS_CCR_Unknown";
 }
 
+const char* application_status_name(EOS_EApplicationStatus status) {
+    switch (status) {
+        case EOS_EApplicationStatus::EOS_AS_BackgroundConstrained:
+            return "EOS_AS_BackgroundConstrained";
+        case EOS_EApplicationStatus::EOS_AS_BackgroundUnconstrained:
+            return "EOS_AS_BackgroundUnconstrained";
+        case EOS_EApplicationStatus::EOS_AS_BackgroundSuspended:
+            return "EOS_AS_BackgroundSuspended";
+        case EOS_EApplicationStatus::EOS_AS_Foreground:
+            return "EOS_AS_Foreground";
+    }
+    return "EOS_AS_Foreground";
+}
+
+const char* network_status_name(EOS_ENetworkStatus status) {
+    switch (status) {
+        case EOS_ENetworkStatus::EOS_NS_Disabled: return "EOS_NS_Disabled";
+        case EOS_ENetworkStatus::EOS_NS_Offline: return "EOS_NS_Offline";
+        case EOS_ENetworkStatus::EOS_NS_Online: return "EOS_NS_Online";
+    }
+    return "EOS_NS_Online";
+}
+
 } // namespace eosr

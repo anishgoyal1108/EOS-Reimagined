@@ -251,6 +251,14 @@ TEST_CASE("an absent handle is explicit null, not void") {
                       "\"corr\":\"c#2\",\"value\":{\"type\":\"handle\",\"v\":null}}");
 }
 
+TEST_CASE("a returned string is represented only by its length") {
+    const trace_return value = return_length(17);
+    const std::string line = serialize_return(make_envelope(), "EOS_GetVersion", "", value);
+    CHECK(line == prefix +
+                      "\"kind\":\"return\",\"fn\":\"EOS_GetVersion\","
+                      "\"value\":{\"type\":\"length\",\"v\":17}}");
+}
+
 TEST_CASE("only nullable return kinds may carry null") {
     trace_return value;
     value.type = trace_return::r_value;

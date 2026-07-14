@@ -3,6 +3,7 @@
 
 #include "eos_common.h"
 #include "eos_p2p_types.h"
+#include "eos_types.h"
 
 namespace eosr {
 
@@ -18,6 +19,8 @@ const char* credential_type_name(EOS_EExternalCredentialType type);
 // The symbolic name of an EOS_EConnectionClosedReason, for the `reason` a net/p2p_close record
 // carries -- the same reason the game is handed, so the trace and the game agree on why it closed.
 const char* connection_closed_reason_name(EOS_EConnectionClosedReason reason);
+const char* application_status_name(EOS_EApplicationStatus status);
+const char* network_status_name(EOS_ENetworkStatus status);
 
 } // namespace eosr
 

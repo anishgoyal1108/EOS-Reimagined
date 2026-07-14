@@ -1,9 +1,13 @@
 // Flat C ABI trampolines for the SDK lifecycle. Each exported EOS_* function forwards to the
 // process-global sdk_client; the header's EOS_DECLARE_FUNC carries the export attribute.
+#include <string>
+#include <vector>
+
 #include "eos_init.h"
 #include "eos_logging.h"
 
 #include "common/log.h"
+#include "common/eos_names.h"
 #include "core/client.h"
 #include "core/config.h"
 #include "core/runtime.h"
@@ -56,13 +60,30 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Initialize(const EOS_InitializeOptions* Option
         eosr::set_global_run_config(config);
         eosr::global_tracer().start(config);
     }
+    eosr::tracer& trace = eosr::global_tracer();
+    if (trace.enabled()) {
+        const i32 api = Options != 0 ? Options->ApiVersion : 0;
+        trace.record_call("EOS_Initialize", api, std::string(), std::vector<eosr::trace_field>());
+        trace.record_return(
+            "EOS_Initialize", std::string(),
+            eosr::return_result(static_cast<i32>(result), eosr::result_name(result)));
+    }
     return result;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Shutdown() {
+    eosr::tracer& trace = eosr::global_tracer();
+    if (trace.enabled()) {
+        trace.record_call("EOS_Shutdown", 0, std::string(), std::vector<eosr::trace_field>());
+    }
     const EOS_EResult result = eosr::global_client().shutdown();
+    if (trace.enabled()) {
+        trace.record_return(
+            "EOS_Shutdown", std::string(),
+            eosr::return_result(static_cast<i32>(result), eosr::result_name(result)));
+    }
     if (result == EOS_EResult::EOS_Success) {
-        eosr::global_tracer().stop();
+        trace.stop();
     }
     return result;
 }
