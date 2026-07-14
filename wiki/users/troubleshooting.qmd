@@ -1,0 +1,148 @@
+---
+title: "Troubleshooting & FAQ"
+description: "The failure modes people actually hit, in the order they usually hit them."
+---
+
+## The game won't launch {#the-game-wont-launch}
+
+**Symptom:** with EOS Reimagined dropped in, the game exits instantly, a dialog like *"The
+procedure entry point EOS_… could not be located"* appears, or a Unity/Mono game throws
+`EntryPointNotFoundException`. With Epic's original library it starts fine.
+
+**Cause:** the game is resolving an EOS symbol the library doesn't export — which means you are
+running an **old build**. Since the full-surface milestone *(2026-07-14)*, EOS Reimagined
+exports **every** function the SDK headers declare (638 of them); the ones without real behavior
+answer an honest `EOS_NotImplemented` instead of not existing. A current artifact simply cannot
+die this way.
+
+**What to do:** rebuild from current source (or grab a fresh CI artifact) and drop the new
+library in. If it still happens, run the
+[import census](tracing.qmd#inspect_gamepy-will-this-game-even-load) against the game and your
+exact library — it names every missing symbol and its severity:
+
+```sh
+python3 tools/inspect_game.py "/path/to/Game/" --our-library build/libEOSSDK-Linux-Shipping.so
+```
+
+Anything **LOADER-FATAL** in that report against a current build is a bug — open an issue with
+the census output.
+
+## The game runs, but a feature does nothing
+
+That's the flip side of the full export surface: a family that isn't really built yet — voice,
+achievements, cloud saves, commerce, anti-cheat, and friends (the full list is on the
+[roadmap](roadmap.qmd#present-but-not-functional)) — *loads and answers honestly* instead of
+crashing. Queries complete with `EOS_NotImplemented`, getters report empty, and nothing
+pretends to have worked. The game keeps running; that feature is simply absent.
+
+If you want to see exactly which stubbed calls a game leans on, run it with
+[`EOSR_TRACE=lifecycle`](tracing.qmd) — every stub answer lands in the trace — and attach that
+to an issue. Real-game data is what prioritizes which family gets built next.
+
+## Peers don't see each other {#peers-dont-see-each-other}
+
+Work down the list; each item catches real cases:
+
+1. **Same subnet?** Discovery is a UDP *broadcast*. Different subnets, guest Wi‑Fi isolation
+   ("AP/client isolation"), most VPN interfaces, and anything routed will not carry it. Put both
+   machines on the same Wi‑Fi/switch.
+2. **Firewall?** Allow **UDP 55789–55798** (in and out, including broadcast) and inbound **TCP
+   from the LAN** for the game — see [Networking & firewalls](networking.qmd). On Windows, if
+   you ever clicked "Cancel" on the firewall prompt, the block rule persists: check
+   *Windows Defender Firewall → Allowed apps*.
+3. **Same game, same build, both patched?** Every player must run the *same title* with EOS
+   Reimagined dropped in. The handshake binds the game's product/sandbox/deployment IDs and the
+   wire version — a different game, a different game *version* with different IDs, or a player
+   still on Epic's DLL simply cannot complete a handshake.
+4. **Same discovery range?** If anyone overrode [`discovery_ports`](configuration.qmd), everyone
+   must use the identical range.
+5. **`enable_lan` still true?** `enable_lan: false` (or `EOSR_ENABLE_LAN=0`) runs the platform
+   with no peer network at all — deliberately invisible.
+6. **Port range full?** Ten instances per machine per range; the eleventh finds no free
+   discovery port and comes up peerless.
+
+Still stuck? `EOSR_TRACE=lifecycle` on both machines and compare: machine A should show
+`discover` for B, then `handshake`, then `adopt`. Where the sequence stops is what's broken —
+no `discover` means broadcasts aren't arriving (network/firewall); `discover` without `adopt`
+means the TCP dial-back or handshake is failing (firewall on the *other* box, or mismatched
+game/version).
+
+## Both instances act like one player
+
+**Symptom:** two copies on one machine (or two machines) fight over one identity, or a game
+shows one confused player.
+
+**Cause:** they're sharing a profile key. On one machine that shouldn't happen (instances take
+exclusive [profile slots](identity-and-profiles.qmd)) — but copying a whole data directory to
+another machine, or pointing two instances at the same `EOSR_DATA_DIR`, ships `profile.key`
+along, and one key is one player. The mesh will refuse the second connection under an
+already-connected identity.
+
+**Fix:** give each player their own data directory (`EOSR_DATA_DIR=~/eosr/p1`, `…/p2`), or
+delete the copied `profile.key` on the second machine so it mints its own.
+
+## I moved machines and became a new player
+
+Your identity is the `profile.key` file, and it stayed behind. Copy it from the old machine's
+data directory into the new one — that file *is* your identity. (And back it up: nobody can
+reissue it.) See [Identity & profiles](identity-and-profiles.qmd).
+
+## Voice chat doesn't work
+
+Correct, for now: the RTC families are honest stubs — the game loads, room calls answer
+`EOS_NotImplemented`, and no audio is carried. (Even the reference emulator's RTC merely managed
+rooms without carrying voice.) Track it on the [roadmap](roadmap.qmd). Meanwhile: Discord
+exists, and a LAN party is usually one room anyway.
+
+## Achievements / cloud saves / DLC checks are missing
+
+Same story — Achievements, Stats, Leaderboards, PlayerDataStorage, TitleStorage, and Ecom are
+[stubs](roadmap.qmd#present-but-not-functional): the game loads and runs, the queries complete
+honestly with `EOS_NotImplemented`, and the features stay absent until each family is really
+built. The `unlock_dlcs` config key is accepted today but honestly reported as ignored until
+Ecom actually answers ownership checks.
+
+## The overlay never appears / invites do nothing
+
+There is no overlay, on purpose — this is a headless library, and it reports the overlay as never
+visible rather than pretending. Games whose *only* join path is an overlay click (Presence/
+Session/Lobby "join accepted" notifications) can register those notifications, but nothing fires
+them yet. The designed answer is the [external social companion](../developers/internals/companion-client.qmd):
+a separate local app that shows your authenticated LAN peers and tells the SDK inside the game to
+fire the normal join callback. It's a planned milestone, not shipped.
+
+## Frequently asked
+
+**Can I play with a friend who's on real Epic/EOS?**
+No, and we don't intend to make that work. EOS Reimagined speaks its own reconstructed protocol
+between copies of *itself* and never contacts Epic's servers. It is emulator-to-emulator, and
+letting unauthenticated copies onto Epic's live services is explicitly a non-goal — see
+[Scope & non-goals](scope.qmd).
+
+**Does this work over the Internet?**
+Not yet. Discovery is a LAN broadcast; there is no traversal or relay. Internet play is deferred,
+not rejected. (A VPN that genuinely bridges broadcast traffic into one L2 segment can work, but
+most don't out of the box, and it's unsupported territory.)
+
+**Is this a crack? Will it bypass anti-cheat?**
+No and no. It does not remove ownership checks a game does elsewhere, it implements none of
+Epic Anti-Cheat, and anti-cheat bypass is out of scope permanently. A game that hard-requires
+EAC to reach multiplayer is not going to get there with this library. The project's position on
+piracy and cheating is [stated in full here](scope.qmd).
+
+**Windows says the DLL is untrusted / SmartScreen complains.**
+You replaced a signed Epic DLL with an unsigned open-source one; that's expected. Build it
+yourself from source if trust is the concern — that's rather the point of FOSS.
+
+**Where does it keep my files?**
+Everything lives in one per-user data directory — profile keys, `eosr.json`, traces:
+`~/.local/share/eos-reimagined` on Linux, `%LOCALAPPDATA%\eos-reimagined` on Windows,
+overridable with `EOSR_DATA_DIR`. Nothing is written into the game folder except the library you
+copied there yourself.
+
+**How do I report a bug well?**
+Reproduce with `EOSR_TRACE=lifecycle`, then attach the run's `trace.jsonl` (it contains labels
+and fingerprints, not real IDs or payloads — glance at `runtime.json` before sharing, since it
+echoes your display name). Add the game, OS, and — if the game won't load — the
+`inspect_game.py` output. Then
+[open an issue](https://github.com/anishgoyal1108/EOS-Reimagined/issues/new).

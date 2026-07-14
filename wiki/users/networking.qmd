@@ -1,0 +1,96 @@
+---
+title: "Networking & firewalls"
+description: "How peers find and trust each other, which ports are involved, and what to allow through a firewall."
+---
+
+Multiplayer in EOS Reimagined is a **mesh over your local network**. There is no central
+anything: a lobby or session lives on the peer that created it, and a search is a question sent
+to the peers you know. This page is the practical view — what actually moves on the wire, and
+what your firewall needs to allow. The byte-level contract lives in the
+[protocol internals](../developers/internals/protocol.qmd) and
+[ADR 0001](../developers/internals/adr/0001-authenticated-mesh-identity.qmd).
+
+## The three kinds of traffic
+
+**1. Discovery — UDP broadcast on ports 55789–55798.**
+Every running copy binds the first free port in the discovery range (default `55789–55798`,
+configurable via [`discovery_ports`](configuration.qmd)) and broadcasts a small advertisement
+every 2 seconds to every port in the range, on every broadcast-capable interface. The
+advertisement says only *where to dial* — *nothing in it is believed* until proven.
+
+**2. Control — an authenticated TCP mesh on a dynamic port.**
+A peer that hears an advertisement dials back over TCP and runs a **Noise XX handshake** before
+it becomes a peer at all. The TCP listener uses an OS-assigned ephemeral port; peers learn it
+from a *sealed* advertisement over the already-authenticated mesh, so it is never guessed and
+never trusted off the wire. Presence, sessions, lobbies, friends — all control traffic rides this
+mesh, and every frame is sealed; a forged, tampered, replayed, or truncated frame does not open,
+and a frame that fails to open ends the connection rather than guess.
+
+**3. Game data — sealed UDP datagrams on the same discovery port.**
+`EOS_P2P` packets the game marks *unreliable* go as encrypted UDP datagrams (a packet the game is
+willing to lose should not hold up the ones behind it); *reliable* packets take the TCP mesh.
+The UDP socket is the same one discovery uses, so the discovery range is the only UDP surface.
+A datagram that fails to authenticate is dropped in silence — rubbish over UDP can't end a
+working connection.
+
+Identity is bound into all of it: the handshake proves which key a peer holds, its IDs are
+recomputed from that key, and the game's product/sandbox/deployment IDs plus the wire version are
+mixed into the handshake transcript — so **another game, or another protocol version, cannot
+complete a handshake**, and two unrelated games on one LAN cannot talk even by accident.
+
+## What to allow through the firewall
+
+On every machine that plays:
+
+| Direction | Protocol / ports | Why |
+|---|---|---|
+| Inbound + outbound | **UDP 55789–55798** (or your configured range), including broadcast | Peer discovery and P2P game data |
+| Inbound from the LAN | **TCP, ephemeral ports** for the game's process | The authenticated control mesh |
+
+Because the TCP port is dynamic, the clean way to do this is a **per-application rule**: allow
+the game's executable to accept connections from the local subnet (Windows Firewall asks exactly
+this the first time; say yes for private networks). If you must write port rules instead, allow
+the UDP range plus inbound TCP from your subnet (e.g. `192.168.1.0/24`).
+
+```sh
+# Example: ufw, allowing discovery/data plus LAN TCP for the mesh
+sudo ufw allow proto udp from 192.168.1.0/24 to any port 55789:55798
+sudo ufw allow proto tcp from 192.168.1.0/24
+```
+
+::: {.callout-warning appearance="simple"}
+Don't open port **7777**. Games can call `EOS_P2P_SetPortRange` (default 7777) and we report
+that setting back faithfully — but it never binds a socket here. The discovery range is the only
+UDP surface, and the mesh port is ephemeral.
+:::
+
+## The rules of the mesh
+
+- **Same LAN.** Discovery is a broadcast: if two machines can't exchange UDP broadcasts (same
+  Wi‑Fi network or wired subnet), they won't find each other. Routed networks, guest-isolated
+  Wi‑Fi, most VPNs, and the open Internet don't carry broadcasts. Internet play is deferred, not
+  done — see the [roadmap](roadmap.qmd).
+- **Same game, same library.** Every player runs the same title with EOS Reimagined dropped in.
+  The handshake's transcript binds the game's identity, so a different game — or Epic's real SDK
+  against Epic's backend — cannot mesh with you.
+- **Ten instances per machine** (per data directory): one discovery port each, matching the ten
+  [profile slots](identity-and-profiles.qmd). Ports are bound exclusively — two instances never
+  share one.
+- **Changing `discovery_ports` forks the mesh.** Everyone must use the same range; a peer
+  broadcasting on a range you don't listen to may as well be on another network. Keep the span
+  identical on every machine (it's capped at 64 ports).
+- **`enable_lan: false` unplugs everything.** The platform comes up, local play works, and no
+  peer can ever appear — useful for single-player testing or keeping an instance deliberately
+  offline.
+
+## Timings, for the curious
+
+| Thing | Value |
+|---|---|
+| Advertisement interval | every 2 s (first one immediate) |
+| Peer considered lost after | 10 s of silence |
+| Dial timeout | 5 s |
+| Handshake timeout | 5 s |
+
+So on a healthy LAN, a freshly started copy should see its peers well inside five seconds. If it
+doesn't, walk the [troubleshooting checklist](troubleshooting.qmd#peers-dont-see-each-other).

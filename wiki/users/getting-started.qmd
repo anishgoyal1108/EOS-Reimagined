@@ -1,0 +1,110 @@
+---
+title: "Getting started"
+description: "Drop EOS Reimagined into a game and get two copies talking over the LAN."
+---
+
+EOS Reimagined is a **drop-in replacement** for the EOS SDK's shared library. Running it is a
+matter of putting our library where the game already looks for Epic's, then letting the game's own
+menus do what they always did.
+
+::: {.callout-important}
+## Before you start: the working assumptions
+
+- **Everyone plays on the same LAN.** Peers find each other with a UDP broadcast — same Wi‑Fi
+  network or wired subnet. There is no matchmaking server and no Internet traversal yet. Two
+  copies on a single machine also work, and are the easiest way to try it.
+- **Everyone runs the same game with EOS Reimagined dropped in.** A different game — or the real
+  SDK talking to Epic — will not mesh with you, by design.
+- **Know what's real and what's stubbed.** The multiplayer and social core is live. Everything
+  else — voice, achievements, commerce, anti-cheat — is exported as an *honest stub*: the game
+  loads and runs, but those features answer `EOS_NotImplemented` and stay absent. Check the
+  [roadmap](roadmap.qmd), and see [Troubleshooting](troubleshooting.qmd) for how to census a
+  specific game before an evening's commitment.
+- **You own your copies of the game.** This project exists to keep games playable, not to crack
+  them — see [Scope & non-goals](scope.qmd).
+:::
+
+## 1. Get the right artifact for the game — not the machine
+
+A game loads the EOS SDK as a shared library, and it keeps loading the same *kind* of library
+wherever it runs:
+
+| The game is… | It loads | You want |
+|---|---|---|
+| A native **Linux** title | `libEOSSDK-Linux-Shipping.so` | the Linux `.so` |
+| A **Windows** title on Windows | `EOSSDK-Win64-Shipping.dll` | the Windows `.dll` |
+| A **Windows** title under **Proton/Wine** | still the Windows `EOSSDK-Win64-Shipping.dll` | the Windows `.dll` (not the `.so`!) |
+
+Both artifacts build from the same source tree — see [Building from source](building.qmd), or
+grab them from a CI run's artifacts if one is available.
+
+## 2. Back up the original
+
+Find the game's existing `EOSSDK-Win64-Shipping.dll` / `libEOSSDK-Linux-Shipping.so` (usually
+near the game executable, sometimes under a path like
+`<game>/EOSSDK/Bin/`) and rename it — e.g. add a `.orig` suffix — so you can restore Epic's
+library when you're done.
+
+## 3. Drop ours in under the same filename
+
+Copy the built library into the same folder, under the exact filename the game shipped Epic's
+with. That's the whole install.
+
+```sh
+# Example: a native Linux game
+cd "/path/to/Game/"
+mv libEOSSDK-Linux-Shipping.so libEOSSDK-Linux-Shipping.so.orig
+cp ~/EOS-Reimagined/build/libEOSSDK-Linux-Shipping.so .
+```
+
+## 4. Give each player an identity
+
+There is nothing to sign up for. On first run the library mints a **profile key** and saves it in
+your user data directory; your player identity is derived from that key, and it persists across
+runs. The default display name is `Player` — give yourself a real one by creating a small
+[`eosr.json`](configuration.qmd) next to your data directory, or with an environment variable:
+
+```sh
+EOSR_DISPLAY_NAME="Alice" ./the-game
+```
+
+Several copies of the game on one machine each claim their **own profile slot** automatically, so
+couch co-op is several distinct players rather than one confused one. To pin a copy's identity
+and data to a specific directory (useful for launchers and isolated instances), set
+`EOSR_DATA_DIR`. Details in [Identity & profiles](identity-and-profiles.qmd).
+
+## 5. Launch the game and use its own menus
+
+Host a game, or open the game's server/lobby browser, exactly as you would online. Peers running
+EOS Reimagined on the same LAN discover each other, complete an authenticated handshake, and show
+up to be joined.
+
+::: {.callout-tip}
+## Quick sanity test: two copies, one machine
+
+1. Install the library into the game (steps above).
+2. Start the game twice — two windows. Each instance automatically takes its own discovery port
+   and its own profile slot, so they are two different players.
+3. In window one, host / create a lobby from the game's menus.
+4. In window two, open the game's browser — the hosted game should appear within a few seconds.
+
+If you want the two instances fully isolated (separate saves, names, and configs), point each at
+its own data directory instead:
+
+```sh
+EOSR_DATA_DIR=~/eosr/p1 EOSR_DISPLAY_NAME=Alice ./the-game &
+EOSR_DATA_DIR=~/eosr/p2 EOSR_DISPLAY_NAME=Bob   ./the-game &
+```
+:::
+
+## If something doesn't work
+
+- The game **exits instantly** or never reaches a menu → you're probably running an old build
+  that didn't export the full EOS surface yet. See
+  [Troubleshooting](troubleshooting.qmd#the-game-wont-launch) — rebuilding usually fixes it, and
+  there's a tool that names exactly what's missing.
+- The game runs but **a feature does nothing** (voice, achievements, DLC) → that family is an
+  honest stub today; see [the roadmap](roadmap.qmd#present-but-not-functional).
+- Peers **don't see each other** → same subnet? Firewall allowing UDP 55789–55798? Same game and
+  build on both machines? Walk through [Networking & firewalls](networking.qmd).
+- Anything else → turn on [tracing](tracing.qmd) and read what the library actually did.

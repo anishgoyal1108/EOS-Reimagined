@@ -22,7 +22,7 @@ website:
     dismissable: true
     type: primary
     position: below-navbar
-    content: "**Work in progress** — the multiplayer and social core is live; discovery is LAN-only today. See the [roadmap](project/roadmap.qmd) for exactly what works."
+    content: "**Work in progress** — the multiplayer and social core is live; discovery is LAN-only today. See the [roadmap](/users/roadmap.qmd) for exactly what works."
 
   navbar:
     logo: assets/logo.svg
@@ -30,17 +30,13 @@ website:
     title: "EOS Reimagined"
     pinned: true
     left:
-      - text: "Guide"
-        href: guide/getting-started.qmd
-      - text: "Configuration"
-        href: guide/configuration.qmd
+      - text: "For users"
+        href: users/index.qmd
+      - text: "For developers"
+        href: developers/index.qmd
       - text: "Roadmap"
-        href: project/roadmap.qmd
-      - text: "Internals"
-        href: internals/index.qmd
+        href: users/roadmap.qmd
     right:
-      - text: "Contributing"
-        href: project/contributing.qmd
       - icon: github
         href: https://github.com/anishgoyal1108/EOS-Reimagined
         aria-label: "GitHub repository"
@@ -50,106 +46,112 @@ website:
     type: overlay
 
   sidebar:
-    - id: guide
-      title: "Guide"
-      style: docked
-      collapse-level: 2
-      contents:
-        - section: "Using EOS Reimagined"
-          contents:
-            - text: "Getting started"
-              href: guide/getting-started.qmd
-            - text: "Building from source"
-              href: guide/building.qmd
-            - text: "Configuration (eosr.json)"
-              href: guide/configuration.qmd
-            - text: "Identity & profiles"
-              href: guide/identity-and-profiles.qmd
-            - text: "Networking & firewalls"
-              href: guide/networking.qmd
-            - text: "Tracing & diagnostics"
-              href: guide/tracing.qmd
-            - text: "Troubleshooting & FAQ"
-              href: guide/troubleshooting.qmd
-        - section: "Project"
-          contents:
-            - text: "Roadmap & status"
-              href: project/roadmap.qmd
-            - text: "Scope & non-goals"
-              href: project/scope.qmd
-            - text: "Contributing"
-              href: project/contributing.qmd
-    - id: internals
-      title: "Internals"
+    - id: users
+      title: "For users"
       style: docked
       collapse-level: 2
       contents:
         - text: "Overview"
-          href: internals/index.qmd
-        - section: "Core runtime"
+          href: users/index.qmd
+        - section: "Set it up"
           contents:
+            - text: "Getting started"
+              href: users/getting-started.qmd
+            - text: "Building from source"
+              href: users/building.qmd
+            - text: "Configuration (eosr.json)"
+              href: users/configuration.qmd
+            - text: "Identity & profiles"
+              href: users/identity-and-profiles.qmd
+            - text: "Networking & firewalls"
+              href: users/networking.qmd
+        - section: "When something's off"
+          contents:
+            - text: "Tracing & diagnostics"
+              href: users/tracing.qmd
+            - text: "Troubleshooting & FAQ"
+              href: users/troubleshooting.qmd
+        - section: "The project"
+          contents:
+            - text: "Roadmap & status"
+              href: users/roadmap.qmd
+            - text: "Scope & non-goals"
+              href: users/scope.qmd
+    - id: developers
+      title: "For developers"
+      style: docked
+      collapse-level: 2
+      contents:
+        - text: "Overview"
+          href: developers/index.qmd
+        - text: "Contributing"
+          href: developers/contributing.qmd
+        - section: "Internals: the spec"
+          contents:
+            - text: "Spec overview"
+              href: developers/internals/index.qmd
             - text: "Architecture"
-              href: internals/architecture.md
+              href: developers/internals/architecture.qmd
             - text: "Network protocol"
-              href: internals/protocol.md
+              href: developers/internals/protocol.qmd
             - text: "ADR 0001 — Mesh identity"
-              href: internals/adr/0001-authenticated-mesh-identity.md
+              href: developers/internals/adr/0001-authenticated-mesh-identity.qmd
             - text: "Tracing & config contract"
-              href: internals/alpha-tracing.md
+              href: developers/internals/alpha-tracing.qmd
         - section: "Status ledgers"
           contents:
             - text: "Progress manifest"
-              href: internals/progress.md
+              href: developers/internals/progress.qmd
             - text: "Export-surface census"
-              href: internals/export-surface-census.md
+              href: developers/internals/export-surface-census.qmd
         - section: "Identity & social"
           contents:
             - text: "Client + Platform bootstrap"
-              href: internals/client.md
+              href: developers/internals/client.qmd
             - text: "Auth"
-              href: internals/auth.md
+              href: developers/internals/auth.qmd
             - text: "Connect"
-              href: internals/connect.md
+              href: developers/internals/connect.qmd
             - text: "Presence"
-              href: internals/presence.md
+              href: developers/internals/presence.qmd
             - text: "Friends"
-              href: internals/friends.md
+              href: developers/internals/friends.qmd
             - text: "UserInfo"
-              href: internals/userinfo.md
+              href: developers/internals/userinfo.qmd
         - section: "Multiplayer"
           contents:
             - text: "P2P"
-              href: internals/p2p.md
+              href: developers/internals/p2p.qmd
             - text: "Sessions"
-              href: internals/sessions.md
+              href: developers/internals/sessions.qmd
             - text: "Lobby"
-              href: internals/lobby.md
+              href: developers/internals/lobby.qmd
         - section: "Content & economy"
           contents:
             - text: "Ecom"
-              href: internals/ecom.md
+              href: developers/internals/ecom.qmd
             - text: "Achievements, Stats, Leaderboards"
-              href: internals/achievements-stats-leaderboards.md
+              href: developers/internals/achievements-stats-leaderboards.qmd
             - text: "Storage"
-              href: internals/storage.md
+              href: developers/internals/storage.qmd
             - text: "Metrics"
-              href: internals/metrics.md
+              href: developers/internals/metrics.qmd
         - section: "Other services"
           contents:
             - text: "Anti-Cheat"
-              href: internals/anticheat.md
+              href: developers/internals/anticheat.qmd
             - text: "Custom Invites"
-              href: internals/custominvites.md
+              href: developers/internals/custominvites.qmd
             - text: "RTC (voice/data)"
-              href: internals/rtc.md
+              href: developers/internals/rtc.qmd
             - text: "IntegratedPlatform, UI, Overlay"
-              href: internals/integratedplatform-ui-overlay.md
+              href: developers/internals/integratedplatform-ui-overlay.qmd
             - text: "Misc services"
-              href: internals/misc-services.md
+              href: developers/internals/misc-services.qmd
         - section: "Future work"
           contents:
             - text: "External social companion"
-              href: internals/companion-client.md
+              href: developers/internals/companion-client.qmd
 
   page-footer:
     left: |
@@ -163,6 +165,11 @@ website:
 
 format:
   html:
+    respect-user-color-scheme: true
+    grid:
+      body-width: 950px
+      sidebar-width: 270px
+      margin-width: 230px
     theme:
       light: [cosmo, styles/theme.scss]
       dark: [darkly, styles/theme.scss, styles/theme-dark.scss]

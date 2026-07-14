@@ -1,0 +1,88 @@
+---
+title: "Scope & non-goals"
+description: "What EOS Reimagined promises, what it deliberately does not, and where it stands on piracy and cheating."
+---
+
+## What this is
+
+EOS Reimagined keeps games playable after their backend is gone. It is a reverse-engineered,
+from-scratch, GPL-3.0 stand-in for the EOS SDK's shared library that answers the SDK's calls
+locally and connects players **directly to each other** over the local network. The intended
+uses are exactly these:
+
+- **LAN parties for disserviced games** — a title whose EOS-backed multiplayer went dark still
+  has working netcode; this gives it peers again.
+- **Couch co-op and splitscreen that was never shipped** — several local copies of one game,
+  each its own player, meshing on one machine or one living room.
+- **Preservation** — multiplayer that does not depend on any company's continued interest.
+
+This is our contribution to the goals of [Stop Killing Games](https://www.stopkillinggames.com/).
+Communities like [SplitScreen.me](https://splitscreen.me),
+[Nucleus Co-op](https://nucleus-coop.github.io) and
+[PartyDeck](https://github.com/partydeck/partydeck) do adjacent, excellent work — EOS Reimagined
+is the piece that answers the SDK.
+
+## A statement on feature parity
+
+EOS Reimagined is a reverse-engineered stand-in, **not a certified replacement**, and we cannot
+guarantee one-to-one behavior with Epic's SDK. True parity would mean rebuilding Epic's entire
+backend — matchmaking, voice relays, anti-cheat — which we have not done and may never fully do.
+What exists today is the part that keeps games playable: identity, sessions, lobbies, presence,
+peer-to-peer messaging, and the social surface, wired over an authenticated LAN mesh, plus an
+honest compatibility shell where a real service cannot exist (see the
+[roadmap](roadmap.qmd) for the exact ledger). Two limitations deserve to be called out up front:
+
+**1. It authenticates keys, not accounts — and does no anti-cheat.**
+The transport is genuinely secure: every connection runs a Noise XX handshake, every frame is
+sealed, and a peer's identity is derived from the key it *proved* rather than anything it claims
+— a forged, tampered, or replayed message simply does not open
+([the full design](../developers/internals/adr/0001-authenticated-mesh-identity.qmd)). What that cannot do is
+attest a real Epic account or game ownership; that would require Epic, and we do not pretend to
+it. Likewise we implement none of Epic Anti-Cheat: a game that leans entirely on EAC for
+integrity gets no protection from this library, so a modified client is easier to run than it
+would be on Epic's backend unless the game enforces its own checks. Neither gap is fixable
+without a trusted backend, and we say so rather than fake it.
+
+**2. It does not talk to Epic.**
+The emulator speaks its own reconstructed peer-to-peer protocol between copies of *itself*. It
+never connects to Epic's servers, and we neither expect nor intend that someone running EOS
+Reimagined can matchmake with someone on the genuine SDK against Epic's live backend. This is a
+tool for connecting emulator to emulator — not emulator to Epic.
+
+## A statement on piracy and cheating
+
+**This tool is for keeping games playable. We will *never* support players who wish to use EOS
+Reimagined to play on cracked copies of games or develop cheats.**
+
+This project shall *only* be used to facilitate splitscreen, couch co-op, or continued
+multiplayer for games that are dying or dead — LAN parties for a game whose servers went dark,
+two local copies seeing each other for co-op the developer never shipped. It is expected that you
+own legitimate copies of the games you play. It follows that we do **not** intend to support
+letting pirated copies slip onto official servers or play alongside legitimate owners — which the
+architecture already precludes: nothing here can reach Epic's services at all.
+
+Issues and pull requests whose purpose is piracy convenience or cheat development will be closed.
+
+## Permanent non-goals
+
+| Non-goal | Why |
+|---|---|
+| Interoperating with Epic's live backend | Different trust root, different servers, and deliberately so. |
+| Attesting accounts or ownership | Impossible without Epic; claiming it would be a lie. |
+| Anti-cheat, or anti-cheat bypass | We implement neither Epic's anti-cheat nor tools to defeat it. |
+| Being a piracy vector | See above — and the design gives it nothing to connect to. |
+
+## Deferred, not refused
+
+LAN-only discovery (Internet traversal is future work), voice transport, overlay rendering, and
+platform-native invite UIs are all *scheduling* decisions, revisited as the project matures —
+the [roadmap](roadmap.qmd) tracks each with its reasons.
+
+## Acknowledgments
+
+This project would not exist without **Nemirtingas**, whose original work on EOS emulation years
+ago helped make it a reality. Thanks also to the communities doing pivotal work against planned
+obsolescence in gaming: Stop Killing Games, SplitScreen.me, Nucleus Co-op, and PartyDeck.
+
+EOS Reimagined is an independent project, not affiliated with or endorsed by Epic Games.
+"Epic", "Epic Games", and "Epic Online Services" are trademarks of Epic Games, Inc.

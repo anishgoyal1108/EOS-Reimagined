@@ -1,0 +1,79 @@
+---
+title: "Contributing"
+description: "How to build, test, and land a change — and the conventions the codebase holds itself to."
+---
+
+This project is, and always will be, free for everyone. Pull requests, issues, and contributions
+are more than encouraged — adding support for another game, fixing a busted call, improving this
+wiki, or porting to another platform. The eventual hope is split screen and local co-op working
+on all EOS games, regardless of operating system.
+
+## Where things live
+
+| Path | What it is |
+|---|---|
+| `src/` | The implementation: `core/` (engine), `interfaces/` (EOS interfaces), `flat/` (the C ABI), `net/` (mesh), `common/`, `platform/` (the only OS-specific code) |
+| `include/eos/` | Vendored EOS SDK headers (the ABI contract) |
+| `tests/` | Unit, integration, trace, and export-surface suites |
+| `wiki/` | This website — the [internals section](internals/index.qmd) is the behavioral spec the implementation is built from |
+| `tools/`, `scripts/` | The [import census](../users/tracing.qmd#inspect_gamepy-will-this-game-even-load), `test-all.sh` |
+
+Start any interface work by reading its spec page under [Internals](internals/index.qmd) —
+the point of this project is that the behavior is *understood first*, then implemented cleanly.
+
+## The golden rules
+
+- **C++11, non-negotiable.** No C++14/17/20 features, ever, and no compiler extensions — the
+  build enforces `-std=c++11` strictly. EOS-era games ship with old toolchains, and a drop-in
+  library has to build and run beside them. (Note: no `<filesystem>` — that's C++17.)
+- **Cross-platform first.** One source tree produces the Windows `.dll` and Linux `.so`. All
+  OS-specific code is quarantined in `src/platform/` behind a common header with
+  `platform_win32.cpp` / `platform_linux.cpp` implementations; nothing else may include
+  `<windows.h>`, `<winsock2.h>`, `<sys/socket.h>`, or friends.
+- **Keep dependencies near zero.** Prefer vendoring something small and portable (Monocypher is
+  the model: one `.c`/`.h` pair) over pulling a package. The standard library's portable parts —
+  containers, `std::thread`, `std::mutex`, `std::chrono`, `std::fstream` — are the toolkit.
+- **Simple beats clever.** Readability over optimization; no intrinsics for speed. Prefer early
+  returns over nested `if` pyramids. Avoid `std::function`, `std::shared_ptr`, `std::bind`,
+  `std::list`: the EOS API is a C ABI of plain function pointers plus `void* ClientData` — use
+  that directly, and prefer plain values, `std::unique_ptr`, or clear manual ownership.
+
+## Style, briefly
+
+`snake_case` everywhere — functions, variables, types, files. Four-space indent, no tabs. K&R
+braces. `const` whatever can be `const`. No magic numbers — name them with a `constexpr`. Short
+Rust-style integer aliases from `src/common/types.h` (`u8`…`u64`, `i8`…`i64`, `f32`, `f64`).
+Names anyone can read at a glance (`number`, not `n`).
+
+Comments: fewer is better, "we" not "I", explain the *why* only where the code can't. A one-line
+description above a function or a short note before a non-obvious decision is the right amount.
+
+## The test bar
+
+Every change runs the full suite on **both** targets before it lands:
+
+```sh
+./scripts/test-all.sh    # native Linux + MinGW-w64 cross under Wine, if installed
+```
+
+What green means here: hundreds of unit cases (crypto against published RFC/Noise vectors,
+config, identity, every interface), integration tests that load the real built artifact through
+the C ABI like a game, a trace-lifecycle test, an export-surface check that nothing beyond
+`EOS_*` leaks, and multi-instance mesh e2e — clean under ASan + UBSan.
+
+The project's review culture is **adversarial by default**: an interface lands, then gets
+actively attacked against the headers and the spec — forged identities, planted search results,
+callback lifetime abuse. Findings become regression tests. Expect (and give) that kind of
+review; the [progress manifest](internals/progress.qmd) records what it has caught so far.
+
+## Practical bits
+
+- **CI** is a manual button (Actions → *CI* → Run workflow): it builds native Linux, MinGW cross
+  + Wine, and native MSVC, tests all three, and uploads both artifacts. This wiki deploys from
+  its own manual workflow the same way.
+- **Bug reports**: a [trace](../users/tracing.qmd) plus an
+  [import census](../users/troubleshooting.qmd#the-game-wont-launch) makes a report actionable
+  in minutes.
+- **License**: GPL-3.0. By contributing you agree your work is released under it.
+- Keep the [scope](../users/scope.qmd) in mind: contributions aimed at piracy or cheating won't be
+  accepted, however technically interesting.

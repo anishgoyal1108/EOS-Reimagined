@@ -1,0 +1,39 @@
+---
+title: "Module: `EOSSDK_Friends`"
+---
+
+Tier A (2020 `eossdk_friends.*`). Friend list derived from the Connect peer roster — **not** a network listener of its own. 16 methods.
+
+## 1. Identity & handle
+`EOS_HFriends` via `EOS_Platform_GetFriendsInterface`.
+
+## 2. Class shape & base mixins
+`IRunCallback` only (no `IRunNetwork`/`OnNetworkMessage`). In 2020 the `Friends_Message_pb` envelope case was commented out; the newer build likewise drives friends from Connect events via `OnUserEvent`.
+
+## 3. Member state
+- Friend/blocked-user lists derived from Connect's `_users` roster. Notification registrations for FriendsUpdate / BlockedUsersUpdate.
+- `EmuInit` @`0x1800caaa0` / `EmuDeinit` @`0x1800cc430`.
+
+## 4. Lifecycle
+`EmuInit` registers `OnUserEvent` @`0x1800ce260` as the peer-event callback with Connect + registers with Callback_Manager. **`OnUserEvent(this, peer*)`**: on a peer-connect event (arg+6==0) it walks the notification list for `k_iCallback 0x138d` (`EOS_Friends_OnFriendsUpdateInfo`, 5005) and fires each with a status transition (prev→cur, encoded `0x300000001`). This is how a joining peer shows up as a friend update.
+
+## 5. Synchronous accessors
+- `GetFriendsCount` @`0x1800cb4f0`, `GetFriendAtIndex` @`0x1800cb700`, `GetStatus` @`0x1800cb9c0` (friendship status vs a user).
+- `GetBlockedUsersCount` @`0x1800cbe70`, `GetBlockedUserAtIndex` @`0x1800cbf40` (tiny 144-byte stubs — blocked list likely empty).
+
+## 6. Async operations
+- `QueryFriends` @`0x1800cacf0` — populates the friend list from the current roster; `k_iCallback = EOS_Friends_QueryFriendsCallbackInfo`.
+- `SendInvite` @`0x1800caf50`, `AcceptInvite` @`0x1800cb130`, `RejectInvite` @`0x1800cb310` (382-byte each — likely minimal/stubbed: LAN peers are implicitly friends).
+
+## 7. Notifications
+`AddNotifyFriendsUpdate`/`Remove` (@`0x1800cbb30`/`0x1800cbd90`), `AddNotifyBlockedUsersUpdate`/`Remove` (@`0x1800cc010`/`0x1800cc270`). Callback-infos `EOS_Friends_OnFriendsUpdateInfo` (0x138d), `EOS_Friends_OnBlockedUsersUpdateInfo`. Fired from `OnUserEvent`.
+
+## 8. Network protocol
+None directly. Friend presence/identity flows in via Connect (`_OnConnectResponse` → `on_peer_connect` → `OnUserEvent`) and UserInfo/Presence caches.
+
+## 9. Frame/tick
+`CBRunFrame` minimal. Notifications fire synchronously from `OnUserEvent`, not the frame queue.
+
+## Reimpl notes / follow-ups
+- Reimpl: treat every authenticated Connect peer as a friend (online); fire FriendsUpdate on peer connect/disconnect. Invites can be no-ops/auto-accept for LAN parity.
+- Follow-up: confirm invite methods are stubs vs. real; blocked-users behavior.

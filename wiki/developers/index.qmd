@@ -1,0 +1,92 @@
+---
+title: "For developers"
+description: "How the project is built — spec first, C++11 always, both platforms from one tree — and where to start hacking."
+---
+
+EOS Reimagined is a **spec-first** reimplementation. The Epic Online Services SDK's behavior was
+reverse-engineered and written down *before* being rebuilt, so contributions start from an
+understood contract rather than folklore: read the spec page for the thing you're touching, then
+make the code match it, then prove it with tests on both platforms.
+
+## Orientation in three links
+
+::: {.grid}
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[🤝]{.card-icon}
+
+### [Contributing](contributing.qmd){.stretched-link}
+
+The golden rules (C++11, platform quarantine, near-zero deps), the style, and the test bar every
+change has to clear.
+:::
+:::
+
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[🔬]{.card-icon}
+
+### [Internals: the spec](internals/index.qmd){.stretched-link}
+
+The behavioral documentation — core runtime, wire protocol, mesh identity ADR, and one page per
+EOS interface.
+:::
+:::
+
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[📋]{.card-icon}
+
+### [Progress manifest](internals/progress.qmd){.stretched-link}
+
+The working ledger: what's implemented, what each milestone hardened, and the findings log.
+:::
+:::
+:::
+
+## The lay of the repository
+
+| Path | What lives there |
+|---|---|
+| [`src/core/`](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/src/core) | The engine: platform/client singletons, callback manager, config, identity, tracer |
+| [`src/interfaces/`](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/src/interfaces) | One file per implemented EOS interface (Lobby is the big one) |
+| [`src/flat/`](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/src/flat) | The exported flat C ABI — thin trampolines over the interfaces |
+| [`src/net/`](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/src/net) | The mesh: discovery, Noise XX secure channel, message router |
+| [`src/platform/`](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/src/platform) | The *only* OS-specific code, behind a common header (`*_win32.cpp` / `*_linux.cpp`) |
+| [`include/eos/`](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/include/eos) | Vendored EOS SDK headers — the ABI contract we implement against |
+| [`tests/`](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/tests) | Unit, integration (loads the real artifact), trace, and export-surface suites |
+| [`tools/`](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/tools) | [`inspect_game.py`](https://github.com/anishgoyal1108/EOS-Reimagined/blob/main/tools/inspect_game.py) (game-compatibility census) and [`gen_stubs.py`](https://github.com/anishgoyal1108/EOS-Reimagined/blob/main/tools/gen_stubs.py) (generates the honest `EOS_NotImplemented` shells from the vendored headers) |
+| [`wiki/`](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/wiki) | This site |
+
+Build and test instructions live with the user docs — [Building from source](../users/building.qmd)
+— because players build too. The short version: CMake ≥ 3.16, strict C++11,
+[`scripts/test-all.sh`](https://github.com/anishgoyal1108/EOS-Reimagined/blob/main/scripts/test-all.sh)
+runs everything on both targets.
+
+## Reference material
+
+- **Epic's official EOS SDK documentation** — the public behavioral reference we implement
+  against: [EOS documentation](https://dev.epicgames.com/docs/epic-online-services) and the
+  [C SDK API reference](https://dev.epicgames.com/docs/api-ref). When our spec and Epic's docs
+  disagree, reality (the headers, and traced behavior of real games) wins — note it in the spec.
+- **The vendored headers** in
+  [`include/eos/`](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/include/eos) are
+  the precise ABI: struct layouts, `ApiVersion` cutoffs, result codes. The headers are the law;
+  the docs are the commentary.
+- **[The internals section](internals/index.qmd)** — our own reverse-engineered spec of how the
+  SDK (and the reference emulator) actually behaves on the wire and across ticks.
+- **[ADR 0001](internals/adr/0001-authenticated-mesh-identity.qmd)** — the identity and
+  secure-channel design every networked interface now rests on.
+
+## Where help is most useful
+
+1. **Game reports.** Run the [import census](../users/tracing.qmd#inspect_gamepy-will-this-game-even-load)
+   against games you own — and play them with `EOSR_TRACE=lifecycle` — then attach the output to
+   an issue. Which stubbed families real games actually touch is literally the prioritization
+   data for what gets built next.
+2. **Upgrade a stub into behavior.** Pick a family from
+   [present but not functional](../users/roadmap.qmd#present-but-not-functional), read its spec
+   page, implement it over the mesh or local state, and bring tests.
+3. **Adversarial review.** Reading a merged interface against its spec and trying to break it is
+   a first-class contribution here; the [manifest](internals/progress.qmd) shows the kind of
+   findings that culture keeps producing.

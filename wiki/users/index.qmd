@@ -1,0 +1,133 @@
+---
+title: "For users"
+description: "Everything a player needs: set it up, configure it, and understand just enough of how it works."
+---
+
+You have a game whose multiplayer runs on Epic Online Services, and you want it to keep working —
+LAN party, couch co-op, or a title whose servers are gone. This section is for you. No SDK
+knowledge required; the path is:
+
+1. **[Get the library](building.qmd)** — build the `.so`/`.dll` (or grab a CI artifact), matching
+   the *game*, not the machine.
+2. **[Drop it in](getting-started.qmd)** — back up Epic's library, put ours in its place, launch.
+3. **[Make it yours](configuration.qmd)** — a display name and any tweaks via `eosr.json` or
+   `EOSR_*` environment variables.
+4. **[Let it through](networking.qmd)** — same LAN, UDP 55789–55798, and the game allowed through
+   the firewall.
+5. **Play** — host and join from the game's own menus, like it's 2019 and the servers are fine.
+
+::: {.callout-tip appearance="simple"}
+Before investing an evening in a specific game, check the [roadmap](roadmap.qmd): the
+multiplayer core is real, but voice, achievements, commerce, and anti-cheat are honest stubs
+today — the game loads, those features won't function. The
+[one-minute census](troubleshooting.qmd#the-game-wont-launch) shows which EOS families a game
+touches, no launch required.
+:::
+
+## The pages
+
+::: {.grid}
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[🚀]{.card-icon}
+
+### [Getting started](getting-started.qmd){.stretched-link}
+
+The drop-in walkthrough, plus a two-copies-on-one-machine sanity test.
+:::
+:::
+
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[🔨]{.card-icon}
+
+### [Building from source](building.qmd){.stretched-link}
+
+One CMake tree, two artifacts: the Linux `.so` and the Windows `.dll`.
+:::
+:::
+
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[⚙️]{.card-icon}
+
+### [Configuration](configuration.qmd){.stretched-link}
+
+Every `eosr.json` key and `EOSR_*` variable: defaults, validation, precedence.
+:::
+:::
+
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[🔑]{.card-icon}
+
+### [Identity & profiles](identity-and-profiles.qmd){.stretched-link}
+
+Your identity is a key file: back it up, carry it, give each local player their own.
+:::
+:::
+
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[📡]{.card-icon}
+
+### [Networking & firewalls](networking.qmd){.stretched-link}
+
+Discovery, the authenticated mesh, game data — and the firewall rules that let them happen.
+:::
+:::
+
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[🩺]{.card-icon}
+
+### [Tracing & diagnostics](tracing.qmd){.stretched-link}
+
+Turn on the trace and read what the library actually did — plus the game-compatibility census.
+:::
+:::
+
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[🧯]{.card-icon}
+
+### [Troubleshooting & FAQ](troubleshooting.qmd){.stretched-link}
+
+The failure modes people actually hit, in the order they usually hit them.
+:::
+:::
+
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[🗺️]{.card-icon}
+
+### [Roadmap & status](roadmap.qmd){.stretched-link}
+
+What's live, what's an honest shell, what's absent, and what's next.
+:::
+:::
+
+::: {.g-col-12 .g-col-md-4}
+::: {.feature-card}
+[⚖️]{.card-icon}
+
+### [Scope & non-goals](scope.qmd){.stretched-link}
+
+What this project promises, what it never will, and where it stands on piracy.
+:::
+:::
+:::
+
+## The five rules of the road
+
+If you remember nothing else from this section:
+
+1. **Same LAN, same game, everyone patched.** Discovery is a local broadcast, and the handshake
+   refuses a different title or an unpatched copy.
+2. **Match the artifact to the game** — a Windows game under Proton still wants the `.dll`.
+3. **`profile.key` is your identity.** Back it up; never share it; don't clone it between
+   simultaneous machines.
+4. **The library never phones home** — not to Epic, not to anyone. If a game needs Epic's
+   backend-only features, they're either answered locally or honestly absent.
+5. **When in doubt, trace**: `EOSR_TRACE=lifecycle` writes a readable log of everything that
+   mattered.

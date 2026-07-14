@@ -1,0 +1,145 @@
+---
+title: "Roadmap & implementation status"
+description: "Exactly what is implemented, what is an honest shell, what is a not-implemented stub, and what comes next."
+---
+
+The one-sentence status: **the multiplayer and social core is live over an authenticated LAN
+mesh, and every EOS export exists** — the interfaces without behavior answer an honest
+`EOS_NotImplemented` instead of not resolving at all. A game loads and plays normally within the
+implemented surface; a feature that leans on a stubbed family is visibly absent rather than
+silently fatal.
+
+This page is the polished summary. The raw working ledgers are in the internals:
+[progress manifest](../developers/internals/progress.qmd) and
+[export-surface census](../developers/internals/export-surface-census.qmd).
+
+Legend: [Live]{.status-live} implemented and networked where the SDK is ·
+[Shell]{.status-shell} full hand-built API surface, honest local answers, nothing pretended ·
+[Stub]{.status-absent} exported, answers `EOS_NotImplemented` honestly — the feature is absent ·
+[Planned]{.status-planned} designed, not shipped.
+
+## By the numbers
+
+- **638 `EOS_*` exports — the complete surface the SDK headers declare** (356 behavioral +
+  282 generated honest shells), and **zero** non-EOS symbols.
+- **10 interfaces** genuinely implemented (~10k lines), from one C++11 tree building both the
+  Linux `.so` and Windows `.dll`.
+- **Hundreds of unit cases plus integration, trace, export-surface, and real-mesh e2e tests** —
+  the e2e tier loads the actual built library and meshes 2–3 instances — green on Linux and
+  Windows/Wine, clean under ASan + UBSan.
+- Every foundation interface got at least one **adversarial review**; the serious findings
+  (identity forgery, roster hijack, search planting, callback heap overflow, …) are fixed with
+  regression tests and recorded in the [manifest](../developers/internals/progress.qmd).
+
+## What works today
+
+| Interface | Status | Notes |
+|---|---|---|
+| Platform & bootstrap | [Live]{.status-live} | Full lifecycle: `EOS_Initialize`, `EOS_Platform_Create`, tick-driven callbacks, every `Get*Interface` non-null. 42/42 platform exports. |
+| Connect | [Live]{.status-live} | Product-user identity derived from your [profile key](identity-and-profiles.qmd); the peer roster every other interface builds on. 28/28. |
+| Auth | [Live]{.status-live} | Epic-account-style login against the same key-derived identity. 19/21 — the two missing are legacy `*Old` ABI duplicates. |
+| P2P | [Live]{.status-live} | Real packet transport: reliable traffic rides the authenticated TCP mesh, unreliable goes as sealed UDP datagrams — `EOS_EPacketReliability` actually selects a transport. 25/25. |
+| Sessions | [Live]{.status-live} | Host-authoritative sessions over the mesh: create/update/join/register, attribute search answered only by hosts, forged-verdict and result-planting hardened away. 33/33 (+ Details/Modification/Search/ActiveSession sub-handles). |
+| Lobby | [Live]{.status-live} | The largest interface: members, per-member attributes, owner authority, kick/promote, deterministic host migration, bounded searches. RTC room *names* exist; voice does not. 46/46 (+ sub-handles). |
+| Presence | [Live]{.status-live} | Rich presence keyed by Epic account ID, broadcast on change, validated before it binds to an owner. |
+| Friends | [Live]{.status-live} | The friends list *is* the authenticated roster: every meshed peer is a friend, updates fire on connect/disconnect. Invites to unmet accounts are honestly `NotFound`. |
+| UserInfo | [Live]{.status-live} | Display names resolved through the connection-proven roster (a peer cannot forge another's name); our own entry seeded from [config](configuration.qmd). |
+| UI (overlay) | [Shell]{.status-shell} | All 27 exports, headless: nothing is ever shown, so it never claims to be visible or to hold input. Settings round-trip; the notifications behave per the header. |
+| IntegratedPlatform | [Shell]{.status-shell} | All 9 exports. The options container is a real owned object; anything that would need Steam/console never happens and says so. `SetUserLoginStatus` is honoured properly. |
+| Common helpers | [Live]{.status-live} | `EOS_EResult_ToString`, ID parse/format, `EOS_Logging_*`, byte-array helpers — the utility surface games touch constantly. |
+
+## Delivered milestones
+
+- **Foundation** — the core six (Connect, Auth, P2P, Sessions, Presence, Lobby) implemented over
+  the peer mesh with the full async/callback engine; frozen as a stable baseline *(2026-07-13)*.
+- **Authenticated mesh identity** — profiles became X25519 keys; every connection runs a
+  standards-exact Noise XX handshake; every frame is sealed; identities are recomputed from the
+  proven key, never claimed; unreliable P2P moved to authenticated UDP datagrams. Spec:
+  [ADR 0001](../developers/internals/adr/0001-authenticated-mesh-identity.qmd) *(2026-07-13)*.
+- **Compatibility shell, first slice** — common helpers, UI, IntegratedPlatform, Friends,
+  UserInfo: 276 → 356 exports, each answering honestly rather than optimistically
+  *(2026-07-13)*.
+- **Operational alpha groundwork** — the [config system](configuration.qmd) resolved
+  env→file→default with diagnostics; the [trace sink](tracing.qmd) with correlated
+  call/return/callback records; the [import census tool](tracing.qmd#inspect_gamepy-will-this-game-even-load)
+  and [export-surface census](../developers/internals/export-surface-census.qmd).
+- **The full export surface** — every remaining EOS family exported as a generated honest shell
+  (`tools/gen_stubs.py`): a result-returning function answers `EOS_NotImplemented`; an async stub
+  still *fires its callback* with `NotImplemented` on the next tick, so a game awaiting a
+  completion is never left hanging; `AddNotify*` returns a real id backed by a notification that
+  never fires; getters report nothing rather than a made-up value; `*_Release` is a no-op. This
+  retires "fails in the loader" — and Mono's `EntryPointNotFoundException` — as a failure class.
+  The motivating census: Risk of Rain 2 P/Invokes 613 EOS entry points lazily, so it would have
+  loaded fine against the old surface and then thrown the moment it touched Ecom
+  *(2026-07-14)*.
+- **Trace coverage grew with it** — notification lifecycles, the authenticated-mesh lifecycle,
+  matchmaking search records, OS/Wine identification in `runtime.json`, and instrumentation of
+  every generated shell, so a stubbed call a game makes is visible in the trace rather than
+  invisible *(2026-07-14)*.
+
+## Present but not functional
+
+[Stub]{.status-absent} — 22 families whose exports all exist and answer honestly, without any of
+the feature behind them. A game *loads and runs* against these; what it cannot do is actually
+use the feature — and one whose core loop requires it still won't reach multiplayer until the
+family is really built.
+
+| Family | Symbols | A game uses it for… |
+|---|---:|---|
+| `EOS_Ecom_*` | 39 | DLC / entitlement / ownership checks |
+| `EOS_RTCAudio_*` | 38 | voice chat |
+| `EOS_AntiCheatServer_*` | 28 | anti-cheat |
+| `EOS_AntiCheatClient_*` | 22 | anti-cheat |
+| `EOS_CustomInvites_*` | 22 | invite flow |
+| `EOS_Achievements_*` | 21 | achievements |
+| `EOS_Leaderboards_*` | 16 | leaderboards |
+| `EOS_RTC_*` | 13 | voice chat |
+| `EOS_KWS_*` | 11 | child-account gating |
+| `EOS_PlayerDataStorage_*` | 11 | cloud saves |
+| `EOS_TitleStorage_*` | 8 | title-published content |
+| `EOS_RTCData_*` | 7 | voice data channels |
+| `EOS_Mods_*` | 6 | mod.io integration |
+| `EOS_RTCAdmin_*` | 6 | voice room admin |
+| `EOS_Stats_*` | 6 | stats backing achievements |
+| `EOS_ProgressionSnapshot_*` | 5 | progression sync |
+| `EOS_Sanctions_*` | 5 | ban checks |
+| `EOS_PlayerDataStorageFileTransferRequest_*` | 4 | cloud-save transfers |
+| `EOS_TitleStorageFileTransferRequest_*` | 4 | title-storage transfers |
+| `EOS_AccountId_*` | 3 | handle-free ID helpers — *any* game may call these |
+| `EOS_Metrics_*` | 2 | Unreal's EOS plugin calls these on every session |
+| `EOS_Reports_*` | 1 | player reporting |
+
+Note the last three rows: they aren't exotic features, they're symbols perfectly ordinary games
+touch — which is why they were shelled all at once, from the vendored headers, rather than one
+family per game. The stubs are generated (`tools/gen_stubs.py`), trace-instrumented, and
+engineered to fail *safely*: nothing here pretends to work.
+
+## What's next
+
+1. [Planned]{.status-planned} **Finish the operational alpha.** The two-process C-ABI probe, and
+   the alpha runner that stages the artifact, launches the game, and produces a sanitized
+   diagnostic bundle from the run's owned files.
+2. [Planned]{.status-planned} **The external social companion.** A standalone local app (CLI
+   first) that shows authenticated LAN peers and fires the game's own join-accepted callbacks
+   over a loopback control channel — the designed replacement for the overlay's join surface,
+   in three staged milestones. Design: [companion client](../developers/internals/companion-client.qmd).
+3. [Planned]{.status-planned} **Behavioral fills, by demand.** Upgrading stubs into behavior:
+   local-backed achievements/stats/storage, the genuinely-networked CustomInvites, richer Ecom
+   answers behind `unlock_dlcs` — prioritized by what real games need (send those
+   [census reports](troubleshooting.qmd#the-game-wont-launch)!).
+
+## Deferred, with reasons
+
+- **Internet traversal / relays** — discovery is LAN broadcast today; traversal is a real
+  project of its own and is deferred, not rejected.
+- **Voice transport** — even the reference emulator only manages RTC rooms without carrying
+  audio; real voice means an Opus path over the datagram transport. Deferred.
+- **Overlay rendering** — injecting a renderer into arbitrary games is out of scope for a
+  headless library; the companion supplies the join *actions* instead.
+- **Any-thread API entry** — the engine is single-threaded-by-tick; the trace's per-record
+  thread labels exist precisely to measure whether real games call off-thread before committing
+  to a platform-wide lock.
+
+And some things will *never* be goals — talking to Epic's live services, attesting real accounts
+or ownership, anti-cheat (or its bypass). Those are scope, not schedule: see
+[Scope & non-goals](scope.qmd).

@@ -30,17 +30,49 @@ no cloud. Just the game, facilitating a connection between clients.
 :::
 
 ::: {.hero-buttons}
-[Get started](guide/getting-started.qmd){.btn .btn-primary}
-[What works today](project/roadmap.qmd){.btn .btn-outline-secondary}
+[Get started](users/getting-started.qmd){.btn .btn-primary}
+[What works today](users/roadmap.qmd){.btn .btn-outline-secondary}
 [GitHub](https://github.com/anishgoyal1108/EOS-Reimagined){.btn .btn-outline-secondary}
 :::
 :::
+
+## Choose your door
+
+::: {.grid}
+::: {.g-col-12 .g-col-md-6}
+::: {.feature-card .lead-card}
+[🎮]{.card-icon}
+
+### [For users](users/index.qmd){.stretched-link}
+
+You want a game set up and playing. The walkthrough, the `eosr.json` configuration reference,
+identity & profiles, firewall rules, and the troubleshooting that fixes the usual suspects.
+
+[Getting started · Configuration · Networking · Troubleshooting]{.lead-card-trail}
+:::
+:::
+
+::: {.g-col-12 .g-col-md-6}
+::: {.feature-card .lead-card}
+[🛠️]{.card-icon}
+
+### [For developers](developers/index.qmd){.stretched-link}
+
+You want to hack on it. The contribution rules, the repository map, and the full
+reverse-engineered behavioral spec the implementation is built from — protocol, ADRs, and one
+page per EOS interface.
+
+[Contributing · Internals · Progress manifest · Export census]{.lead-card-trail}
+:::
+:::
+:::
+
+## How it works
 
 ::: {.diagram-panel}
 ![](assets/how-it-works.svg){fig-alt="Two unmodified copies of a game, each loading EOS Reimagined, connected directly over the local network by UDP peer discovery, a TCP control mesh, and UDP game data"}
 :::
 
-## How it works
 
 ::: {.grid}
 ::: {.g-col-12 .g-col-md-4}
@@ -80,82 +112,6 @@ There is no central anything.
 :::
 :::
 
-## Explore the wiki
-
-::: {.grid}
-::: {.g-col-12 .g-col-md-4}
-[
-::: {.feature-card}
-[🚀]{.card-icon}
-
-### Getting started
-
-Drop the library into a game, give each player an identity, and host from the game's own menus.
-:::
-](guide/getting-started.qmd){.card-link}
-:::
-
-::: {.g-col-12 .g-col-md-4}
-[
-::: {.feature-card}
-[⚙️]{.card-icon}
-
-### Configuration
-
-Every `eosr.json` key and `EOSR_*` environment variable: defaults, validation, and precedence.
-:::
-](guide/configuration.qmd){.card-link}
-:::
-
-::: {.g-col-12 .g-col-md-4}
-[
-::: {.feature-card}
-[📡]{.card-icon}
-
-### Networking & firewalls
-
-The discovery ports, the authenticated mesh, and what to allow through a firewall.
-:::
-](guide/networking.qmd){.card-link}
-:::
-
-::: {.g-col-12 .g-col-md-4}
-[
-::: {.feature-card}
-[🗺️]{.card-icon}
-
-### Roadmap & status
-
-Exactly which EOS interfaces are live, which are honest shells, and which don't exist yet.
-:::
-](project/roadmap.qmd){.card-link}
-:::
-
-::: {.g-col-12 .g-col-md-4}
-[
-::: {.feature-card}
-[🔬]{.card-icon}
-
-### Internals
-
-The behavioral spec: core runtime, wire protocol, mesh identity ADR, and per-interface notes.
-:::
-](internals/index.qmd){.card-link}
-:::
-
-::: {.g-col-12 .g-col-md-4}
-[
-::: {.feature-card}
-[🤝]{.card-icon}
-
-### Contributing
-
-C++11, cross-platform by construction, and adversarially reviewed. Here's how to help.
-:::
-](project/contributing.qmd){.card-link}
-:::
-:::
-
 ## Why this exists
 
 [Epic Online Services](https://onlineservices.epicgames.com/sdk) is one of the most popular ways
@@ -173,7 +129,7 @@ one machine.
 
 It is equally not a piracy or cheating tool: it connects **emulator to emulator**, never to
 Epic's live services, and it implements none of Epic's anti-cheat. Read the full
-[scope & non-goals](project/scope.qmd).
+[scope & non-goals](users/scope.qmd).
 
 ::: {.callout-note appearance="simple"}
 EOS Reimagined is an independent free-software project. It is not affiliated with, endorsed by,

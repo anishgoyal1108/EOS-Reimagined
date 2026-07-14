@@ -1,0 +1,107 @@
+---
+title: "Identity & profiles"
+description: "Your identity is a key: profile files, slots, portability, and what none of it attests."
+---
+
+EOS Reimagined has no accounts, no logins, and no server that knows who you are. **A profile is a
+key**: on first run the library generates an X25519 keypair and keeps it in a small file. Your
+player IDs are *derived* from its public half, and its private half is what proves them to other
+players — every connection runs a [Noise XX handshake](../developers/internals/adr/0001-authenticated-mesh-identity.qmd),
+and a peer is adopted under the identity *recomputed from the key it proved*, never under
+anything it merely claims.
+
+## The profile file
+
+The key lives in your [data directory](configuration.qmd#where-the-file-lives) as `profile.key` —
+a comment header plus one line holding 64 hex characters:
+
+```
+# EOS Reimagined profile. This key is your identity: keep it secret, and
+# back it up -- there is nobody who can reissue it.
+key 4f3a…                                     # 64 lowercase hex characters
+```
+
+Three facts follow directly:
+
+- **Copy the file, carry the player.** Move `profile.key` to another machine (it survives
+  Windows ↔ Linux round-trips, CRLF and all) and you are the same player there. The file *is*
+  the export format.
+- **Keep it secret.** Anyone holding the file can *be* you on the mesh — treat it like an SSH
+  private key. It is written owner-only (`0600` on Linux; per-user AppData ACLs on Windows).
+- **Back it up.** There is no recovery authority. Losing the file loses the identity; the library
+  will mint a fresh one and other players will see a new player.
+
+Don't run the *same* profile on two machines at once: the design de-duplicates copies on one
+machine, but two machines wearing one key are one player, and the mesh will refuse the second
+connection claiming an already-connected identity.
+
+## Two IDs from one key
+
+The EOS API speaks two identities, and both derive from your profile:
+
+- Your **Epic account ID** (`EOS_EpicAccountId`) is product-independent — the same across every
+  game, like an account.
+- Your **product user ID** (`EOS_ProductUserId`) also folds in the game's product, sandbox, and
+  deployment IDs — so one profile is a *distinct* product-user per title, exactly matching EOS
+  semantics.
+
+Both keep the standard 32-hex format games expect. And because the game's own IDs are part of the
+derivation *and* the handshake, two different games on one LAN don't just ignore each other —
+they cannot complete a handshake at all.
+
+## Profile slots: couch co-op that just works
+
+Several copies of a game on one machine must be several *players* — if they shared one profile
+they would derive one ID, see each other's advertisements as their own, and never mesh. So each
+running instance claims an **exclusive profile slot** in the data directory:
+
+```
+profile.key    profile.lock      # slot 0 — first instance
+profile-1.key  profile-1.lock    # slot 1 — second instance
+…
+profile-9.key  profile-9.lock    # slot 9 — tenth instance
+```
+
+A slot is held by an OS-level file lock (`flock` on Linux, exclusive open on Windows) for the
+life of the process:
+
+- The lock **dies with the process**, so a crash never strands a slot.
+- A given instance lands on the **same slot — and the same identity — every run** (first free
+  slot wins, and your usual instance count is stable).
+- Ten slots, matching the ten [discovery ports](networking.qmd): at most ten meshing instances
+  per data directory.
+
+A launcher that wants deterministic identities (Nucleus-style co-op orchestration) shouldn't rely
+on slot order at all — give each instance its own `EOSR_DATA_DIR`, and each directory gets its
+own `profile.key` at slot 0:
+
+```sh
+EOSR_DATA_DIR=~/eosr/p1 ./game &   # always Alice
+EOSR_DATA_DIR=~/eosr/p2 ./game &   # always Bob
+```
+
+## Edge behavior worth knowing
+
+- **No writable directory is not fatal.** If the library can't write anywhere (or every slot is
+  taken), the instance keeps the ephemeral key it started with and notes that the identity will
+  not outlive the run. The mesh still works; only persistence is lost.
+- **A corrupt or all-zero profile is replaced,** never adopted — a truncated key file can't
+  silently become a shared or degenerate identity.
+- **Your display name is just a name.** It travels as metadata and can be changed freely in
+  [`eosr.json`](configuration.qmd); it has no part in your identity. (It used to seed identity in
+  older emulator designs — which meant anyone typing your name *became* you. That is exactly what
+  the key design removes.)
+- **`epicid` / `productuserid` config keys are refused** for the same reason — an ID you merely
+  claim would be rejected by exactly the peers it was meant to reach. See
+  [Configuration](configuration.qmd#keys-from-other-emulators).
+
+## What this does — and does not — attest
+
+What the mesh authenticates is **key possession**: nobody can answer to your identity without
+holding your file, no frame can be forged or replayed, and a connection is a peer or it is
+nothing. That is the strongest thing a backendless emulator can honestly offer, and it is
+enough to make owner/participant checks in sessions and lobbies real.
+
+What it can never attest is that an identity belongs to a **real Epic account** or a
+**legitimate game owner**. That would require Epic (or another trusted authority), and this
+project does not pretend to it — see [Scope & non-goals](scope.qmd).

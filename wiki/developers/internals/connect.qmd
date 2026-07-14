@@ -1,0 +1,53 @@
+---
+title: "Module: `EOSSDK_Connect` (Product User identity & peer roster)"
+---
+
+Tier A (2020 source `eossdk_connect.*`). The **roster backbone**: owns the local `EOS_ProductUserId`, the peer table, and drives peer connect/disconnect fan-out to Presence/Lobby/Sessions/P2P/Friends. 31 methods (+`Login` recovered manually, 32 total).
+
+## 1. Identity & handle
+- `EOS_HConnect`, via `EOS_Platform_GetConnectInterface` (platform vtable slot +0x40). Impl `EOSSDK_Connect`.
+- Peer identity everywhere = **ProductUserId string** (the `Network_Message_pb.source_id`/`dest_id`).
+
+## 2. Class shape & base mixins
+`IRunCallback` + `IRunNetwork` (`OnNetworkMessage` @`0x1800b1d60`). Roster backbone.
+
+## 3. Member state
+- `_users`: ordered map `ProductUserId -> user_state_t{connected, authentified, last_infos, Connect_Infos}`. **Index 0 = myself** (2020 `fifo_map` convention; verify in binary). Seeded by `Login`.
+- `_device_id`, `_username` (used by leaderboards).
+- Constants: peer-info refresh rate (~3000 ms in 2020).
+- `EmuInit` (@`0x1800976e0`) / `EmuDeinit` (@`0x1800a8300`) lifecycle.
+
+## 4. Lifecycle
+`EmuInit` registers callbacks + frame + network listener (advertise + connect `oneof` cases) and turns advertising on; `Login` calls `advertise_peer_id(myProductUserId)`. `EmuDeinit` reverses.
+
+## 5. Synchronous accessors
+- `GetLoggedInUsersCount` (@`0x18009d3d0`), `GetLoggedInUserByIndex` (@`0x18009d520`), `GetLoginStatus` (@`0x18009d880`).
+- **External-account mapping** (query remote peers' platform accounts): `GetProductUserExternalAccountCount` (@`0x18009e190`), `CopyProductUserExternalAccountByIndex/ByAccountType/ByAccountId` (@`0x18009e5e0`/`0x18009ed50`/`0x18009f4b0`), `CopyProductUserInfo` (@`0x18009fbc0`), `GetExternalAccountMapping` (@`0x18009c700`), `GetProductUserIdMapping` (@`0x18009cca0`).
+- `CopyIdToken` (@`0x1800a01d0`, 9.9 KB — large; JWT id-token production/crypto).
+
+## 6. Async operations
+- **`Login`** (@`0x1800979b0`, 5.7 KB) — establishes local ProductUserId from `Credentials` (device id / external-account seed), inserts `_users[myself]`, advertises. `k_iCallback = EOS_Connect_LoginCallbackInfo`. Immediate-complete (no peer round-trip needed for self).
+- `Logout` (@`0x180099760`), `CreateUser` (@`0x180099dc0`), `LinkAccount` (@`0x18009a3a0`), `UnlinkAccount` (@`0x18009a910`), `CreateDeviceId` (@`0x18009ae80`), `DeleteDeviceId` (@`0x18009b440`), `TransferDeviceIdAccount` (@`0x18009b6a0`).
+- **Mapping queries (networked)**: `QueryExternalAccountMappings` (@`0x18009bc10`), `QueryProductUserIdMappings` (@`0x18009c190`) — resolve remote peers, stash `res` in a pending map, reply on `Connect_Infos`.
+
+## 7. Notifications
+`AddNotifyAuthExpiration`/`RemoveNotifyAuthExpiration` (@`0x18009db10`/`0x18009dd70`), `AddNotifyLoginStatusChanged`/`RemoveNotifyLoginStatusChanged` (@`0x18009de50`/`0x18009e0b0`). Callback-infos `EOS_Connect_AuthExpirationCallbackInfo`, `EOS_Connect_LoginStatusChangedCallbackInfo`.
+
+## 8. Network protocol
+- Envelope `oneof` case `kConnect` (+ `kNetworkAdvertise` peer lifecycle). Sub-message `Connect_Message_pb{ request | infos(Connect_Infos_pb{userid, map<string,string> sessions, displayname}) }`.
+- Handlers (newer naming): `_OnConnectRequest` (@`0x1800b1f60`) → reply with our infos; `_OnConnectResponse` (@`0x1800b2280`) → upsert `_users[peer].infos`, mark `authentified`, fire cross-interface `on_peer_connect` (Presence/P2P) + Friends update notifications, resolve pending mapping queries. Senders `_SendConnectResponse` (@`0x1800b2900`, one peer) / `_SendConnectResponseToAll` (@`0x1800ab230`).
+- `CBRunFrame` periodically re-requests stale peer infos (~3 s).
+- Self-filter: drops messages whose `source_id` == our ProductUserId.
+
+## 9. Frame/tick
+`CBRunFrame`: periodic peer-info requests + timeout sweep of pending mapping queries. `RunCallbacks` returns `res->done`. `FreeCallback` frees copied external-account arrays.
+
+## 10. RE cross-reference & reimplementation notes
+- **Reimpl:** Connect is the membership layer — implement it before Presence/Sessions/Lobby/P2P since they depend on its peer table and connect/disconnect events. Login just needs to derive a stable ProductUserId and start advertising.
+- **Cross-interface fan-out** (from `_OnConnectResponse`): Presence.on_peer_connect, P2P.on_peer_connect, Friends update — this is the glue that makes a joined peer appear everywhere.
+- **Deltas vs 2020:** `_On*Request/_On*Response/_Send*Response(ToAll)` naming; `EmuInit/EmuDeinit`; `CopyIdToken` (large, new); richer external-account mapping surface.
+
+### Follow-ups (open)
+- Confirm `_users` layout + "index 0 = myself" in the binary.
+- Decompile `_OnConnectResponse` fully → exact fan-out list + pending-query resolution.
+- `CopyIdToken` (9.9 KB) — document the id-token/JWT construction (shared with Auth).

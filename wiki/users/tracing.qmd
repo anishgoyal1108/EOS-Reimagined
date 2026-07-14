@@ -1,0 +1,128 @@
+---
+title: "Tracing & diagnostics"
+description: "Turn on the trace, read what the library actually did, and check a game before you even launch it."
+---
+
+Games rarely tell you *why* multiplayer didn't come up. EOS Reimagined ships its own diagnostics
+so you don't have to guess: a structured **trace** the library writes itself, an ordinary **EOS
+log** channel for developers, and an **import census tool** that predicts whether a game can load
+the library at all.
+
+## The trace
+
+The trace is a versioned [JSON Lines](https://jsonlines.org/) stream written by the library —
+independent of the game, which never has to cooperate. It is **off by default**, and off means
+*off*: no run directory, no files, nothing on disk.
+
+Turn it on with one variable (or the [`trace_level`](configuration.qmd) key):
+
+```sh
+EOSR_TRACE=lifecycle ./the-game
+```
+
+| Level | What you get |
+|---|---|
+| `off` | Nothing (default). No files are created. |
+| `errors` | Failed calls and callbacks, dropped connections, config diagnostics. |
+| `lifecycle` | The above, plus async call/callback pairs, notifications, and every network lifecycle event: discover, handshake, adopt, drop, search, P2P open/close. **The level to start with.** |
+| `full` | Every EOS call and return, for every function. Verbose; for pinning down a specific interaction. |
+
+Each level is a strict superset of the one below, so raising it only adds records.
+
+### Where it goes
+
+Each run gets its own directory under `<data-dir>/traces/` (configurable via `trace_dir`), named
+like `run-20260713T004500Z-48213-a1` — timestamp, PID, and a collision suffix, so simultaneous
+instances never fight over a directory:
+
+```
+~/.local/share/eos-reimagined/traces/run-20260713T004500Z-48213-a1/
+├── runtime.json      # written once at startup: build, OS, run id, resolved config
+├── trace.jsonl       # the live event stream
+└── trace.1.jsonl …   # rotated files, newest first
+```
+
+Rotation is bounded and hard: a file is capped at `trace_max_bytes` (default 64 MiB), at most
+`trace_max_rotated_files` (default 8) rotated files are kept, and no file ever exceeds the cap.
+A killed process costs at most the one torn final line.
+
+### What a record looks like
+
+One JSON object per line, each with a shared envelope (sequence number, monotonic timestamp,
+PID, logical thread label, kind) and a kind-specific body:
+
+```json
+{"v":1,"seq":41,"t":8123456789,"pid":48213,"inst":"alice","tid":"t#0",
+ "kind":"call","fn":"EOS_Connect_Login","api":2,"corr":7,"args":{...}}
+```
+
+An async call mints a correlation ID that its return *and* its later callback carry, so you can
+stitch a request to its completion across the ticks between them. Handles and player IDs never
+appear raw — each object gets a stable local label (`session#3`, `puid#7`), and peer lifecycle
+records carry a truncated, domain-separated **fingerprint** that lets two machines' traces be
+joined on a peer without either file containing a real ID.
+
+::: {.callout-note appearance="simple"}
+## Safe to share, by construction
+
+At no level does the trace contain private keys, credentials or tokens, message payloads (lengths
+and metadata only), raw account IDs, or free text. The one caveat: `runtime.json` echoes your
+display name and `instance_label` — fine on your own disk, worth a glance before posting a whole
+run directory to a public issue.
+:::
+
+### Config problems land here too
+
+Every rejected, clamped, or ignored [configuration](configuration.qmd) value becomes a
+`meta`/`config` record with stable field/source/reason codes — so "why is my setting ignored?"
+is answered by the first screenful of `trace.jsonl`. (With tracing off, those diagnostics go
+best-effort to the EOS log callback instead; the library never creates files just to complain.)
+
+Failure is engineered to be boring: if a write fails mid-run (disk full, permissions), the sink
+disables itself, says so once through the logger, and the game never notices.
+
+### `EOSR_RUN_DIR`: bring your own run directory
+
+Test harnesses that launch the game themselves can set `EOSR_RUN_DIR` to a directory they
+already created; the library then writes only its own files (`runtime.json`, `trace.jsonl`)
+into it and never creates the directory itself. Most people never need this — it exists so
+automated alpha runs own the whole run folder.
+
+## The EOS log channel
+
+Separate from the trace, the library implements the SDK's own logging surface:
+`EOS_Logging_SetCallback` and `EOS_Logging_SetLogLevel` work, and the
+[`log_level`](configuration.qmd) key sets the initial threshold (default `off` for players;
+the callback default is Warning once a game installs one). Messages go **only to the game's
+callback** — there is no log file. If you're not the game's developer, use the trace instead.
+
+## `inspect_game.py`: will this game even load?
+
+A game resolves every EOS symbol it imports *when the library loads* — or, for a Unity/Mono
+title, on the first P/Invoke into it. One missing symbol kills the process before a single line
+of the SDK runs, usually without a word of explanation. Current builds export the **complete**
+EOS surface precisely to retire that failure class, but the census is still the first thing to
+run on a new game: it shows exactly *which EOS families the game touches*, so you can read it
+against the [roadmap](roadmap.qmd) and predict whether the parts it leans on actually function —
+and it catches you when an older artifact is still in the game folder.
+
+[`tools/inspect_game.py`](https://github.com/anishgoyal1108/EOS-Reimagined/blob/main/tools/inspect_game.py)
+answers it without launching anything, read-only:
+
+```sh
+python3 tools/inspect_game.py "/path/to/Game/" \
+    --our-library build/libEOSSDK-Linux-Shipping.so \
+    --out inspection.json
+```
+
+It walks the game's binaries — native PE/ELF imports, delay-loads, .NET P/Invoke tables, even
+`GetProcAddress`/`dlsym` string references — and reports, per EOS family:
+
+- **LOADER-FATAL** — statically imported symbols we don't export. The game will not start.
+- **fails at first call** — delay-loaded or dynamically resolved symbols we lack. The game
+  starts, then breaks when it touches them.
+- what it imports that we *do* cover, so you know how much of the game's surface is exercised.
+
+Point `--reference-sdk` at Epic's original DLL to also cross-check against the real export
+surface. The write-up of running this against the reference SDK is the
+[export-surface census](../developers/internals/export-surface-census.qmd).
