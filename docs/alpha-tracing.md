@@ -209,19 +209,24 @@ One JSON object per line. Every record shares an **envelope** and adds a **body*
   peer's labelled id, its cross-process `peer_fp` on adopt/drop, byte lengths, and packet metadata — no
   payloads, keys, tokens, or raw ids.
 
-Body fields are not free-form, and they are typed rather than merely name-filtered. A field is one of
-a fixed set of schema field ids, each with exactly one required value kind, so it can never appear
-under an arbitrary key, shadow an envelope/body field like `seq`/`kind`/`event`/`fn`/`result`, or carry
-the wrong type. A value is one of: an integer / unsigned / flag; a **label** (`session#3`, `puid#2` —
-`<letter><word>#<digits>`); a 16-hex **fingerprint**; a short **enum** token; or explicitly-**sanitized
-diagnostic** text. There is no generic string, so a credential, a raw account id, or a payload cannot
-enter as free text: a raw 32-hex id fails the label check and is dropped, and only the deliberate,
-auditable diagnostic type carries free text (bounded to 200 bytes). A value that fails its check or a
-field whose id repeats is dropped; the diagnostic text and every fixed name (`fn`, `event`, `corr`,
-`id`, result name) are length-bounded; and the field count is capped (≤ 32). Those caps, plus a writer
-output ceiling below the 64 KiB sink minimum, put a hard bound on one record — and serialization
-returns the empty string rather than a partial or over-long line whenever the writer did not complete
-exactly one bounded, well-formed document.
+Body fields are typed, not merely name-filtered, and there is no free-text form anywhere. A field is
+one of a fixed set of schema ids (with an `invalid` sentinel so a cast or default-built id is
+rejected), each with one required value kind, and each belongs to specific bodies — so a field cannot
+appear under an arbitrary key, shadow an envelope/body field, carry the wrong type, or drift into a
+body it does not belong to. A value is an integer / unsigned / flag; a **label** (`session#3` —
+`<letter><word>#<digits>`); a 16-hex **fingerprint**; or an **enum** symbol (an identifier such as
+`reliable` or `EOS_UNL_BottomRight`). A credential, continuance token, raw account id, or payload
+cannot be represented at all: a raw 32-hex id fails the label check, arbitrary text fails the enum and
+label checks, and there is no string field to smuggle it through. Return values are built through typed
+factories (`return_bool`, `return_count`, `return_handle`, `return_enum`, `return_notification_id`) so
+the declared type and its value cannot contradict.
+
+A field whose value fails validation, repeats, or does not belong to the body is dropped; an invalid
+action, return value, correlation id, notification id, or function/event name **rejects the whole
+record** (the empty string, never `"invalid"` in the schema). Every value and fixed name is
+length-bounded, the field count is capped (≤ 32), and the writer refuses to buffer past an output
+ceiling below the 64 KiB sink minimum, returning the empty string rather than a partial or over-long
+line whenever it did not complete exactly one bounded, well-formed document.
 
 ### Correlation
 

@@ -48,7 +48,7 @@ public:
     // every container closed, no mismatched close, no key outside an object, no value without a key,
     // no dangling key, and the output cap not exceeded. A fresh (untouched) writer is not a document,
     // so this is false until a root value completes. A consumer checks it before persisting.
-    bool ok() const { return valid_ && root_done_ && levels_.empty() && !over_cap(); }
+    bool ok() const { return valid_ && root_done_ && levels_.empty(); }
 
 private:
     // Prepare to emit a value: validate the position and emit the separator a value needs (a comma
@@ -63,8 +63,9 @@ private:
         bool first;
     };
 
-    // Whether the output cap has been reached (and the writer is therefore invalid).
-    bool over_cap() const;
+    // Reserve `n` more output bytes: true if they fit within the cap (and the writer is still valid);
+    // otherwise mark the writer invalid and return false, so no append ever overruns the budget.
+    bool reserve(std::size_t n);
     // Mark the single root value complete when a top-level scalar was just written.
     void mark_root_if_top();
 

@@ -129,6 +129,21 @@ TEST_CASE("the output cap makes an over-long document not ok") {
     CHECK_FALSE(writer.ok());
 }
 
+TEST_CASE("the output cap also bounds buffered bytes") {
+    const std::size_t cap = 16;
+    json_writer writer(cap);
+    writer.value_string(std::string(1024 * 1024, 'x'));
+    CHECK_FALSE(writer.ok());
+    CHECK(writer.str().size() <= cap);
+}
+
+TEST_CASE("a document exactly at the output cap is accepted") {
+    json_writer writer(4);
+    writer.value_string("ab"); // "ab" is exactly four encoded bytes.
+    CHECK(writer.str().size() == 4);
+    CHECK(writer.ok());
+}
+
 TEST_CASE("misuse leaves the writer not ok") {
     SUBCASE("a mismatched close") {
         json_writer writer;
