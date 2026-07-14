@@ -67,6 +67,11 @@ public:
     // join from someone it has never seen.
     bool is_known_peer(const std::string& product_user_id) const;
 
+    // The display name a peer announced over the authenticated roster, or empty if unknown. UserInfo
+    // resolves a peer's name through this rather than trusting a name in a payload: the roster is
+    // keyed on the connection-proven product user id, so the name is the one everyone else sees too.
+    std::string peer_display_name(const std::string& product_user_id) const;
+
     EOS_NotificationId add_notify_login_status_changed(
         void* client_data, EOS_Connect_OnLoginStatusChangedCallback delegate);
     void remove_notify_login_status_changed(EOS_NotificationId id);

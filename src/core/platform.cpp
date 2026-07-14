@@ -17,6 +17,8 @@ sdk_platform::sdk_platform()
       lobby_(settings_, cb_manager_, network_, connect_),
       ui_(settings_, cb_manager_),
       integrated_platform_(cb_manager_),
+      friends_(settings_, cb_manager_, network_),
+      userinfo_(settings_, cb_manager_, network_, connect_),
       // A game that never says otherwise is in the foreground with a working network, which is the
       // only state an emulator running beside it could be in.
       application_status_(EOS_EApplicationStatus::EOS_AS_Foreground),
@@ -83,6 +85,8 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
     lobby_.emu_init();
     ui_.emu_init();
     integrated_platform_.emu_init();
+    friends_.emu_init();
+    userinfo_.emu_init();
     created_ = true;
     log_info("platform created for product '" + settings_.product_id() + "'");
     return true;
@@ -103,6 +107,8 @@ void sdk_platform::release() {
     lobby_.emu_deinit();
     ui_.emu_deinit();
     integrated_platform_.emu_deinit();
+    friends_.emu_deinit();
+    userinfo_.emu_deinit();
     network_.stop();
     cb_manager_.clear();
     platform::net_shutdown();
@@ -174,6 +180,12 @@ void* sdk_platform::interface_handle(interface_id id) {
     }
     if (id == if_integratedplatform) {
         return &integrated_platform_;
+    }
+    if (id == if_friends) {
+        return &friends_;
+    }
+    if (id == if_userinfo) {
+        return &userinfo_;
     }
     return &interfaces_[id];
 }

@@ -7,12 +7,14 @@
 #include "core/settings.h"
 #include "interfaces/auth.h"
 #include "interfaces/connect.h"
+#include "interfaces/friends.h"
 #include "interfaces/lobby.h"
 #include "interfaces/integratedplatform.h"
 #include "interfaces/ui.h"
 #include "interfaces/p2p.h"
 #include "interfaces/presence.h"
 #include "interfaces/sessions.h"
+#include "interfaces/userinfo.h"
 #include "net/message_router.h"
 
 namespace eosr {
@@ -103,6 +105,8 @@ public:
     sdk_lobby& lobby() { return lobby_; }
     sdk_ui& ui() { return ui_; }
     sdk_integrated_platform& integrated_platform() { return integrated_platform_; }
+    sdk_friends& friends() { return friends_; }
+    sdk_userinfo& userinfo() { return userinfo_; }
 
 private:
     sdk_settings settings_;
@@ -118,6 +122,10 @@ private:
     sdk_lobby lobby_;
     sdk_ui ui_;
     sdk_integrated_platform integrated_platform_;
+    // Declared after connect_ and network_: Friends reads the peer roster, and UserInfo resolves a
+    // peer's name through Connect's roster.
+    sdk_friends friends_;
+    sdk_userinfo userinfo_;
     stub_interface interfaces_[if_count];
     EOS_EApplicationStatus application_status_;
     EOS_ENetworkStatus network_status_;

@@ -238,6 +238,11 @@ bool sdk_connect::is_known_peer(const std::string& product_user_id) const {
     return peers_.find(product_user_id) != peers_.end();
 }
 
+std::string sdk_connect::peer_display_name(const std::string& product_user_id) const {
+    std::map<std::string, std::string>::const_iterator it = peers_.find(product_user_id);
+    return (it != peers_.end()) ? it->second : std::string();
+}
+
 EOS_NotificationId sdk_connect::add_notify_login_status_changed(
     void* client_data, EOS_Connect_OnLoginStatusChangedCallback delegate) {
     if (delegate == 0) {

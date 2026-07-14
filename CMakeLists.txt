@@ -40,6 +40,8 @@ add_library(eosr_core STATIC
     src/interfaces/lobby.cpp
     src/interfaces/ui.cpp
     src/interfaces/integratedplatform.cpp
+    src/interfaces/friends.cpp
+    src/interfaces/userinfo.cpp
     src/net/wire.cpp
     src/net/secure_channel.cpp
     src/net/peer_channel.cpp
@@ -105,6 +107,8 @@ add_library(eos_shared SHARED
     src/flat/eos_lobby_flat.cpp
     src/flat/eos_ui_flat.cpp
     src/flat/eos_integratedplatform_flat.cpp
+    src/flat/eos_friends_flat.cpp
+    src/flat/eos_userinfo_flat.cpp
 )
 target_link_libraries(eos_shared PRIVATE eosr_core)
 set_target_properties(eos_shared PROPERTIES
