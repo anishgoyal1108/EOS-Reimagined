@@ -7,7 +7,9 @@
 #include "common/ids.h"
 #include "common/log.h"
 #include "core/callback_manager.h"
+#include "core/runtime.h"
 #include "core/settings.h"
+#include "core/tracer.h"
 #include "interfaces/connect.h"
 #include "net/message_router.h"
 #include "net/wire.h"
@@ -1154,6 +1156,7 @@ void sdk_sessions::search_find(void* handle, const EOS_SessionSearch_FindOptions
         object->awaiting.insert(peers[i]);
     }
     object->deadline = std::chrono::steady_clock::now() + search_timeout;
+    global_tracer().record_search("sessions_started", std::string(), object->awaiting.size());
 
     std::unique_ptr<frame_result> result(new frame_result());
     EOS_SessionSearch_FindCallbackInfo* info = static_cast<EOS_SessionSearch_FindCallbackInfo*>(
@@ -1488,11 +1491,16 @@ bool sdk_sessions::run_callbacks(frame_result& result) {
     if (find_it != pending_finds_.end()) {
         search_object* object = searches_.find(find_it->second);
         if (object == 0) {
+            global_tracer().record_search("sessions_cancelled", std::string(), 0);
             return true; // the game let the search go; nothing left to wait for
         }
         // Every peer answers, so an empty waiting list means the answer is complete.
         if (object->awaiting.empty() || now > object->deadline) {
+            const bool timed_out = !object->awaiting.empty();
             object->searching = false;
+            global_tracer().record_search(
+                timed_out ? "sessions_timeout" : "sessions_complete", std::string(),
+                object->results.size(), timed_out);
             return true;
         }
         return false;
@@ -1590,6 +1598,8 @@ bool sdk_sessions::on_network_message(const net_envelope& message) {
                 }
             }
         }
+        global_tracer().record_search("sessions_request", message.source_id,
+                                      answer.sessions.size());
         byte_writer writer;
         serialize(writer, answer);
         send_to(message.source_id, message_type::session_search_response, writer);
@@ -1614,8 +1624,12 @@ bool sdk_sessions::on_network_message(const net_envelope& message) {
             // Only a peer we actually asked can answer this search; an unsolicited response, with a
             // guessed search id, is ignored rather than allowed to plant results.
             if (object->awaiting.find(message.source_id) == object->awaiting.end()) {
+                global_tracer().record_search("sessions_unexpected_response", message.source_id,
+                                              answer.sessions.size(), true);
                 continue;
             }
+            global_tracer().record_search("sessions_response", message.source_id,
+                                          answer.sessions.size());
             object->awaiting.erase(message.source_id);
             for (std::size_t s = 0; s < answer.sessions.size(); s++) {
                 if (object->results.size() >= object->max_results) {

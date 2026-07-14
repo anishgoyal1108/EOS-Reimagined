@@ -445,6 +445,20 @@ void tracer::record_notify(const std::string& event, const std::string& action,
                 serialize_notify(next_envelope(), event, action, id, fields));
 }
 
+void tracer::record_search(const char* reason, const std::string& peer, std::size_t count,
+                           bool failure) {
+    if (!enabled()) {
+        return;
+    }
+    std::vector<trace_field> fields;
+    if (!peer.empty()) {
+        fields.push_back(make_field(field_id::peer, tv_label(label(label_kind::puid, peer))));
+    }
+    fields.push_back(make_field(field_id::count, tv_uint(count)));
+    fields.push_back(make_field(field_id::reason, tv_enum(reason)));
+    record_net("search", fields, failure);
+}
+
 void tracer::record_net(const std::string& event, const std::vector<trace_field>& fields,
                         bool failure) {
     if (!enabled()) {

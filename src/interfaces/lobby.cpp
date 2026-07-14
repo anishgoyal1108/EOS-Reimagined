@@ -6,7 +6,9 @@
 
 #include "common/ids.h"
 #include "core/callback_manager.h"
+#include "core/runtime.h"
 #include "core/settings.h"
+#include "core/tracer.h"
 #include "interfaces/connect.h"
 #include "net/message_router.h"
 #include "net/wire.h"
@@ -1179,6 +1181,7 @@ void sdk_lobby::search_find(void* handle, const EOS_LobbySearch_FindOptions* opt
         object->awaiting.insert(peers[i]);
     }
     object->deadline = std::chrono::steady_clock::now() + search_timeout;
+    global_tracer().record_search("lobby_started", std::string(), object->awaiting.size());
 
     std::unique_ptr<frame_result> result(new frame_result());
     void* payload = result->create_callback(cb_find, sizeof(EOS_LobbySearch_FindCallbackInfo),
@@ -1725,6 +1728,8 @@ bool sdk_lobby::on_network_message(const net_envelope& message) {
                 answer.lobbies.push_back(it->second.infos);
             }
         }
+        global_tracer().record_search("lobby_request", message.source_id,
+                                      answer.lobbies.size());
         byte_writer writer;
         serialize(writer, answer);
         send_to(message.source_id, message_type::lobby_search_response, writer);
@@ -1743,8 +1748,12 @@ bool sdk_lobby::on_network_message(const net_envelope& message) {
                 continue;
             }
             if (object->awaiting.find(message.source_id) == object->awaiting.end()) {
+                global_tracer().record_search("lobby_unexpected_response", message.source_id,
+                                              answer.lobbies.size(), true);
                 continue;
             }
+            global_tracer().record_search("lobby_response", message.source_id,
+                                          answer.lobbies.size());
             object->awaiting.erase(message.source_id);
             for (std::size_t l = 0; l < answer.lobbies.size(); l++) {
                 if (object->results.size() >= object->max_results) {
@@ -1974,10 +1983,15 @@ bool sdk_lobby::run_callbacks(frame_result& result) {
     if (find_it != pending_finds_.end()) {
         search_object* object = searches_.find(find_it->second);
         if (object == 0) {
+            global_tracer().record_search("lobby_cancelled", std::string(), 0);
             return true;
         }
         if (object->awaiting.empty() || now > object->deadline) {
+            const bool timed_out = !object->awaiting.empty();
             object->searching = false;
+            global_tracer().record_search(
+                timed_out ? "lobby_timeout" : "lobby_complete", std::string(),
+                object->results.size(), timed_out);
             return true;
         }
         return false;

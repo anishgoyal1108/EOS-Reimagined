@@ -686,3 +686,22 @@ TEST_CASE("the mesh lifecycle reads as listen, discover, handshake, adopt, drop"
     CHECK(trace.find("\"event\":\"adopt\",\"peer\":\"puid#0\",\"peer_fp\":") != std::string::npos);
     t.stop();
 }
+
+TEST_CASE("search records expose stage and counts without raw peer ids") {
+    tracer_fixture fx("search-lifecycle");
+    const std::string run = fx.make_run("run-search");
+    const std::string peer = "0123456789abcdef0123456789abcdef";
+
+    tracer t;
+    t.start(make_config(trace_level::lifecycle, fx.sub("traces"), run));
+    t.record_search("sessions_response", peer, 3);
+    t.flush();
+
+    const std::string trace = slurp(run + "/trace.jsonl");
+    CHECK(trace.find("\"kind\":\"net\",\"event\":\"search\"") != std::string::npos);
+    CHECK(trace.find("\"peer\":\"puid#0\"") != std::string::npos);
+    CHECK(trace.find("\"count\":3") != std::string::npos);
+    CHECK(trace.find("\"reason\":\"sessions_response\"") != std::string::npos);
+    CHECK(trace.find(peer) == std::string::npos);
+    t.stop();
+}

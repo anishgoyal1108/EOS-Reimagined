@@ -137,7 +137,8 @@ bool field_allowed(record_kind body, field_id id) {
             return id == field_id::peer || id == field_id::peer_fp || id == field_id::bytes ||
                    id == field_id::channel || id == field_id::reliability ||
                    id == field_id::port || id == field_id::port_first ||
-                   id == field_id::port_last || id == field_id::reason || id == field_id::socket;
+                   id == field_id::port_last || id == field_id::reason || id == field_id::socket ||
+                   id == field_id::count;
         case rk_call:
             return id == field_id::cred_type || id == field_id::local || id == field_id::target ||
                    id == field_id::account || id == field_id::socket || id == field_id::channel ||

@@ -99,6 +99,8 @@ public:
                         const trace_result_code& result, const std::vector<trace_field>& payload);
     void record_notify(const std::string& event, const std::string& action,
                        const std::string& token, const std::vector<trace_field>& fields);
+    void record_search(const char* reason, const std::string& peer, std::size_t count,
+                       bool failure = false);
     void record_net(const std::string& event, const std::vector<trace_field>& fields,
                     bool failure = false);
 
