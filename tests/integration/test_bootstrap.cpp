@@ -11,6 +11,7 @@
 #include "eos_auth.h"
 #include "eos_lobby.h"
 #include "eos_ecom.h"
+#include "eos_playerdatastorage.h"
 #include "eos_achievements.h"
 #include "eos_stats.h"
 #include "eos_p2p.h"
@@ -1099,10 +1100,20 @@ namespace {
 bool g_ecom_fired = false;
 EOS_EResult g_ecom_result = EOS_EResult::EOS_Success;
 void* g_ecom_client_data = 0;
+bool g_storage_fired = false;
+EOS_EResult g_storage_result = EOS_EResult::EOS_Success;
 void EOS_CALL on_ecom_ownership(const EOS_Ecom_QueryOwnershipCallbackInfo* info) {
     g_ecom_fired = true;
     g_ecom_result = info->ResultCode;
     g_ecom_client_data = info->ClientData;
+}
+void EOS_CALL on_storage_delete(const EOS_PlayerDataStorage_DeleteCacheCallbackInfo* info) {
+    g_storage_fired = true;
+    g_storage_result = info->ResultCode;
+}
+void EOS_CALL on_storage_read(const EOS_PlayerDataStorage_ReadFileCallbackInfo* info) {
+    g_storage_fired = true;
+    g_storage_result = info->ResultCode;
 }
 } // namespace
 
@@ -1119,11 +1130,15 @@ TEST_CASE("an unimplemented interface is exported, and its async call still comp
     // The whole point: these resolve at all. Before the compatibility shells they did not exist.
     RESOLVE(fn_get_ecom, EOS_Platform_GetEcomInterface);
     RESOLVE(fn_query_ownership, EOS_Ecom_QueryOwnership);
+    RESOLVE(fn_copy_entitlement, EOS_Ecom_CopyEntitlementByIndex);
     RESOLVE(fn_ecom_count, EOS_Ecom_GetEntitlementsCount);
     RESOLVE(fn_achievements, EOS_Platform_GetAchievementsInterface);
     RESOLVE(fn_unlock, EOS_Achievements_UnlockAchievements);
     RESOLVE(fn_stats, EOS_Stats_IngestStat);
     RESOLVE(fn_definition_release, EOS_Achievements_Definition_Release);
+    RESOLVE(fn_get_storage, EOS_Platform_GetPlayerDataStorageInterface);
+    RESOLVE(fn_delete_cache, EOS_PlayerDataStorage_DeleteCache);
+    RESOLVE(fn_read_file, EOS_PlayerDataStorage_ReadFile);
 
     EOS_InitializeOptions iopts = {};
     iopts.ApiVersion = EOS_INITIALIZE_API_LATEST;
@@ -1149,6 +1164,13 @@ TEST_CASE("an unimplemented interface is exported, and its async call still comp
     count_opts.ApiVersion = EOS_ECOM_GETENTITLEMENTSCOUNT_API_LATEST;
     CHECK(fn_ecom_count(ecom, &count_opts) == 0);
 
+    EOS_Ecom_Entitlement* entitlement = reinterpret_cast<EOS_Ecom_Entitlement*>(0x1);
+    EOS_Ecom_CopyEntitlementByIndexOptions copy_opts = {};
+    copy_opts.ApiVersion = EOS_ECOM_COPYENTITLEMENTBYINDEX_API_LATEST;
+    CHECK(fn_copy_entitlement(ecom, &copy_opts, &entitlement) ==
+          EOS_EResult::EOS_NotImplemented);
+    CHECK(entitlement == nullptr);
+
     // An asynchronous one still fires its callback -- a game awaiting it must never hang.
     int client_data = 0;
     g_ecom_fired = false;
@@ -1161,6 +1183,31 @@ TEST_CASE("an unimplemented interface is exported, and its async call still comp
     CHECK(g_ecom_fired);
     CHECK(g_ecom_result == EOS_EResult::EOS_NotImplemented); // honest, not a fabricated success
     CHECK(g_ecom_client_data == &client_data);
+
+    EOS_HPlayerDataStorage storage = fn_get_storage(platform);
+    REQUIRE(storage != nullptr);
+    EOS_PlayerDataStorage_DeleteCacheOptions delete_opts = {};
+    delete_opts.ApiVersion = EOS_PLAYERDATASTORAGE_DELETECACHE_API_LATEST;
+    g_storage_fired = false;
+    CHECK(fn_delete_cache(storage, &delete_opts, nullptr, on_storage_delete) ==
+          EOS_EResult::EOS_NotImplemented);
+    for (int i = 0; i < 8 && !g_storage_fired; i++) {
+        fn_tick(platform);
+    }
+    CHECK(g_storage_fired);
+    CHECK(g_storage_result == EOS_EResult::EOS_NotImplemented);
+
+    EOS_PlayerDataStorage_ReadFileOptions read_opts = {};
+    read_opts.ApiVersion = EOS_PLAYERDATASTORAGE_READFILE_API_LATEST;
+    g_storage_fired = false;
+    EOS_HPlayerDataStorageFileTransferRequest transfer =
+        fn_read_file(storage, &read_opts, nullptr, on_storage_read);
+    CHECK(transfer == nullptr);
+    for (int i = 0; i < 8 && !g_storage_fired; i++) {
+        fn_tick(platform);
+    }
+    CHECK(g_storage_fired);
+    CHECK(g_storage_result == EOS_EResult::EOS_NotImplemented);
 
     // A deprecated release the game's own SDK version still declares: present, and a safe no-op.
     fn_definition_release(nullptr);

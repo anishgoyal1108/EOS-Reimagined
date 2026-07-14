@@ -67,6 +67,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyAchievementDefinitionByAchiev
     (void)Handle;
     (void)Options;
     (void)OutDefinition;
+    if (OutDefinition != NULL) { *OutDefinition = static_cast<EOS_Achievements_Definition *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -74,6 +75,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyAchievementDefinitionByIndex(
     (void)Handle;
     (void)Options;
     (void)OutDefinition;
+    if (OutDefinition != NULL) { *OutDefinition = static_cast<EOS_Achievements_Definition *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -81,6 +83,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyAchievementDefinitionV2ByAchi
     (void)Handle;
     (void)Options;
     (void)OutDefinition;
+    if (OutDefinition != NULL) { *OutDefinition = static_cast<EOS_Achievements_DefinitionV2 *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -88,6 +91,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyAchievementDefinitionV2ByInde
     (void)Handle;
     (void)Options;
     (void)OutDefinition;
+    if (OutDefinition != NULL) { *OutDefinition = static_cast<EOS_Achievements_DefinitionV2 *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -95,6 +99,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyPlayerAchievementByAchievemen
     (void)Handle;
     (void)Options;
     (void)OutAchievement;
+    if (OutAchievement != NULL) { *OutAchievement = static_cast<EOS_Achievements_PlayerAchievement *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -102,6 +107,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyPlayerAchievementByIndex(EOS_
     (void)Handle;
     (void)Options;
     (void)OutAchievement;
+    if (OutAchievement != NULL) { *OutAchievement = static_cast<EOS_Achievements_PlayerAchievement *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -109,6 +115,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyUnlockedAchievementByAchievem
     (void)Handle;
     (void)Options;
     (void)OutAchievement;
+    if (OutAchievement != NULL) { *OutAchievement = static_cast<EOS_Achievements_UnlockedAchievement *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -116,6 +123,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyUnlockedAchievementByIndex(EO
     (void)Handle;
     (void)Options;
     (void)OutAchievement;
+    if (OutAchievement != NULL) { *OutAchievement = static_cast<EOS_Achievements_UnlockedAchievement *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -256,6 +264,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_GetModuleBuildId(EOS_HAntiChea
     (void)Handle;
     (void)Options;
     (void)OutModuleBuildId;
+    if (OutModuleBuildId != NULL) { *OutModuleBuildId = static_cast<uint32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -263,6 +272,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_GetProtectMessageOutputLength(
     (void)Handle;
     (void)Options;
     (void)OutBufferSizeBytes;
+    if (OutBufferSizeBytes != NULL) { *OutBufferSizeBytes = static_cast<uint32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -271,6 +281,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_PollStatus(EOS_HAntiCheatClien
     (void)Options;
     (void)OutViolationType;
     (void)OutMessage;
+    if (OutViolationType != NULL) { *OutViolationType = static_cast<EOS_EAntiCheatClientViolationType>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -279,6 +290,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_ProtectMessage(EOS_HAntiCheatC
     (void)Options;
     (void)OutBuffer;
     (void)OutBytesWritten;
+    if (OutBytesWritten != NULL) { *OutBytesWritten = static_cast<uint32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -329,6 +341,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_Reserved01(EOS_HAntiCheatClien
     (void)Handle;
     (void)Options;
     (void)OutValue;
+    if (OutValue != NULL) { *OutValue = static_cast<int32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -343,6 +356,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_UnprotectMessage(EOS_HAntiChea
     (void)Options;
     (void)OutBuffer;
     (void)OutBytesWritten;
+    if (OutBytesWritten != NULL) { *OutBytesWritten = static_cast<uint32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -397,6 +411,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_GetProtectMessageOutputLength(
     (void)Handle;
     (void)Options;
     (void)OutBufferSizeBytes;
+    if (OutBufferSizeBytes != NULL) { *OutBufferSizeBytes = static_cast<uint32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -465,6 +480,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_ProtectMessage(EOS_HAntiCheatS
     (void)Options;
     (void)OutBuffer;
     (void)OutBytesWritten;
+    if (OutBytesWritten != NULL) { *OutBytesWritten = static_cast<uint32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -524,6 +540,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_UnprotectMessage(EOS_HAntiChea
     (void)Options;
     (void)OutBuffer;
     (void)OutBytesWritten;
+    if (OutBytesWritten != NULL) { *OutBytesWritten = static_cast<uint32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -716,6 +733,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyEntitlementById(EOS_HEcom Handle, con
     (void)Handle;
     (void)Options;
     (void)OutEntitlement;
+    if (OutEntitlement != NULL) { *OutEntitlement = static_cast<EOS_Ecom_Entitlement *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -723,6 +741,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyEntitlementByIndex(EOS_HEcom Handle, 
     (void)Handle;
     (void)Options;
     (void)OutEntitlement;
+    if (OutEntitlement != NULL) { *OutEntitlement = static_cast<EOS_Ecom_Entitlement *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -730,6 +749,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyEntitlementByNameAndIndex(EOS_HEcom H
     (void)Handle;
     (void)Options;
     (void)OutEntitlement;
+    if (OutEntitlement != NULL) { *OutEntitlement = static_cast<EOS_Ecom_Entitlement *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -737,6 +757,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyItemById(EOS_HEcom Handle, const EOS_
     (void)Handle;
     (void)Options;
     (void)OutItem;
+    if (OutItem != NULL) { *OutItem = static_cast<EOS_Ecom_CatalogItem *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -744,6 +765,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyItemImageInfoByIndex(EOS_HEcom Handle
     (void)Handle;
     (void)Options;
     (void)OutImageInfo;
+    if (OutImageInfo != NULL) { *OutImageInfo = static_cast<EOS_Ecom_KeyImageInfo *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -751,6 +773,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyItemReleaseByIndex(EOS_HEcom Handle, 
     (void)Handle;
     (void)Options;
     (void)OutRelease;
+    if (OutRelease != NULL) { *OutRelease = static_cast<EOS_Ecom_CatalogRelease *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -774,6 +797,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyOfferById(EOS_HEcom Handle, const EOS
     (void)Handle;
     (void)Options;
     (void)OutOffer;
+    if (OutOffer != NULL) { *OutOffer = static_cast<EOS_Ecom_CatalogOffer *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -781,6 +805,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyOfferByIndex(EOS_HEcom Handle, const 
     (void)Handle;
     (void)Options;
     (void)OutOffer;
+    if (OutOffer != NULL) { *OutOffer = static_cast<EOS_Ecom_CatalogOffer *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -788,6 +813,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyOfferImageInfoByIndex(EOS_HEcom Handl
     (void)Handle;
     (void)Options;
     (void)OutImageInfo;
+    if (OutImageInfo != NULL) { *OutImageInfo = static_cast<EOS_Ecom_KeyImageInfo *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -795,6 +821,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyOfferItemByIndex(EOS_HEcom Handle, co
     (void)Handle;
     (void)Options;
     (void)OutItem;
+    if (OutItem != NULL) { *OutItem = static_cast<EOS_Ecom_CatalogItem *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -802,6 +829,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyTransactionById(EOS_HEcom Handle, con
     (void)Handle;
     (void)Options;
     (void)OutTransaction;
+    if (OutTransaction != NULL) { *OutTransaction = static_cast<EOS_Ecom_HTransaction>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -809,6 +837,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyTransactionByIndex(EOS_HEcom Handle, 
     (void)Handle;
     (void)Options;
     (void)OutTransaction;
+    if (OutTransaction != NULL) { *OutTransaction = static_cast<EOS_Ecom_HTransaction>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -939,6 +968,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_Transaction_CopyEntitlementByIndex(EOS_Ec
     (void)Handle;
     (void)Options;
     (void)OutEntitlement;
+    if (OutEntitlement != NULL) { *OutEntitlement = static_cast<EOS_Ecom_Entitlement *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -996,6 +1026,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_KWS_CopyPermissionByIndex(EOS_HKWS Handle, con
     (void)Handle;
     (void)Options;
     (void)OutPermission;
+    if (OutPermission != NULL) { *OutPermission = static_cast<EOS_KWS_PermissionStatus *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1012,6 +1043,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_KWS_GetPermissionByKey(EOS_HKWS Handle, const 
     (void)Handle;
     (void)Options;
     (void)OutPermission;
+    if (OutPermission != NULL) { *OutPermission = static_cast<EOS_EKWSPermissionStatus>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1074,6 +1106,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardDefinitionByIndex(
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardDefinition;
+    if (OutLeaderboardDefinition != NULL) { *OutLeaderboardDefinition = static_cast<EOS_Leaderboards_Definition *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1081,6 +1114,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardDefinitionByLeader
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardDefinition;
+    if (OutLeaderboardDefinition != NULL) { *OutLeaderboardDefinition = static_cast<EOS_Leaderboards_Definition *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1088,6 +1122,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardRecordByIndex(EOS_
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardRecord;
+    if (OutLeaderboardRecord != NULL) { *OutLeaderboardRecord = static_cast<EOS_Leaderboards_LeaderboardRecord *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1095,6 +1130,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardRecordByUserId(EOS
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardRecord;
+    if (OutLeaderboardRecord != NULL) { *OutLeaderboardRecord = static_cast<EOS_Leaderboards_LeaderboardRecord *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1102,6 +1138,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardUserScoreByIndex(E
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardUserScore;
+    if (OutLeaderboardUserScore != NULL) { *OutLeaderboardUserScore = static_cast<EOS_Leaderboards_LeaderboardUserScore *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1109,6 +1146,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardUserScoreByUserId(
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardUserScore;
+    if (OutLeaderboardUserScore != NULL) { *OutLeaderboardUserScore = static_cast<EOS_Leaderboards_LeaderboardUserScore *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1195,6 +1233,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Mods_CopyModInfo(EOS_HMods Handle, const EOS_M
     (void)Handle;
     (void)Options;
     (void)OutEnumeratedMods;
+    if (OutEnumeratedMods != NULL) { *OutEnumeratedMods = static_cast<EOS_Mods_ModInfo *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1257,6 +1296,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorageFileTransferRequest_GetFilena
     (void)FilenameStringBufferSizeBytes;
     (void)OutStringBuffer;
     (void)OutStringLength;
+    if (OutStringLength != NULL) { *OutStringLength = static_cast<int32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1264,6 +1304,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorage_CopyFileMetadataAtIndex(EOS_
     (void)Handle;
     (void)CopyFileMetadataOptions;
     (void)OutMetadata;
+    if (OutMetadata != NULL) { *OutMetadata = static_cast<EOS_PlayerDataStorage_FileMetadata *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1271,6 +1312,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorage_CopyFileMetadataByFilename(E
     (void)Handle;
     (void)CopyFileMetadataOptions;
     (void)OutMetadata;
+    if (OutMetadata != NULL) { *OutMetadata = static_cast<EOS_PlayerDataStorage_FileMetadata *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1279,6 +1321,8 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorage_DeleteCache(EOS_HPlayerDataS
     (void)Options;
     (void)ClientData;
     (void)CompletionCallback;
+    eosr::stub_complete(ClientData,
+        reinterpret_cast<eosr::completion_delegate>(CompletionCallback), sizeof(EOS_PlayerDataStorage_DeleteCacheCallbackInfo));
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1304,6 +1348,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorage_GetFileMetadataCount(EOS_HPl
     (void)Handle;
     (void)GetFileMetadataCountOptions;
     (void)OutFileMetadataCount;
+    if (OutFileMetadataCount != NULL) { *OutFileMetadataCount = static_cast<int32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1330,6 +1375,8 @@ EOS_DECLARE_FUNC(EOS_HPlayerDataStorageFileTransferRequest) EOS_PlayerDataStorag
     (void)ReadOptions;
     (void)ClientData;
     (void)CompletionCallback;
+    eosr::stub_complete(ClientData,
+        reinterpret_cast<eosr::completion_delegate>(CompletionCallback), sizeof(EOS_PlayerDataStorage_ReadFileCallbackInfo));
     return NULL;
 }
 
@@ -1338,6 +1385,8 @@ EOS_DECLARE_FUNC(EOS_HPlayerDataStorageFileTransferRequest) EOS_PlayerDataStorag
     (void)WriteOptions;
     (void)ClientData;
     (void)CompletionCallback;
+    eosr::stub_complete(ClientData,
+        reinterpret_cast<eosr::completion_delegate>(CompletionCallback), sizeof(EOS_PlayerDataStorage_WriteFileCallbackInfo));
     return NULL;
 }
 
@@ -1363,6 +1412,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_ProgressionSnapshot_BeginSnapshot(EOS_HProgres
     (void)Handle;
     (void)Options;
     (void)OutSnapshotId;
+    if (OutSnapshotId != NULL) { *OutSnapshotId = static_cast<uint32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1514,6 +1564,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAdmin_CopyUserTokenByIndex(EOS_HRTCAdmin Ha
     (void)Handle;
     (void)Options;
     (void)OutUserToken;
+    if (OutUserToken != NULL) { *OutUserToken = static_cast<EOS_RTCAdmin_UserToken *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1521,6 +1572,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAdmin_CopyUserTokenByUserId(EOS_HRTCAdmin H
     (void)Handle;
     (void)Options;
     (void)OutUserToken;
+    if (OutUserToken != NULL) { *OutUserToken = static_cast<EOS_RTCAdmin_UserToken *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1617,6 +1669,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAudio_CopyInputDeviceInformationByIndex(EOS
     (void)Handle;
     (void)Options;
     (void)OutInputDeviceInformation;
+    if (OutInputDeviceInformation != NULL) { *OutInputDeviceInformation = static_cast<EOS_RTCAudio_InputDeviceInformation *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1624,6 +1677,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAudio_CopyOutputDeviceInformationByIndex(EO
     (void)Handle;
     (void)Options;
     (void)OutOutputDeviceInformation;
+    if (OutOutputDeviceInformation != NULL) { *OutOutputDeviceInformation = static_cast<EOS_RTCAudio_OutputDeviceInformation *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1892,6 +1946,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Sanctions_CopyPlayerSanctionByIndex(EOS_HSanct
     (void)Handle;
     (void)Options;
     (void)OutSanction;
+    if (OutSanction != NULL) { *OutSanction = static_cast<EOS_Sanctions_PlayerSanction *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1931,6 +1986,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Stats_CopyStatByIndex(EOS_HStats Handle, const
     (void)Handle;
     (void)Options;
     (void)OutStat;
+    if (OutStat != NULL) { *OutStat = static_cast<EOS_Stats_Stat *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1938,6 +1994,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Stats_CopyStatByName(EOS_HStats Handle, const 
     (void)Handle;
     (void)Options;
     (void)OutStat;
+    if (OutStat != NULL) { *OutStat = static_cast<EOS_Stats_Stat *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1988,6 +2045,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_TitleStorageFileTransferRequest_GetFilename(EO
     (void)FilenameStringBufferSizeBytes;
     (void)OutStringBuffer;
     (void)OutStringLength;
+    if (OutStringLength != NULL) { *OutStringLength = static_cast<int32_t>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -1995,6 +2053,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_TitleStorage_CopyFileMetadataAtIndex(EOS_HTitl
     (void)Handle;
     (void)Options;
     (void)OutMetadata;
+    if (OutMetadata != NULL) { *OutMetadata = static_cast<EOS_TitleStorage_FileMetadata *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -2002,6 +2061,7 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_TitleStorage_CopyFileMetadataByFilename(EOS_HT
     (void)Handle;
     (void)Options;
     (void)OutMetadata;
+    if (OutMetadata != NULL) { *OutMetadata = static_cast<EOS_TitleStorage_FileMetadata *>(0); }
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -2010,6 +2070,8 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_TitleStorage_DeleteCache(EOS_HTitleStorage Han
     (void)Options;
     (void)ClientData;
     (void)CompletionCallback;
+    eosr::stub_complete(ClientData,
+        reinterpret_cast<eosr::completion_delegate>(CompletionCallback), sizeof(EOS_TitleStorage_DeleteCacheCallbackInfo));
     return EOS_EResult::EOS_NotImplemented;
 }
 
@@ -2042,6 +2104,8 @@ EOS_DECLARE_FUNC(EOS_HTitleStorageFileTransferRequest) EOS_TitleStorage_ReadFile
     (void)Options;
     (void)ClientData;
     (void)CompletionCallback;
+    eosr::stub_complete(ClientData,
+        reinterpret_cast<eosr::completion_delegate>(CompletionCallback), sizeof(EOS_TitleStorage_ReadFileCallbackInfo));
     return NULL;
 }
 

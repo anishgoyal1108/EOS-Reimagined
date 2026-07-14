@@ -110,6 +110,21 @@ def param_type(p):
     return p[: p.rfind(n)].strip() if n else p.strip()
 
 
+def output_initializers(params):
+    lines = []
+    for p in params:
+        name = param_name(p)
+        type_name = param_type(p)
+        if not name or not name.startswith("Out") or "*" not in type_name:
+            continue
+        if type_name.lstrip().startswith("const ") or type_name.replace(" ", "") in ("char*", "void*"):
+            continue
+        pointee = type_name.rsplit("*", 1)[0].strip()
+        lines.append("    if (%s != NULL) { *%s = static_cast<%s>(0); }\n" %
+                     (name, name, pointee))
+    return "".join(lines)
+
+
 def stub_body(name, ret, params, delegate_info):
     """The honest answer for one unimplemented export."""
     unused = "".join("    (void)%s;\n" % param_name(p) for p in params if param_name(p))
@@ -121,6 +136,16 @@ def stub_body(name, ret, params, delegate_info):
         if t in delegate_info:
             delegate, info = param_name(p), delegate_info[t]
             break
+
+    initialize_outputs = output_initializers(params)
+    complete = ""
+    if delegate and info:
+        client_data = "ClientData" if any(param_name(p) == "ClientData" for p in params) else "NULL"
+        complete = (
+            "    eosr::stub_complete(%s,\n"
+            "        reinterpret_cast<eosr::completion_delegate>(%s), sizeof(%s));\n"
+            % (client_data, delegate, info)
+        )
 
     if ret == "EOS_NotificationId":
         if delegate and info:
@@ -134,31 +159,26 @@ def stub_body(name, ret, params, delegate_info):
 
     if ret == "void":
         if delegate and info:
-            # Still complete: a game awaiting this callback must not wait forever.
-            return (
-                unused
-                + "    eosr::stub_complete(ClientData,\n"
-                "        reinterpret_cast<eosr::completion_delegate>(%s), sizeof(%s));\n" % (delegate, info)
-            )
+            return unused + initialize_outputs + complete
         if "RemoveNotify" in name and params:
             last = param_name(params[-1])
             return (
                 "".join("    (void)%s;\n" % param_name(p) for p in params[:-1] if param_name(p))
                 + "    eosr::stub_remove_notification(%s);\n" % last
             )
-        return unused  # a _Release, or a setter with nothing behind it
+        return unused + initialize_outputs  # a _Release, or a setter with nothing behind it
     if ret == "EOS_EResult":
-        return unused + "    return EOS_EResult::EOS_NotImplemented;\n"
+        return unused + initialize_outputs + complete + "    return EOS_EResult::EOS_NotImplemented;\n"
     if ret == "EOS_Bool":
-        return unused + "    return EOS_FALSE;\n"
+        return unused + initialize_outputs + complete + "    return EOS_FALSE;\n"
     if ret == "const char*":
-        return unused + '    return "";\n'
+        return unused + initialize_outputs + complete + '    return "";\n'
     if ret in ("uint32_t", "int32_t", "uint64_t", "int64_t", "double", "float"):
-        return unused + "    return 0;\n"
+        return unused + initialize_outputs + complete + "    return 0;\n"
     if ret.endswith("*") or ret.startswith("EOS_H"):
-        return unused + "    return NULL;\n"
+        return unused + initialize_outputs + complete + "    return NULL;\n"
     # An opaque id handle (EOS_ProductUserId / EOS_EpicAccountId / ...) is a pointer typedef.
-    return unused + "    return NULL;\n"
+    return unused + initialize_outputs + complete + "    return NULL;\n"
 
 
 def main():
