@@ -467,17 +467,33 @@ bool tracer::active() const {
 }
 
 trace_scope::trace_scope(tracer& trace, const char* fn, i32 api,
-                         const std::vector<trace_field>& args)
-    : tracer_(trace), fn_(fn), value_(return_void()) {
+                         const std::vector<trace_field>& args, call_mode mode)
+    : tracer_(trace), fn_(fn), value_(return_void()), mode_(mode), active_(trace.enabled()) {
+    if (!active_) {
+        return; // tracing is off: mint nothing, record nothing, and stay that way for the whole call
+    }
     // Opened before the trampoline validates anything, so a call rejected for a bad handle is still
-    // a call in the trace. When tracing is off this mints nothing and the corr stays empty.
-    corr_ = tracer_.begin_async_call(fn_, api, args);
+    // a call in the trace.
+    if (mode_ == call_mode::async) {
+        corr_ = tracer_.begin_async_call(fn_, api, args);
+        return;
+    }
+    // A synchronous call has no completion to correlate with, so it mints no corr and establishes no
+    // ambient context -- which is also what keeps it a `full`-level record rather than a lifecycle one.
+    tracer_.record_call(fn_, api, std::string(), args);
 }
 
 trace_scope::~trace_scope() {
+    if (!active_) {
+        return;
+    }
     // Whatever path the trampoline took out -- an early return on a bad handle included -- the call
-    // is closed by its return record here.
-    tracer_.end_async_call(fn_, corr_, value_);
+    // is closed by its return record here, carrying whatever the function actually returned.
+    if (mode_ == call_mode::async) {
+        tracer_.end_async_call(fn_, corr_, value_);
+        return;
+    }
+    tracer_.record_return(fn_, std::string(), value_);
 }
 
 } // namespace eosr

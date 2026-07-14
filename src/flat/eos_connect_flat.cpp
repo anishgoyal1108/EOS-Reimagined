@@ -59,7 +59,7 @@ EOS_DECLARE_FUNC(void) EOS_Connect_Login(EOS_HConnect Handle, const EOS_Connect_
             eosr::tv_enum(eosr::credential_type_name(Options->Credentials->Type))));
     }
     const i32 api = (Options != 0) ? Options->ApiVersion : 0;
-    eosr::trace_scope scope(trace, "EOS_Connect_Login", api, args);
+    eosr::trace_scope scope(trace, "EOS_Connect_Login", api, args, eosr::call_mode::async);
 
     eosr::sdk_connect* connect = checked_connect(Handle);
     if (connect == 0) {

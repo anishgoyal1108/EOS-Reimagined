@@ -144,22 +144,33 @@ private:
     u32 next_thread_label_;
 };
 
+// Whether an exported function completes through a callback or returns everything it has to say.
+// Only an asynchronous call has a completion to correlate with, so only it mints a `corr` -- and that
+// is what puts its call/return pair at `lifecycle`. A synchronous call is a `full`-level record.
+enum class call_mode {
+    sync,
+    async
+};
+
 // One exported EOS function's trace, as a scope. Construct it at the very top of a C ABI entry point,
 // *before* the handle and options are validated, so a call rejected for a null, stale, or foreign
 // handle is still recorded -- that failure is exactly what an in-game probe exists to reveal, not a
 // reason for the probe to go quiet. The `return` record is emitted when the scope closes, so every
 // exit path -- including an early return -- is paired with its call.
 //
-// A function that returns something other than void tells the scope what it returned, via returns().
+// A function that returns something other than void tells the scope what it returned, via returns();
+// otherwise the return is recorded as void.
 class trace_scope {
 public:
-    trace_scope(tracer& trace, const char* fn, i32 api, const std::vector<trace_field>& args);
+    trace_scope(tracer& trace, const char* fn, i32 api, const std::vector<trace_field>& args,
+                call_mode mode);
     ~trace_scope();
 
     trace_scope(const trace_scope&) = delete;
     trace_scope& operator=(const trace_scope&) = delete;
 
-    // The correlation id of this call, or empty when tracing is off.
+    // The correlation id of this call. Empty when tracing is off, and empty for a synchronous call --
+    // which has no completion to correlate with.
     const std::string& corr() const { return corr_; }
 
     // What this function returned. Defaults to void, which is what an async EOS function gives back.
@@ -170,6 +181,8 @@ private:
     std::string fn_;
     std::string corr_;
     trace_return value_;
+    call_mode mode_;
+    bool active_;  // tracing was on when the call began; it stays that way for the whole call
 };
 
 } // namespace eosr

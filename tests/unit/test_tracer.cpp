@@ -489,3 +489,121 @@ TEST_CASE("no raw id or credential can reach the trace through a call or callbac
     CHECK(trace.find("\"kind\":\"call\"") != std::string::npos); // the records themselves still land
     t.stop();
 }
+
+// --- The call scope: a synchronous call is not an asynchronous one. ---
+
+TEST_CASE("a synchronous call mints no correlation and lands only at full") {
+    tracer_fixture fx("scope-sync");
+    const std::string lifecycle_run = fx.make_run("run-sync-lifecycle");
+    const std::string full_run = fx.make_run("run-sync-full");
+
+    {
+        tracer t;
+        t.start(make_config(trace_level::lifecycle, fx.sub("traces"), lifecycle_run));
+        trace_scope scope(t, "EOS_Connect_GetLoginStatus", 1, std::vector<trace_field>(),
+                          call_mode::sync);
+        CHECK(scope.corr().empty());        // nothing to correlate with: there is no completion
+        CHECK(t.pending_corr().empty());    // and no ambient context for a nested result to inherit
+        t.flush();
+        t.stop();
+        // A plain call/return is a `full` record, so a lifecycle run must not carry it.
+        const std::string trace = slurp(lifecycle_run + "/trace.jsonl");
+        CHECK(trace.find("EOS_Connect_GetLoginStatus") == std::string::npos);
+    }
+    {
+        tracer t;
+        t.start(make_config(trace_level::full, fx.sub("traces"), full_run));
+        {
+            trace_scope scope(t, "EOS_Connect_GetLoginStatus", 1, std::vector<trace_field>(),
+                              call_mode::sync);
+            scope.returns(return_count(3));
+        }
+        t.flush();
+        t.stop();
+        const std::string trace = slurp(full_run + "/trace.jsonl");
+        CHECK(trace.find("\"kind\":\"call\",\"fn\":\"EOS_Connect_GetLoginStatus\"") !=
+              std::string::npos);
+        CHECK(trace.find("\"kind\":\"return\",\"fn\":\"EOS_Connect_GetLoginStatus\"") !=
+              std::string::npos);
+        CHECK(trace.find("\"corr\"") == std::string::npos); // no correlation anywhere in the run
+        CHECK(trace.find("\"value\":{\"type\":\"count\",\"v\":3}") != std::string::npos);
+    }
+}
+
+TEST_CASE("an asynchronous scope still correlates its call and return") {
+    tracer_fixture fx("scope-async");
+    const std::string run = fx.make_run("run-async");
+    tracer t;
+    t.start(make_config(trace_level::lifecycle, fx.sub("traces"), run));
+
+    std::string corr;
+    {
+        trace_scope scope(t, "EOS_Connect_Login", 2, std::vector<trace_field>(), call_mode::async);
+        corr = scope.corr();
+        CHECK_FALSE(corr.empty());
+        CHECK(t.pending_corr() == corr); // a result queued here inherits it
+    }
+    CHECK(t.pending_corr().empty()); // and the scope closed cleanly
+
+    trace_result_code ok;
+    ok.code = 0;
+    ok.name = "EOS_Success";
+    t.record_callback("EOS_Connect_Login", corr, ok, std::vector<trace_field>());
+    t.flush();
+
+    const std::string trace = slurp(run + "/trace.jsonl");
+    CHECK(trace.find("\"kind\":\"call\",\"fn\":\"EOS_Connect_Login\",\"api\":2,\"corr\":\"" + corr +
+                     "\"") != std::string::npos);
+    CHECK(trace.find("\"kind\":\"return\",\"fn\":\"EOS_Connect_Login\",\"corr\":\"" + corr + "\"") !=
+          std::string::npos);
+    CHECK(trace.find("\"kind\":\"callback\",\"fn\":\"EOS_Connect_Login\",\"corr\":\"" + corr + "\"") !=
+          std::string::npos);
+    t.stop();
+}
+
+TEST_CASE("an early return records what it actually returned, not void") {
+    tracer_fixture fx("scope-early");
+    const std::string run = fx.make_run("run-early");
+    tracer t;
+    t.start(make_config(trace_level::full, fx.sub("traces"), run));
+
+    // A synchronous trampoline that rejects its handle and returns a real result, exactly as a
+    // getter does: the scope must record the result it gave back, not the default void.
+    {
+        trace_scope scope(t, "EOS_Connect_GetProductUserIdMapping", 1, std::vector<trace_field>(),
+                          call_mode::sync);
+        scope.returns(return_result(2, "EOS_InvalidParameters"));
+        // ...the trampoline returns here, and the scope closes on the way out.
+    }
+    t.flush();
+
+    const std::string trace = slurp(run + "/trace.jsonl");
+    CHECK(trace.find("\"result\":{\"code\":2,\"name\":\"EOS_InvalidParameters\"}") !=
+          std::string::npos);
+    CHECK(trace.find("\"void\":true") == std::string::npos); // never the default
+    t.stop();
+}
+
+TEST_CASE("a failing return is kept even at the errors level") {
+    tracer_fixture fx("scope-errors");
+    const std::string run = fx.make_run("run-scope-errors");
+    tracer t;
+    t.start(make_config(trace_level::errors, fx.sub("traces"), run)); // errors only
+
+    {
+        trace_scope ok(t, "EOS_Connect_GetLoginStatus", 1, std::vector<trace_field>(),
+                       call_mode::sync);
+        ok.returns(return_count(1)); // a success: a full-level record, dropped here
+    }
+    {
+        trace_scope bad(t, "EOS_Connect_GetProductUserIdMapping", 1, std::vector<trace_field>(),
+                        call_mode::sync);
+        bad.returns(return_result(2, "EOS_InvalidParameters")); // a failure: kept at every level
+    }
+    t.flush();
+
+    const std::string trace = slurp(run + "/trace.jsonl");
+    CHECK(trace.find("EOS_Connect_GetLoginStatus") == std::string::npos);
+    CHECK(trace.find("\"EOS_InvalidParameters\"") != std::string::npos);
+    t.stop();
+}
