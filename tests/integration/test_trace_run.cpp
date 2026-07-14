@@ -7,6 +7,9 @@
 #include "eos_sdk.h"
 #include "eos_init.h"
 #include "eos_connect.h"
+#include "eos_ecom.h"
+#include "eos_achievements.h"
+#include "eos_playerdatastorage.h"
 
 #include "platform/dynlib.h"
 #include "platform/paths.h"
@@ -26,6 +29,9 @@ bool g_login_fired = false;
 EOS_EResult g_login_result = EOS_EResult::EOS_UnexpectedError;
 EOS_ProductUserId g_login_user = nullptr;
 int g_status_changed = 0;
+bool g_ecom_fired = false;
+EOS_EResult g_ecom_result = EOS_EResult::EOS_Success;
+int g_storage_callbacks = 0;
 void EOS_CALL on_login(const EOS_Connect_LoginCallbackInfo* info) {
     g_login_fired = true;
     g_login_result = info->ResultCode;
@@ -34,6 +40,19 @@ void EOS_CALL on_login(const EOS_Connect_LoginCallbackInfo* info) {
 void EOS_CALL on_status_changed(const EOS_Connect_LoginStatusChangedCallbackInfo*) {
     g_status_changed++;
 }
+void EOS_CALL on_ecom_ownership(const EOS_Ecom_QueryOwnershipCallbackInfo* info) {
+    g_ecom_fired = true;
+    g_ecom_result = info->ResultCode;
+}
+void EOS_CALL on_storage_delete(const EOS_PlayerDataStorage_DeleteCacheCallbackInfo* info) {
+    CHECK(info->ResultCode == EOS_EResult::EOS_NotImplemented);
+    g_storage_callbacks++;
+}
+void EOS_CALL on_storage_read(const EOS_PlayerDataStorage_ReadFileCallbackInfo* info) {
+    CHECK(info->ResultCode == EOS_EResult::EOS_NotImplemented);
+    g_storage_callbacks++;
+}
+void EOS_CALL on_achievement_unlocked(const EOS_Achievements_OnAchievementsUnlockedCallbackV2Info*) {}
 
 void set_env(const char* name, const char* value) {
 #if defined(_WIN32)
@@ -136,7 +155,7 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
 
     set_env("EOSR_DATA_DIR", data.c_str());
     set_env("EOSR_RUN_DIR", run.c_str());
-    set_env("EOSR_TRACE", "lifecycle");
+    set_env("EOSR_TRACE", "full");
     set_env("EOSR_INSTANCE_LABEL", "probe");
 
     dynamic_library lib;
@@ -170,6 +189,14 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     RESOLVE(fn_add_status, EOS_Connect_AddNotifyLoginStatusChanged);
     RESOLVE(fn_remove_status, EOS_Connect_RemoveNotifyLoginStatusChanged);
     RESOLVE(fn_puid_to_string, EOS_ProductUserId_ToString);
+    RESOLVE(fn_get_ecom, EOS_Platform_GetEcomInterface);
+    RESOLVE(fn_query_ownership, EOS_Ecom_QueryOwnership);
+    RESOLVE(fn_get_storage, EOS_Platform_GetPlayerDataStorageInterface);
+    RESOLVE(fn_delete_cache, EOS_PlayerDataStorage_DeleteCache);
+    RESOLVE(fn_read_file, EOS_PlayerDataStorage_ReadFile);
+    RESOLVE(fn_get_achievements, EOS_Platform_GetAchievementsInterface);
+    RESOLVE(fn_add_achievement, EOS_Achievements_AddNotifyAchievementsUnlockedV2);
+    RESOLVE(fn_remove_achievement, EOS_Achievements_RemoveNotifyAchievementsUnlocked);
     EOS_HConnect connect = fn_get_connect(platform);
     REQUIRE((connect != nullptr));
 
@@ -208,6 +235,36 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     // to go silent. The emulator already treats this as a safe no-op.
     fn_login(nullptr, &login, nullptr, on_login);
 
+    EOS_Ecom_QueryOwnershipOptions ownership = {};
+    ownership.ApiVersion = EOS_ECOM_QUERYOWNERSHIP_API_LATEST;
+    fn_query_ownership(fn_get_ecom(platform), &ownership, nullptr, on_ecom_ownership);
+    for (int i = 0; i < 8 && !g_ecom_fired; i++) {
+        fn_tick(platform);
+    }
+    CHECK(g_ecom_fired);
+    CHECK(g_ecom_result == EOS_EResult::EOS_NotImplemented);
+
+    EOS_HPlayerDataStorage storage = fn_get_storage(platform);
+    REQUIRE(storage != nullptr);
+    EOS_PlayerDataStorage_DeleteCacheOptions delete_cache = {};
+    delete_cache.ApiVersion = EOS_PLAYERDATASTORAGE_DELETECACHE_API_LATEST;
+    CHECK(fn_delete_cache(storage, &delete_cache, nullptr, on_storage_delete) ==
+          EOS_EResult::EOS_NotImplemented);
+    EOS_PlayerDataStorage_ReadFileOptions read_file = {};
+    read_file.ApiVersion = EOS_PLAYERDATASTORAGE_READFILE_API_LATEST;
+    CHECK(fn_read_file(storage, &read_file, nullptr, on_storage_read) == nullptr);
+    for (int i = 0; i < 8 && g_storage_callbacks < 2; i++) {
+        fn_tick(platform);
+    }
+    CHECK(g_storage_callbacks == 2);
+
+    EOS_Achievements_AddNotifyAchievementsUnlockedV2Options achievement_options = {};
+    achievement_options.ApiVersion = EOS_ACHIEVEMENTS_ADDNOTIFYACHIEVEMENTSUNLOCKEDV2_API_LATEST;
+    const EOS_NotificationId achievement_id = fn_add_achievement(
+        fn_get_achievements(platform), &achievement_options, nullptr, on_achievement_unlocked);
+    REQUIRE(achievement_id != EOS_INVALID_NOTIFICATIONID);
+    fn_remove_achievement(fn_get_achievements(platform), achievement_id);
+
     fn_remove_status(connect, status_id);
 
     fn_release(platform);
@@ -222,7 +279,7 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     CHECK(runtime.find("\"run_id\":\"run-probe\"") != std::string::npos);
     CHECK(runtime.find("\"schema_version\":1") != std::string::npos);
     CHECK(runtime.find("\"emulator_build\":\"eosr ") != std::string::npos);
-    CHECK(runtime.find("\"trace_level\":\"lifecycle\"") != std::string::npos);
+    CHECK(runtime.find("\"trace_level\":\"full\"") != std::string::npos);
     CHECK(runtime.find("\"version\":null") == std::string::npos);
     std::string expected_os;
     std::string expected_wine;
@@ -279,9 +336,73 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     CHECK(count_records(lines, "return", "EOS_Connect_Login") == 2);
     CHECK(count_records(lines, "callback", "EOS_Connect_Login") == 1);
 
-    const std::string registered = find_line(lines, "\"action\":\"register\"");
-    const std::string fired = find_line(lines, "\"action\":\"fire\"");
-    const std::string removed = find_line(lines, "\"action\":\"remove\"");
+    const std::string ecom_call =
+        find_line(lines, "\"fn\":\"EOS_Ecom_QueryOwnership\"");
+    REQUIRE_FALSE(ecom_call.empty());
+    CHECK(ecom_call.find("\"api\":" +
+                         std::to_string(EOS_ECOM_QUERYOWNERSHIP_API_LATEST)) !=
+          std::string::npos);
+    const std::string ecom_corr = field_of(ecom_call, "corr");
+    REQUIRE_FALSE(ecom_corr.empty());
+    const std::string ecom_return = find_line(
+        lines, "\"kind\":\"return\",\"fn\":\"EOS_Ecom_QueryOwnership\"");
+    const std::string ecom_callback = find_line(
+        lines, "\"kind\":\"callback\",\"fn\":\"EOS_Ecom_QueryOwnership\"");
+    REQUIRE_FALSE(ecom_return.empty());
+    REQUIRE_FALSE(ecom_callback.empty());
+    CHECK(field_of(ecom_return, "corr") == ecom_corr);
+    CHECK(field_of(ecom_callback, "corr") == ecom_corr);
+    CHECK(ecom_callback.find("\"name\":\"EOS_NotImplemented\"") != std::string::npos);
+
+    const std::string storage_delete_call = find_line(
+        lines, "\"kind\":\"call\",\"fn\":\"EOS_PlayerDataStorage_DeleteCache\"");
+    const std::string storage_delete_return = find_line(
+        lines, "\"kind\":\"return\",\"fn\":\"EOS_PlayerDataStorage_DeleteCache\"");
+    const std::string storage_delete_callback = find_line(
+        lines, "\"kind\":\"callback\",\"fn\":\"EOS_PlayerDataStorage_DeleteCache\"");
+    REQUIRE_FALSE(storage_delete_call.empty());
+    REQUIRE_FALSE(storage_delete_return.empty());
+    REQUIRE_FALSE(storage_delete_callback.empty());
+    const std::string storage_delete_corr = field_of(storage_delete_call, "corr");
+    CHECK(field_of(storage_delete_return, "corr") == storage_delete_corr);
+    CHECK(field_of(storage_delete_callback, "corr") == storage_delete_corr);
+    CHECK(storage_delete_return.find("\"name\":\"EOS_NotImplemented\"") !=
+          std::string::npos);
+
+    const std::string storage_read_call = find_line(
+        lines, "\"kind\":\"call\",\"fn\":\"EOS_PlayerDataStorage_ReadFile\"");
+    const std::string storage_read_return = find_line(
+        lines, "\"kind\":\"return\",\"fn\":\"EOS_PlayerDataStorage_ReadFile\"");
+    const std::string storage_read_callback = find_line(
+        lines, "\"kind\":\"callback\",\"fn\":\"EOS_PlayerDataStorage_ReadFile\"");
+    REQUIRE_FALSE(storage_read_call.empty());
+    REQUIRE_FALSE(storage_read_return.empty());
+    REQUIRE_FALSE(storage_read_callback.empty());
+    const std::string storage_read_corr = field_of(storage_read_call, "corr");
+    CHECK(field_of(storage_read_return, "corr") == storage_read_corr);
+    CHECK(field_of(storage_read_callback, "corr") == storage_read_corr);
+    CHECK(storage_read_return.find("\"value\":{\"type\":\"handle\",\"v\":null}") !=
+          std::string::npos);
+
+    const std::string achievement_return = find_line(
+        lines,
+        "\"kind\":\"return\",\"fn\":\"EOS_Achievements_AddNotifyAchievementsUnlockedV2\"");
+    const std::string achievement_register =
+        find_line(lines, "\"event\":\"AchievementsUnlockedV2\",\"action\":\"register\"");
+    const std::string achievement_remove =
+        find_line(lines, "\"event\":\"AchievementsUnlockedV2\",\"action\":\"remove\"");
+    REQUIRE_FALSE(achievement_return.empty());
+    REQUIRE_FALSE(achievement_register.empty());
+    REQUIRE_FALSE(achievement_remove.empty());
+    CHECK(field_of(achievement_return, "v") == field_of(achievement_register, "id"));
+    CHECK(field_of(achievement_register, "id") == field_of(achievement_remove, "id"));
+
+    const std::string registered = find_line(
+        lines, "\"event\":\"ConnectLoginStatusChanged\",\"action\":\"register\"");
+    const std::string fired = find_line(
+        lines, "\"event\":\"ConnectLoginStatusChanged\",\"action\":\"fire\"");
+    const std::string removed = find_line(
+        lines, "\"event\":\"ConnectLoginStatusChanged\",\"action\":\"remove\"");
     REQUIRE_FALSE(registered.empty());
     REQUIRE_FALSE(fired.empty());
     REQUIRE_FALSE(removed.empty());

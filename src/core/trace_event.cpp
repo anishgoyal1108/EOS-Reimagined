@@ -240,6 +240,10 @@ std::string finish(json_writer& writer) {
 
 // The value-type / value-kind pairing a return must satisfy.
 bool return_value_ok(const trace_return& value) {
+    if (value.value_is_null) {
+        return !value.value.valid &&
+               (value.value_type == "handle" || value.value_type == "notification_id");
+    }
     if (!value.value.valid) {
         return false;
     }
@@ -337,6 +341,13 @@ trace_return return_handle(const std::string& label) {
     r.value = tv_label(label);
     return r;
 }
+trace_return return_null_handle() {
+    trace_return r;
+    r.type = trace_return::r_value;
+    r.value_type = "handle";
+    r.value_is_null = true;
+    return r;
+}
 trace_return return_enum(const std::string& symbol) {
     trace_return r;
     r.type = trace_return::r_value;
@@ -349,6 +360,13 @@ trace_return return_notification_id(const std::string& label) {
     r.type = trace_return::r_value;
     r.value_type = "notification_id";
     r.value = tv_label(label);
+    return r;
+}
+trace_return return_null_notification_id() {
+    trace_return r;
+    r.type = trace_return::r_value;
+    r.value_type = "notification_id";
+    r.value_is_null = true;
     return r;
 }
 
@@ -413,7 +431,11 @@ std::string serialize_return(const trace_envelope& env, const std::string& fn,
         writer.begin_object();
         writer.field_string("type", value.value_type);
         writer.key("v");
-        write_value(writer, value.value);
+        if (value.value_is_null) {
+            writer.value_null();
+        } else {
+            write_value(writer, value.value);
+        }
         writer.end_object();
     } else {
         writer.field_bool("void", true);

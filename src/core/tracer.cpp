@@ -510,6 +510,9 @@ bool tracer::active() const {
     return sink_.active();
 }
 
+trace_scope::trace_scope(tracer& trace, const char* fn, i32 api, call_mode mode)
+    : trace_scope(trace, fn, api, std::vector<trace_field>(), mode) {}
+
 trace_scope::trace_scope(tracer& trace, const char* fn, i32 api,
                          const std::vector<trace_field>& args, call_mode mode)
     : tracer_(trace), fn_(fn), value_(return_void()), mode_(mode), active_(trace.enabled()) {

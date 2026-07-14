@@ -242,6 +242,23 @@ TEST_CASE("a documented EOS enum return is an enum, not void") {
                       "\"value\":{\"type\":\"enum\",\"v\":\"EOS_UNL_BottomRight\"}}");
 }
 
+TEST_CASE("an absent handle is explicit null, not void") {
+    const trace_return value = return_null_handle();
+    const std::string line =
+        serialize_return(make_envelope(), "EOS_PlayerDataStorage_ReadFile", "c#2", value);
+    CHECK(line == prefix +
+                      "\"kind\":\"return\",\"fn\":\"EOS_PlayerDataStorage_ReadFile\","
+                      "\"corr\":\"c#2\",\"value\":{\"type\":\"handle\",\"v\":null}}");
+}
+
+TEST_CASE("only nullable return kinds may carry null") {
+    trace_return value;
+    value.type = trace_return::r_value;
+    value.value_type = "count";
+    value.value_is_null = true;
+    CHECK(serialize_return(make_envelope(), "EOS_Ecom_GetEntitlementsCount", "", value).empty());
+}
+
 TEST_CASE("an invalid return value type is rejected, not added to the schema") {
     trace_return value;
     value.type = trace_return::r_value;

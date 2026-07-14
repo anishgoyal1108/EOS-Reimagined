@@ -75,6 +75,7 @@ struct trace_return {
     trace_result_code result;       // r_result
     std::string value_type;         // r_value: bool / count / handle / enum / notification_id
     trace_value value;              // r_value
+    bool value_is_null = false;     // r_value: an absent handle / notification id
     std::vector<trace_field> out;   // may be empty
 };
 
@@ -83,8 +84,10 @@ trace_return return_void();
 trace_return return_bool(bool value);
 trace_return return_count(u64 value);
 trace_return return_handle(const std::string& label);
+trace_return return_null_handle();
 trace_return return_enum(const std::string& symbol);
 trace_return return_notification_id(const std::string& label);
+trace_return return_null_notification_id();
 
 // Serialize one record to a single JSON-object line (no trailing newline), with fixed field order. A
 // field whose value fails validation, repeats, or does not belong to this body is dropped; an invalid

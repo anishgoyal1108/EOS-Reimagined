@@ -41,111 +41,142 @@
 #include "eos_titlestorage.h"
 #include "eos_titlestorage_types.h"
 
+#include "core/runtime.h"
 #include "core/stub_completion.h"
+#include "core/tracer.h"
 
 // --- eos_achievements.h ---
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Achievements_AddNotifyAchievementsUnlocked(EOS_HAchievements Handle, const EOS_Achievements_AddNotifyAchievementsUnlockedOptions* Options, void* ClientData, const EOS_Achievements_OnAchievementsUnlockedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_AddNotifyAchievementsUnlocked", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_Achievements_OnAchievementsUnlockedCallbackInfo), "AchievementsUnlocked");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Achievements_AddNotifyAchievementsUnlockedV2(EOS_HAchievements Handle, const EOS_Achievements_AddNotifyAchievementsUnlockedV2Options* Options, void* ClientData, const EOS_Achievements_OnAchievementsUnlockedCallbackV2 NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_AddNotifyAchievementsUnlockedV2", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_Achievements_OnAchievementsUnlockedCallbackV2Info), "AchievementsUnlockedV2");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyAchievementDefinitionByAchievementId(EOS_HAchievements Handle, const EOS_Achievements_CopyAchievementDefinitionByAchievementIdOptions* Options, EOS_Achievements_Definition ** OutDefinition) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_CopyAchievementDefinitionByAchievementId", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutDefinition;
     if (OutDefinition != NULL) { *OutDefinition = static_cast<EOS_Achievements_Definition *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyAchievementDefinitionByIndex(EOS_HAchievements Handle, const EOS_Achievements_CopyAchievementDefinitionByIndexOptions* Options, EOS_Achievements_Definition ** OutDefinition) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_CopyAchievementDefinitionByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutDefinition;
     if (OutDefinition != NULL) { *OutDefinition = static_cast<EOS_Achievements_Definition *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyAchievementDefinitionV2ByAchievementId(EOS_HAchievements Handle, const EOS_Achievements_CopyAchievementDefinitionV2ByAchievementIdOptions* Options, EOS_Achievements_DefinitionV2 ** OutDefinition) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_CopyAchievementDefinitionV2ByAchievementId", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutDefinition;
     if (OutDefinition != NULL) { *OutDefinition = static_cast<EOS_Achievements_DefinitionV2 *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyAchievementDefinitionV2ByIndex(EOS_HAchievements Handle, const EOS_Achievements_CopyAchievementDefinitionV2ByIndexOptions* Options, EOS_Achievements_DefinitionV2 ** OutDefinition) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_CopyAchievementDefinitionV2ByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutDefinition;
     if (OutDefinition != NULL) { *OutDefinition = static_cast<EOS_Achievements_DefinitionV2 *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyPlayerAchievementByAchievementId(EOS_HAchievements Handle, const EOS_Achievements_CopyPlayerAchievementByAchievementIdOptions* Options, EOS_Achievements_PlayerAchievement ** OutAchievement) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_CopyPlayerAchievementByAchievementId", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutAchievement;
     if (OutAchievement != NULL) { *OutAchievement = static_cast<EOS_Achievements_PlayerAchievement *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyPlayerAchievementByIndex(EOS_HAchievements Handle, const EOS_Achievements_CopyPlayerAchievementByIndexOptions* Options, EOS_Achievements_PlayerAchievement ** OutAchievement) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_CopyPlayerAchievementByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutAchievement;
     if (OutAchievement != NULL) { *OutAchievement = static_cast<EOS_Achievements_PlayerAchievement *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyUnlockedAchievementByAchievementId(EOS_HAchievements Handle, const EOS_Achievements_CopyUnlockedAchievementByAchievementIdOptions* Options, EOS_Achievements_UnlockedAchievement ** OutAchievement) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_CopyUnlockedAchievementByAchievementId", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutAchievement;
     if (OutAchievement != NULL) { *OutAchievement = static_cast<EOS_Achievements_UnlockedAchievement *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Achievements_CopyUnlockedAchievementByIndex(EOS_HAchievements Handle, const EOS_Achievements_CopyUnlockedAchievementByIndexOptions* Options, EOS_Achievements_UnlockedAchievement ** OutAchievement) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_CopyUnlockedAchievementByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutAchievement;
     if (OutAchievement != NULL) { *OutAchievement = static_cast<EOS_Achievements_UnlockedAchievement *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Achievements_GetAchievementDefinitionCount(EOS_HAchievements Handle, const EOS_Achievements_GetAchievementDefinitionCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_GetAchievementDefinitionCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Achievements_GetPlayerAchievementCount(EOS_HAchievements Handle, const EOS_Achievements_GetPlayerAchievementCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_GetPlayerAchievementCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Achievements_GetUnlockedAchievementCount(EOS_HAchievements Handle, const EOS_Achievements_GetUnlockedAchievementCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_GetUnlockedAchievementCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Achievements_QueryDefinitions(EOS_HAchievements Handle, const EOS_Achievements_QueryDefinitionsOptions* Options, void* ClientData, const EOS_Achievements_OnQueryDefinitionsCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_QueryDefinitions", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -155,6 +186,7 @@ EOS_DECLARE_FUNC(void) EOS_Achievements_QueryDefinitions(EOS_HAchievements Handl
 }
 
 EOS_DECLARE_FUNC(void) EOS_Achievements_QueryPlayerAchievements(EOS_HAchievements Handle, const EOS_Achievements_QueryPlayerAchievementsOptions* Options, void* ClientData, const EOS_Achievements_OnQueryPlayerAchievementsCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_QueryPlayerAchievements", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -164,11 +196,13 @@ EOS_DECLARE_FUNC(void) EOS_Achievements_QueryPlayerAchievements(EOS_HAchievement
 }
 
 EOS_DECLARE_FUNC(void) EOS_Achievements_RemoveNotifyAchievementsUnlocked(EOS_HAchievements Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_RemoveNotifyAchievementsUnlocked", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(InId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_Achievements_UnlockAchievements(EOS_HAchievements Handle, const EOS_Achievements_UnlockAchievementsOptions* Options, void* ClientData, const EOS_Achievements_OnUnlockAchievementsCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_UnlockAchievements", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -180,379 +214,488 @@ EOS_DECLARE_FUNC(void) EOS_Achievements_UnlockAchievements(EOS_HAchievements Han
 // --- eos_achievements_types.h ---
 
 EOS_DECLARE_FUNC(void) EOS_Achievements_DefinitionV2_Release(EOS_Achievements_DefinitionV2* AchievementDefinition) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_DefinitionV2_Release", 0, eosr::call_mode::sync);
     (void)AchievementDefinition;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Achievements_Definition_Release(EOS_Achievements_Definition* AchievementDefinition) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_Definition_Release", 0, eosr::call_mode::sync);
     (void)AchievementDefinition;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Achievements_PlayerAchievement_Release(EOS_Achievements_PlayerAchievement* Achievement) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_PlayerAchievement_Release", 0, eosr::call_mode::sync);
     (void)Achievement;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Achievements_UnlockedAchievement_Release(EOS_Achievements_UnlockedAchievement* Achievement) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Achievements_UnlockedAchievement_Release", 0, eosr::call_mode::sync);
     (void)Achievement;
 }
 
 // --- eos_anticheatclient.h ---
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_AddExternalIntegrityCatalog(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_AddExternalIntegrityCatalogOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_AddExternalIntegrityCatalog", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyClientIntegrityViolated(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_AddNotifyClientIntegrityViolatedOptions* Options, void* ClientData, EOS_AntiCheatClient_OnClientIntegrityViolatedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_AddNotifyClientIntegrityViolated", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatClient_OnClientIntegrityViolatedCallbackInfo), "AntiCheatClientIntegrityViolated");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyMessageToPeer(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_AddNotifyMessageToPeerOptions* Options, void* ClientData, EOS_AntiCheatClient_OnMessageToPeerCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_AddNotifyMessageToPeer", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnMessageToClientCallbackInfo), "AntiCheatClientMessageToPeer");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyMessageToServer(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_AddNotifyMessageToServerOptions* Options, void* ClientData, EOS_AntiCheatClient_OnMessageToServerCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_AddNotifyMessageToServer", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatClient_OnMessageToServerCallbackInfo), "AntiCheatClientMessageToServer");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyPeerActionRequired(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_AddNotifyPeerActionRequiredOptions* Options, void* ClientData, EOS_AntiCheatClient_OnPeerActionRequiredCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_AddNotifyPeerActionRequired", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientActionRequiredCallbackInfo), "AntiCheatClientPeerActionRequired");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatClient_AddNotifyPeerAuthStatusChanged(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_AddNotifyPeerAuthStatusChangedOptions* Options, void* ClientData, EOS_AntiCheatClient_OnPeerAuthStatusChangedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_AddNotifyPeerAuthStatusChanged", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientAuthStatusChangedCallbackInfo), "AntiCheatClientPeerAuthStatusChanged");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_BeginSession(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_BeginSessionOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_BeginSession", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_EndSession(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_EndSessionOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_EndSession", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_GetModuleBuildId(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_GetModuleBuildIdOptions* Options, uint32_t* OutModuleBuildId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_GetModuleBuildId", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutModuleBuildId;
     if (OutModuleBuildId != NULL) { *OutModuleBuildId = static_cast<uint32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_GetProtectMessageOutputLength(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_GetProtectMessageOutputLengthOptions* Options, uint32_t* OutBufferSizeBytes) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_GetProtectMessageOutputLength", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutBufferSizeBytes;
     if (OutBufferSizeBytes != NULL) { *OutBufferSizeBytes = static_cast<uint32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_PollStatus(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_PollStatusOptions* Options, EOS_EAntiCheatClientViolationType* OutViolationType, char* OutMessage) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_PollStatus", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutViolationType;
     (void)OutMessage;
     if (OutViolationType != NULL) { *OutViolationType = static_cast<EOS_EAntiCheatClientViolationType>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_ProtectMessage(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_ProtectMessageOptions* Options, void* OutBuffer, uint32_t* OutBytesWritten) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_ProtectMessage", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutBuffer;
     (void)OutBytesWritten;
     if (OutBytesWritten != NULL) { *OutBytesWritten = static_cast<uint32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_ReceiveMessageFromPeer(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_ReceiveMessageFromPeerOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_ReceiveMessageFromPeer", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_ReceiveMessageFromServer(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_ReceiveMessageFromServerOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_ReceiveMessageFromServer", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_RegisterPeer(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_RegisterPeerOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_RegisterPeer", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_AntiCheatClient_RemoveNotifyClientIntegrityViolated(EOS_HAntiCheatClient Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_RemoveNotifyClientIntegrityViolated", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_AntiCheatClient_RemoveNotifyMessageToPeer(EOS_HAntiCheatClient Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_RemoveNotifyMessageToPeer", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_AntiCheatClient_RemoveNotifyMessageToServer(EOS_HAntiCheatClient Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_RemoveNotifyMessageToServer", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_AntiCheatClient_RemoveNotifyPeerActionRequired(EOS_HAntiCheatClient Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_RemoveNotifyPeerActionRequired", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_AntiCheatClient_RemoveNotifyPeerAuthStatusChanged(EOS_HAntiCheatClient Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_RemoveNotifyPeerAuthStatusChanged", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_Reserved01(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_Reserved01Options* Options, int32_t* OutValue) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_Reserved01", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutValue;
     if (OutValue != NULL) { *OutValue = static_cast<int32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_Reserved02(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_Reserved02Options* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_Reserved02", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_UnprotectMessage(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_UnprotectMessageOptions* Options, void* OutBuffer, uint32_t* OutBytesWritten) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_UnprotectMessage", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutBuffer;
     (void)OutBytesWritten;
     if (OutBytesWritten != NULL) { *OutBytesWritten = static_cast<uint32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatClient_UnregisterPeer(EOS_HAntiCheatClient Handle, const EOS_AntiCheatClient_UnregisterPeerOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatClient_UnregisterPeer", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 // --- eos_anticheatserver.h ---
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatServer_AddNotifyClientActionRequired(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_AddNotifyClientActionRequiredOptions* Options, void* ClientData, EOS_AntiCheatServer_OnClientActionRequiredCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_AddNotifyClientActionRequired", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientActionRequiredCallbackInfo), "AntiCheatServerClientActionRequired");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatServer_AddNotifyClientAuthStatusChanged(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_AddNotifyClientAuthStatusChangedOptions* Options, void* ClientData, EOS_AntiCheatServer_OnClientAuthStatusChangedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_AddNotifyClientAuthStatusChanged", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnClientAuthStatusChangedCallbackInfo), "AntiCheatServerClientAuthStatusChanged");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_AntiCheatServer_AddNotifyMessageToClient(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_AddNotifyMessageToClientOptions* Options, void* ClientData, EOS_AntiCheatServer_OnMessageToClientCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_AddNotifyMessageToClient", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_AntiCheatCommon_OnMessageToClientCallbackInfo), "AntiCheatServerMessageToClient");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_BeginSession(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_BeginSessionOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_BeginSession", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_EndSession(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_EndSessionOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_EndSession", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_GetProtectMessageOutputLength(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_GetProtectMessageOutputLengthOptions* Options, uint32_t* OutBufferSizeBytes) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_GetProtectMessageOutputLength", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutBufferSizeBytes;
     if (OutBufferSizeBytes != NULL) { *OutBufferSizeBytes = static_cast<uint32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_LogEvent(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_LogEventOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_LogEvent", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_LogGameRoundEnd(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_LogGameRoundEndOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_LogGameRoundEnd", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_LogGameRoundStart(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_LogGameRoundStartOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_LogGameRoundStart", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_LogPlayerDespawn(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_LogPlayerDespawnOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_LogPlayerDespawn", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_LogPlayerRevive(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_LogPlayerReviveOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_LogPlayerRevive", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_LogPlayerSpawn(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_LogPlayerSpawnOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_LogPlayerSpawn", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_LogPlayerTakeDamage(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_LogPlayerTakeDamageOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_LogPlayerTakeDamage", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_LogPlayerTick(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_LogPlayerTickOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_LogPlayerTick", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_LogPlayerUseAbility(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_LogPlayerUseAbilityOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_LogPlayerUseAbility", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_LogPlayerUseWeapon(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_LogPlayerUseWeaponOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_LogPlayerUseWeapon", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_ProtectMessage(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_ProtectMessageOptions* Options, void* OutBuffer, uint32_t* OutBytesWritten) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_ProtectMessage", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutBuffer;
     (void)OutBytesWritten;
     if (OutBytesWritten != NULL) { *OutBytesWritten = static_cast<uint32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_ReceiveMessageFromClient(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_ReceiveMessageFromClientOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_ReceiveMessageFromClient", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_RegisterClient(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_RegisterClientOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_RegisterClient", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_RegisterEvent(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_RegisterEventOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_RegisterEvent", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_AntiCheatServer_RemoveNotifyClientActionRequired(EOS_HAntiCheatServer Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_RemoveNotifyClientActionRequired", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_AntiCheatServer_RemoveNotifyClientAuthStatusChanged(EOS_HAntiCheatServer Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_RemoveNotifyClientAuthStatusChanged", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_AntiCheatServer_RemoveNotifyMessageToClient(EOS_HAntiCheatServer Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_RemoveNotifyMessageToClient", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_SetClientDetails(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_SetClientDetailsOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_SetClientDetails", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_SetClientNetworkState(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_SetClientNetworkStateOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_SetClientNetworkState", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_SetGameSessionId(EOS_HAntiCheatServer Handle, const EOS_AntiCheatCommon_SetGameSessionIdOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_SetGameSessionId", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_UnprotectMessage(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_UnprotectMessageOptions* Options, void* OutBuffer, uint32_t* OutBytesWritten) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_UnprotectMessage", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutBuffer;
     (void)OutBytesWritten;
     if (OutBytesWritten != NULL) { *OutBytesWritten = static_cast<uint32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_AntiCheatServer_UnregisterClient(EOS_HAntiCheatServer Handle, const EOS_AntiCheatServer_UnregisterClientOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_AntiCheatServer_UnregisterClient", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 // --- eos_custominvites.h ---
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_AcceptRequestToJoin(EOS_HCustomInvites Handle, const EOS_CustomInvites_AcceptRequestToJoinOptions* Options, void* ClientData, const EOS_CustomInvites_OnAcceptRequestToJoinCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_AcceptRequestToJoin", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -562,90 +705,119 @@ EOS_DECLARE_FUNC(void) EOS_CustomInvites_AcceptRequestToJoin(EOS_HCustomInvites 
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyCustomInviteAccepted(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyCustomInviteAcceptedOptions* Options, void* ClientData, const EOS_CustomInvites_OnCustomInviteAcceptedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_AddNotifyCustomInviteAccepted", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnCustomInviteAcceptedCallbackInfo), "CustomInvitesCustomInviteAccepted");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyCustomInviteReceived(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyCustomInviteReceivedOptions* Options, void* ClientData, const EOS_CustomInvites_OnCustomInviteReceivedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_AddNotifyCustomInviteReceived", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnCustomInviteReceivedCallbackInfo), "CustomInvitesCustomInviteReceived");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyCustomInviteRejected(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyCustomInviteRejectedOptions* Options, void* ClientData, const EOS_CustomInvites_OnCustomInviteRejectedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_AddNotifyCustomInviteRejected", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_CustomInviteRejectedCallbackInfo), "CustomInvitesCustomInviteRejected");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinAccepted(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyRequestToJoinAcceptedOptions* Options, void* ClientData, const EOS_CustomInvites_OnRequestToJoinAcceptedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_AddNotifyRequestToJoinAccepted", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnRequestToJoinAcceptedCallbackInfo), "CustomInvitesRequestToJoinAccepted");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinReceived(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyRequestToJoinReceivedOptions* Options, void* ClientData, const EOS_CustomInvites_OnRequestToJoinReceivedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_AddNotifyRequestToJoinReceived", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_RequestToJoinReceivedCallbackInfo), "CustomInvitesRequestToJoinReceived");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinRejected(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyRequestToJoinRejectedOptions* Options, void* ClientData, const EOS_CustomInvites_OnRequestToJoinRejectedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_AddNotifyRequestToJoinRejected", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_OnRequestToJoinRejectedCallbackInfo), "CustomInvitesRequestToJoinRejected");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifyRequestToJoinResponseReceived(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifyRequestToJoinResponseReceivedOptions* Options, void* ClientData, const EOS_CustomInvites_OnRequestToJoinResponseReceivedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_AddNotifyRequestToJoinResponseReceived", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_RequestToJoinResponseReceivedCallbackInfo), "CustomInvitesRequestToJoinResponseReceived");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_CustomInvites_AddNotifySendCustomNativeInviteRequested(EOS_HCustomInvites Handle, const EOS_CustomInvites_AddNotifySendCustomNativeInviteRequestedOptions* Options, void* ClientData, const EOS_CustomInvites_OnSendCustomNativeInviteRequestedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_AddNotifySendCustomNativeInviteRequested", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_CustomInvites_SendCustomNativeInviteRequestedCallbackInfo), "CustomInvitesSendCustomNativeInviteRequested");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_CustomInvites_DisableRequestToJoin(EOS_HCustomInvites Handle, const EOS_CustomInvites_DisableRequestToJoinOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_DisableRequestToJoin", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_CustomInvites_FinalizeInvite(EOS_HCustomInvites Handle, const EOS_CustomInvites_FinalizeInviteOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_FinalizeInvite", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_RejectRequestToJoin(EOS_HCustomInvites Handle, const EOS_CustomInvites_RejectRequestToJoinOptions* Options, void* ClientData, const EOS_CustomInvites_OnRejectRequestToJoinCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_RejectRequestToJoin", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -655,46 +827,55 @@ EOS_DECLARE_FUNC(void) EOS_CustomInvites_RejectRequestToJoin(EOS_HCustomInvites 
 }
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_RemoveNotifyCustomInviteAccepted(EOS_HCustomInvites Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_RemoveNotifyCustomInviteAccepted", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(InId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_RemoveNotifyCustomInviteReceived(EOS_HCustomInvites Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_RemoveNotifyCustomInviteReceived", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(InId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_RemoveNotifyCustomInviteRejected(EOS_HCustomInvites Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_RemoveNotifyCustomInviteRejected", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(InId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_RemoveNotifyRequestToJoinAccepted(EOS_HCustomInvites Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_RemoveNotifyRequestToJoinAccepted", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(InId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_RemoveNotifyRequestToJoinReceived(EOS_HCustomInvites Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_RemoveNotifyRequestToJoinReceived", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(InId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_RemoveNotifyRequestToJoinRejected(EOS_HCustomInvites Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_RemoveNotifyRequestToJoinRejected", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(InId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_RemoveNotifyRequestToJoinResponseReceived(EOS_HCustomInvites Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_RemoveNotifyRequestToJoinResponseReceived", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(InId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_RemoveNotifySendCustomNativeInviteRequested(EOS_HCustomInvites Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_RemoveNotifySendCustomNativeInviteRequested", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(InId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_SendCustomInvite(EOS_HCustomInvites Handle, const EOS_CustomInvites_SendCustomInviteOptions* Options, void* ClientData, const EOS_CustomInvites_OnSendCustomInviteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_SendCustomInvite", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -704,6 +885,7 @@ EOS_DECLARE_FUNC(void) EOS_CustomInvites_SendCustomInvite(EOS_HCustomInvites Han
 }
 
 EOS_DECLARE_FUNC(void) EOS_CustomInvites_SendRequestToJoin(EOS_HCustomInvites Handle, const EOS_CustomInvites_SendRequestToJoinOptions* Options, void* ClientData, const EOS_CustomInvites_OnSendRequestToJoinCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_SendRequestToJoin", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -713,14 +895,17 @@ EOS_DECLARE_FUNC(void) EOS_CustomInvites_SendRequestToJoin(EOS_HCustomInvites Ha
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_CustomInvites_SetCustomInvite(EOS_HCustomInvites Handle, const EOS_CustomInvites_SetCustomInviteOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_CustomInvites_SetCustomInvite", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 // --- eos_ecom.h ---
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_Checkout(EOS_HEcom Handle, const EOS_Ecom_CheckoutOptions* Options, void* ClientData, const EOS_Ecom_OnCheckoutCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_Checkout", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -730,178 +915,227 @@ EOS_DECLARE_FUNC(void) EOS_Ecom_Checkout(EOS_HEcom Handle, const EOS_Ecom_Checko
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyEntitlementById(EOS_HEcom Handle, const EOS_Ecom_CopyEntitlementByIdOptions* Options, EOS_Ecom_Entitlement ** OutEntitlement) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyEntitlementById", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutEntitlement;
     if (OutEntitlement != NULL) { *OutEntitlement = static_cast<EOS_Ecom_Entitlement *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyEntitlementByIndex(EOS_HEcom Handle, const EOS_Ecom_CopyEntitlementByIndexOptions* Options, EOS_Ecom_Entitlement ** OutEntitlement) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyEntitlementByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutEntitlement;
     if (OutEntitlement != NULL) { *OutEntitlement = static_cast<EOS_Ecom_Entitlement *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyEntitlementByNameAndIndex(EOS_HEcom Handle, const EOS_Ecom_CopyEntitlementByNameAndIndexOptions* Options, EOS_Ecom_Entitlement ** OutEntitlement) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyEntitlementByNameAndIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutEntitlement;
     if (OutEntitlement != NULL) { *OutEntitlement = static_cast<EOS_Ecom_Entitlement *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyItemById(EOS_HEcom Handle, const EOS_Ecom_CopyItemByIdOptions* Options, EOS_Ecom_CatalogItem ** OutItem) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyItemById", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutItem;
     if (OutItem != NULL) { *OutItem = static_cast<EOS_Ecom_CatalogItem *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyItemImageInfoByIndex(EOS_HEcom Handle, const EOS_Ecom_CopyItemImageInfoByIndexOptions* Options, EOS_Ecom_KeyImageInfo ** OutImageInfo) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyItemImageInfoByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutImageInfo;
     if (OutImageInfo != NULL) { *OutImageInfo = static_cast<EOS_Ecom_KeyImageInfo *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyItemReleaseByIndex(EOS_HEcom Handle, const EOS_Ecom_CopyItemReleaseByIndexOptions* Options, EOS_Ecom_CatalogRelease ** OutRelease) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyItemReleaseByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutRelease;
     if (OutRelease != NULL) { *OutRelease = static_cast<EOS_Ecom_CatalogRelease *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyLastRedeemEntitlementsResultByIndex(EOS_HEcom Handle, const EOS_Ecom_CopyLastRedeemEntitlementsResultByIndexOptions* Options, char* OutEntitlementId, int32_t* InOutEntitlementIdLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyLastRedeemEntitlementsResultByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutEntitlementId;
     (void)InOutEntitlementIdLength;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyLastRedeemedEntitlementByIndex(EOS_HEcom Handle, const EOS_Ecom_CopyLastRedeemedEntitlementByIndexOptions* Options, char* OutRedeemedEntitlementId, int32_t* InOutRedeemedEntitlementIdLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyLastRedeemedEntitlementByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutRedeemedEntitlementId;
     (void)InOutRedeemedEntitlementIdLength;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyOfferById(EOS_HEcom Handle, const EOS_Ecom_CopyOfferByIdOptions* Options, EOS_Ecom_CatalogOffer ** OutOffer) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyOfferById", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutOffer;
     if (OutOffer != NULL) { *OutOffer = static_cast<EOS_Ecom_CatalogOffer *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyOfferByIndex(EOS_HEcom Handle, const EOS_Ecom_CopyOfferByIndexOptions* Options, EOS_Ecom_CatalogOffer ** OutOffer) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyOfferByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutOffer;
     if (OutOffer != NULL) { *OutOffer = static_cast<EOS_Ecom_CatalogOffer *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyOfferImageInfoByIndex(EOS_HEcom Handle, const EOS_Ecom_CopyOfferImageInfoByIndexOptions* Options, EOS_Ecom_KeyImageInfo ** OutImageInfo) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyOfferImageInfoByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutImageInfo;
     if (OutImageInfo != NULL) { *OutImageInfo = static_cast<EOS_Ecom_KeyImageInfo *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyOfferItemByIndex(EOS_HEcom Handle, const EOS_Ecom_CopyOfferItemByIndexOptions* Options, EOS_Ecom_CatalogItem ** OutItem) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyOfferItemByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutItem;
     if (OutItem != NULL) { *OutItem = static_cast<EOS_Ecom_CatalogItem *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyTransactionById(EOS_HEcom Handle, const EOS_Ecom_CopyTransactionByIdOptions* Options, EOS_Ecom_HTransaction* OutTransaction) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyTransactionById", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutTransaction;
     if (OutTransaction != NULL) { *OutTransaction = static_cast<EOS_Ecom_HTransaction>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_CopyTransactionByIndex(EOS_HEcom Handle, const EOS_Ecom_CopyTransactionByIndexOptions* Options, EOS_Ecom_HTransaction* OutTransaction) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CopyTransactionByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutTransaction;
     if (OutTransaction != NULL) { *OutTransaction = static_cast<EOS_Ecom_HTransaction>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Ecom_GetEntitlementsByNameCount(EOS_HEcom Handle, const EOS_Ecom_GetEntitlementsByNameCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_GetEntitlementsByNameCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Ecom_GetEntitlementsCount(EOS_HEcom Handle, const EOS_Ecom_GetEntitlementsCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_GetEntitlementsCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Ecom_GetItemImageInfoCount(EOS_HEcom Handle, const EOS_Ecom_GetItemImageInfoCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_GetItemImageInfoCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Ecom_GetItemReleaseCount(EOS_HEcom Handle, const EOS_Ecom_GetItemReleaseCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_GetItemReleaseCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Ecom_GetLastRedeemEntitlementsResultCount(EOS_HEcom Handle, const EOS_Ecom_GetLastRedeemEntitlementsResultCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_GetLastRedeemEntitlementsResultCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Ecom_GetLastRedeemedEntitlementsCount(EOS_HEcom Handle, const EOS_Ecom_GetLastRedeemedEntitlementsCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_GetLastRedeemedEntitlementsCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Ecom_GetOfferCount(EOS_HEcom Handle, const EOS_Ecom_GetOfferCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_GetOfferCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Ecom_GetOfferImageInfoCount(EOS_HEcom Handle, const EOS_Ecom_GetOfferImageInfoCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_GetOfferImageInfoCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Ecom_GetOfferItemCount(EOS_HEcom Handle, const EOS_Ecom_GetOfferItemCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_GetOfferItemCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Ecom_GetTransactionCount(EOS_HEcom Handle, const EOS_Ecom_GetTransactionCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_GetTransactionCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_QueryEntitlementToken(EOS_HEcom Handle, const EOS_Ecom_QueryEntitlementTokenOptions* Options, void* ClientData, const EOS_Ecom_OnQueryEntitlementTokenCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_QueryEntitlementToken", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -911,6 +1145,7 @@ EOS_DECLARE_FUNC(void) EOS_Ecom_QueryEntitlementToken(EOS_HEcom Handle, const EO
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_QueryEntitlements(EOS_HEcom Handle, const EOS_Ecom_QueryEntitlementsOptions* Options, void* ClientData, const EOS_Ecom_OnQueryEntitlementsCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_QueryEntitlements", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -920,6 +1155,7 @@ EOS_DECLARE_FUNC(void) EOS_Ecom_QueryEntitlements(EOS_HEcom Handle, const EOS_Ec
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_QueryOffers(EOS_HEcom Handle, const EOS_Ecom_QueryOffersOptions* Options, void* ClientData, const EOS_Ecom_OnQueryOffersCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_QueryOffers", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -929,6 +1165,7 @@ EOS_DECLARE_FUNC(void) EOS_Ecom_QueryOffers(EOS_HEcom Handle, const EOS_Ecom_Que
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_QueryOwnership(EOS_HEcom Handle, const EOS_Ecom_QueryOwnershipOptions* Options, void* ClientData, const EOS_Ecom_OnQueryOwnershipCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_QueryOwnership", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -938,6 +1175,7 @@ EOS_DECLARE_FUNC(void) EOS_Ecom_QueryOwnership(EOS_HEcom Handle, const EOS_Ecom_
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_QueryOwnershipBySandboxIds(EOS_HEcom Handle, const EOS_Ecom_QueryOwnershipBySandboxIdsOptions* Options, void* ClientData, const EOS_Ecom_OnQueryOwnershipBySandboxIdsCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_QueryOwnershipBySandboxIds", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -947,6 +1185,7 @@ EOS_DECLARE_FUNC(void) EOS_Ecom_QueryOwnershipBySandboxIds(EOS_HEcom Handle, con
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_QueryOwnershipToken(EOS_HEcom Handle, const EOS_Ecom_QueryOwnershipTokenOptions* Options, void* ClientData, const EOS_Ecom_OnQueryOwnershipTokenCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_QueryOwnershipToken", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -956,6 +1195,7 @@ EOS_DECLARE_FUNC(void) EOS_Ecom_QueryOwnershipToken(EOS_HEcom Handle, const EOS_
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_RedeemEntitlements(EOS_HEcom Handle, const EOS_Ecom_RedeemEntitlementsOptions* Options, void* ClientData, const EOS_Ecom_OnRedeemEntitlementsCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_RedeemEntitlements", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -965,72 +1205,90 @@ EOS_DECLARE_FUNC(void) EOS_Ecom_RedeemEntitlements(EOS_HEcom Handle, const EOS_E
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_Transaction_CopyEntitlementByIndex(EOS_Ecom_HTransaction Handle, const EOS_Ecom_Transaction_CopyEntitlementByIndexOptions* Options, EOS_Ecom_Entitlement ** OutEntitlement) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_Transaction_CopyEntitlementByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutEntitlement;
     if (OutEntitlement != NULL) { *OutEntitlement = static_cast<EOS_Ecom_Entitlement *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Ecom_Transaction_GetEntitlementsCount(EOS_Ecom_HTransaction Handle, const EOS_Ecom_Transaction_GetEntitlementsCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_Transaction_GetEntitlementsCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Ecom_Transaction_GetTransactionId(EOS_Ecom_HTransaction Handle, char* OutBuffer, int32_t* InOutBufferLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_Transaction_GetTransactionId", 0, eosr::call_mode::sync);
     (void)Handle;
     (void)OutBuffer;
     (void)InOutBufferLength;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 // --- eos_ecom_types.h ---
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_CatalogItem_Release(EOS_Ecom_CatalogItem* CatalogItem) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CatalogItem_Release", 0, eosr::call_mode::sync);
     (void)CatalogItem;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_CatalogOffer_Release(EOS_Ecom_CatalogOffer* CatalogOffer) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CatalogOffer_Release", 0, eosr::call_mode::sync);
     (void)CatalogOffer;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_CatalogRelease_Release(EOS_Ecom_CatalogRelease* CatalogRelease) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_CatalogRelease_Release", 0, eosr::call_mode::sync);
     (void)CatalogRelease;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_Entitlement_Release(EOS_Ecom_Entitlement* Entitlement) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_Entitlement_Release", 0, eosr::call_mode::sync);
     (void)Entitlement;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_KeyImageInfo_Release(EOS_Ecom_KeyImageInfo* KeyImageInfo) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_KeyImageInfo_Release", 0, eosr::call_mode::sync);
     (void)KeyImageInfo;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Ecom_Transaction_Release(EOS_Ecom_HTransaction Transaction) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Ecom_Transaction_Release", 0, eosr::call_mode::sync);
     (void)Transaction;
 }
 
 // --- eos_kws.h ---
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_KWS_AddNotifyPermissionsUpdateReceived(EOS_HKWS Handle, const EOS_KWS_AddNotifyPermissionsUpdateReceivedOptions* Options, void* ClientData, const EOS_KWS_OnPermissionsUpdateReceivedCallback NotificationFn) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_KWS_AddNotifyPermissionsUpdateReceived", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)NotificationFn;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(NotificationFn), sizeof(EOS_KWS_PermissionsUpdateReceivedCallbackInfo), "KWSPermissionsUpdateReceived");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_KWS_CopyPermissionByIndex(EOS_HKWS Handle, const EOS_KWS_CopyPermissionByIndexOptions* Options, EOS_KWS_PermissionStatus ** OutPermission) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_KWS_CopyPermissionByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutPermission;
     if (OutPermission != NULL) { *OutPermission = static_cast<EOS_KWS_PermissionStatus *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_KWS_CreateUser(EOS_HKWS Handle, const EOS_KWS_CreateUserOptions* Options, void* ClientData, const EOS_KWS_OnCreateUserCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_KWS_CreateUser", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1040,20 +1298,25 @@ EOS_DECLARE_FUNC(void) EOS_KWS_CreateUser(EOS_HKWS Handle, const EOS_KWS_CreateU
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_KWS_GetPermissionByKey(EOS_HKWS Handle, const EOS_KWS_GetPermissionByKeyOptions* Options, EOS_EKWSPermissionStatus* OutPermission) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_KWS_GetPermissionByKey", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutPermission;
     if (OutPermission != NULL) { *OutPermission = static_cast<EOS_EKWSPermissionStatus>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(int32_t) EOS_KWS_GetPermissionsCount(EOS_HKWS Handle, const EOS_KWS_GetPermissionsCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_KWS_GetPermissionsCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(void) EOS_KWS_QueryAgeGate(EOS_HKWS Handle, const EOS_KWS_QueryAgeGateOptions* Options, void* ClientData, const EOS_KWS_OnQueryAgeGateCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_KWS_QueryAgeGate", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1063,6 +1326,7 @@ EOS_DECLARE_FUNC(void) EOS_KWS_QueryAgeGate(EOS_HKWS Handle, const EOS_KWS_Query
 }
 
 EOS_DECLARE_FUNC(void) EOS_KWS_QueryPermissions(EOS_HKWS Handle, const EOS_KWS_QueryPermissionsOptions* Options, void* ClientData, const EOS_KWS_OnQueryPermissionsCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_KWS_QueryPermissions", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1072,11 +1336,13 @@ EOS_DECLARE_FUNC(void) EOS_KWS_QueryPermissions(EOS_HKWS Handle, const EOS_KWS_Q
 }
 
 EOS_DECLARE_FUNC(void) EOS_KWS_RemoveNotifyPermissionsUpdateReceived(EOS_HKWS Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_KWS_RemoveNotifyPermissionsUpdateReceived", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(InId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_KWS_RequestPermissions(EOS_HKWS Handle, const EOS_KWS_RequestPermissionsOptions* Options, void* ClientData, const EOS_KWS_OnRequestPermissionsCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_KWS_RequestPermissions", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1086,6 +1352,7 @@ EOS_DECLARE_FUNC(void) EOS_KWS_RequestPermissions(EOS_HKWS Handle, const EOS_KWS
 }
 
 EOS_DECLARE_FUNC(void) EOS_KWS_UpdateParentEmail(EOS_HKWS Handle, const EOS_KWS_UpdateParentEmailOptions* Options, void* ClientData, const EOS_KWS_OnUpdateParentEmailCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_KWS_UpdateParentEmail", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1097,78 +1364,98 @@ EOS_DECLARE_FUNC(void) EOS_KWS_UpdateParentEmail(EOS_HKWS Handle, const EOS_KWS_
 // --- eos_kws_types.h ---
 
 EOS_DECLARE_FUNC(void) EOS_KWS_PermissionStatus_Release(EOS_KWS_PermissionStatus* PermissionStatus) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_KWS_PermissionStatus_Release", 0, eosr::call_mode::sync);
     (void)PermissionStatus;
 }
 
 // --- eos_leaderboards.h ---
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardDefinitionByIndex(EOS_HLeaderboards Handle, const EOS_Leaderboards_CopyLeaderboardDefinitionByIndexOptions* Options, EOS_Leaderboards_Definition ** OutLeaderboardDefinition) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_CopyLeaderboardDefinitionByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardDefinition;
     if (OutLeaderboardDefinition != NULL) { *OutLeaderboardDefinition = static_cast<EOS_Leaderboards_Definition *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardDefinitionByLeaderboardId(EOS_HLeaderboards Handle, const EOS_Leaderboards_CopyLeaderboardDefinitionByLeaderboardIdOptions* Options, EOS_Leaderboards_Definition ** OutLeaderboardDefinition) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_CopyLeaderboardDefinitionByLeaderboardId", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardDefinition;
     if (OutLeaderboardDefinition != NULL) { *OutLeaderboardDefinition = static_cast<EOS_Leaderboards_Definition *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardRecordByIndex(EOS_HLeaderboards Handle, const EOS_Leaderboards_CopyLeaderboardRecordByIndexOptions* Options, EOS_Leaderboards_LeaderboardRecord ** OutLeaderboardRecord) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_CopyLeaderboardRecordByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardRecord;
     if (OutLeaderboardRecord != NULL) { *OutLeaderboardRecord = static_cast<EOS_Leaderboards_LeaderboardRecord *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardRecordByUserId(EOS_HLeaderboards Handle, const EOS_Leaderboards_CopyLeaderboardRecordByUserIdOptions* Options, EOS_Leaderboards_LeaderboardRecord ** OutLeaderboardRecord) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_CopyLeaderboardRecordByUserId", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardRecord;
     if (OutLeaderboardRecord != NULL) { *OutLeaderboardRecord = static_cast<EOS_Leaderboards_LeaderboardRecord *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardUserScoreByIndex(EOS_HLeaderboards Handle, const EOS_Leaderboards_CopyLeaderboardUserScoreByIndexOptions* Options, EOS_Leaderboards_LeaderboardUserScore ** OutLeaderboardUserScore) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_CopyLeaderboardUserScoreByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardUserScore;
     if (OutLeaderboardUserScore != NULL) { *OutLeaderboardUserScore = static_cast<EOS_Leaderboards_LeaderboardUserScore *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Leaderboards_CopyLeaderboardUserScoreByUserId(EOS_HLeaderboards Handle, const EOS_Leaderboards_CopyLeaderboardUserScoreByUserIdOptions* Options, EOS_Leaderboards_LeaderboardUserScore ** OutLeaderboardUserScore) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_CopyLeaderboardUserScoreByUserId", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutLeaderboardUserScore;
     if (OutLeaderboardUserScore != NULL) { *OutLeaderboardUserScore = static_cast<EOS_Leaderboards_LeaderboardUserScore *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Leaderboards_GetLeaderboardDefinitionCount(EOS_HLeaderboards Handle, const EOS_Leaderboards_GetLeaderboardDefinitionCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_GetLeaderboardDefinitionCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Leaderboards_GetLeaderboardRecordCount(EOS_HLeaderboards Handle, const EOS_Leaderboards_GetLeaderboardRecordCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_GetLeaderboardRecordCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Leaderboards_GetLeaderboardUserScoreCount(EOS_HLeaderboards Handle, const EOS_Leaderboards_GetLeaderboardUserScoreCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_GetLeaderboardUserScoreCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Leaderboards_QueryLeaderboardDefinitions(EOS_HLeaderboards Handle, const EOS_Leaderboards_QueryLeaderboardDefinitionsOptions* Options, void* ClientData, const EOS_Leaderboards_OnQueryLeaderboardDefinitionsCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_QueryLeaderboardDefinitions", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1178,6 +1465,7 @@ EOS_DECLARE_FUNC(void) EOS_Leaderboards_QueryLeaderboardDefinitions(EOS_HLeaderb
 }
 
 EOS_DECLARE_FUNC(void) EOS_Leaderboards_QueryLeaderboardRanks(EOS_HLeaderboards Handle, const EOS_Leaderboards_QueryLeaderboardRanksOptions* Options, void* ClientData, const EOS_Leaderboards_OnQueryLeaderboardRanksCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_QueryLeaderboardRanks", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1187,6 +1475,7 @@ EOS_DECLARE_FUNC(void) EOS_Leaderboards_QueryLeaderboardRanks(EOS_HLeaderboards 
 }
 
 EOS_DECLARE_FUNC(void) EOS_Leaderboards_QueryLeaderboardUserScores(EOS_HLeaderboards Handle, const EOS_Leaderboards_QueryLeaderboardUserScoresOptions* Options, void* ClientData, const EOS_Leaderboards_OnQueryLeaderboardUserScoresCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_QueryLeaderboardUserScores", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1198,46 +1487,57 @@ EOS_DECLARE_FUNC(void) EOS_Leaderboards_QueryLeaderboardUserScores(EOS_HLeaderbo
 // --- eos_leaderboards_types.h ---
 
 EOS_DECLARE_FUNC(void) EOS_Leaderboards_Definition_Release(EOS_Leaderboards_Definition* LeaderboardDefinition) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_Definition_Release", 0, eosr::call_mode::sync);
     (void)LeaderboardDefinition;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Leaderboards_LeaderboardDefinition_Release(EOS_Leaderboards_Definition* LeaderboardDefinition) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_LeaderboardDefinition_Release", 0, eosr::call_mode::sync);
     (void)LeaderboardDefinition;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Leaderboards_LeaderboardRecord_Release(EOS_Leaderboards_LeaderboardRecord* LeaderboardRecord) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_LeaderboardRecord_Release", 0, eosr::call_mode::sync);
     (void)LeaderboardRecord;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Leaderboards_LeaderboardUserScore_Release(EOS_Leaderboards_LeaderboardUserScore* LeaderboardUserScore) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Leaderboards_LeaderboardUserScore_Release", 0, eosr::call_mode::sync);
     (void)LeaderboardUserScore;
 }
 
 // --- eos_metrics.h ---
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Metrics_BeginPlayerSession(EOS_HMetrics Handle, const EOS_Metrics_BeginPlayerSessionOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Metrics_BeginPlayerSession", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Metrics_EndPlayerSession(EOS_HMetrics Handle, const EOS_Metrics_EndPlayerSessionOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Metrics_EndPlayerSession", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 // --- eos_mods.h ---
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Mods_CopyModInfo(EOS_HMods Handle, const EOS_Mods_CopyModInfoOptions* Options, EOS_Mods_ModInfo ** OutEnumeratedMods) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Mods_CopyModInfo", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutEnumeratedMods;
     if (OutEnumeratedMods != NULL) { *OutEnumeratedMods = static_cast<EOS_Mods_ModInfo *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Mods_EnumerateMods(EOS_HMods Handle, const EOS_Mods_EnumerateModsOptions* Options, void* ClientData, const EOS_Mods_OnEnumerateModsCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Mods_EnumerateMods", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1247,6 +1547,7 @@ EOS_DECLARE_FUNC(void) EOS_Mods_EnumerateMods(EOS_HMods Handle, const EOS_Mods_E
 }
 
 EOS_DECLARE_FUNC(void) EOS_Mods_InstallMod(EOS_HMods Handle, const EOS_Mods_InstallModOptions* Options, void* ClientData, const EOS_Mods_OnInstallModCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Mods_InstallMod", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1256,6 +1557,7 @@ EOS_DECLARE_FUNC(void) EOS_Mods_InstallMod(EOS_HMods Handle, const EOS_Mods_Inst
 }
 
 EOS_DECLARE_FUNC(void) EOS_Mods_UninstallMod(EOS_HMods Handle, const EOS_Mods_UninstallModOptions* Options, void* ClientData, const EOS_Mods_OnUninstallModCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Mods_UninstallMod", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1265,6 +1567,7 @@ EOS_DECLARE_FUNC(void) EOS_Mods_UninstallMod(EOS_HMods Handle, const EOS_Mods_Un
 }
 
 EOS_DECLARE_FUNC(void) EOS_Mods_UpdateMod(EOS_HMods Handle, const EOS_Mods_UpdateModOptions* Options, void* ClientData, const EOS_Mods_OnUpdateModCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Mods_UpdateMod", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1276,57 +1579,71 @@ EOS_DECLARE_FUNC(void) EOS_Mods_UpdateMod(EOS_HMods Handle, const EOS_Mods_Updat
 // --- eos_mods_types.h ---
 
 EOS_DECLARE_FUNC(void) EOS_Mods_ModInfo_Release(EOS_Mods_ModInfo* ModInfo) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Mods_ModInfo_Release", 0, eosr::call_mode::sync);
     (void)ModInfo;
 }
 
 // --- eos_playerdatastorage.h ---
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorageFileTransferRequest_CancelRequest(EOS_HPlayerDataStorageFileTransferRequest Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorageFileTransferRequest_CancelRequest", 0, eosr::call_mode::sync);
     (void)Handle;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorageFileTransferRequest_GetFileRequestState(EOS_HPlayerDataStorageFileTransferRequest Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorageFileTransferRequest_GetFileRequestState", 0, eosr::call_mode::sync);
     (void)Handle;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorageFileTransferRequest_GetFilename(EOS_HPlayerDataStorageFileTransferRequest Handle, uint32_t FilenameStringBufferSizeBytes, char* OutStringBuffer, int32_t* OutStringLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorageFileTransferRequest_GetFilename", 0, eosr::call_mode::sync);
     (void)Handle;
     (void)FilenameStringBufferSizeBytes;
     (void)OutStringBuffer;
     (void)OutStringLength;
     if (OutStringLength != NULL) { *OutStringLength = static_cast<int32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorage_CopyFileMetadataAtIndex(EOS_HPlayerDataStorage Handle, const EOS_PlayerDataStorage_CopyFileMetadataAtIndexOptions* CopyFileMetadataOptions, EOS_PlayerDataStorage_FileMetadata ** OutMetadata) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorage_CopyFileMetadataAtIndex", (CopyFileMetadataOptions != NULL) ? CopyFileMetadataOptions->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)CopyFileMetadataOptions;
     (void)OutMetadata;
     if (OutMetadata != NULL) { *OutMetadata = static_cast<EOS_PlayerDataStorage_FileMetadata *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorage_CopyFileMetadataByFilename(EOS_HPlayerDataStorage Handle, const EOS_PlayerDataStorage_CopyFileMetadataByFilenameOptions* CopyFileMetadataOptions, EOS_PlayerDataStorage_FileMetadata ** OutMetadata) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorage_CopyFileMetadataByFilename", (CopyFileMetadataOptions != NULL) ? CopyFileMetadataOptions->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)CopyFileMetadataOptions;
     (void)OutMetadata;
     if (OutMetadata != NULL) { *OutMetadata = static_cast<EOS_PlayerDataStorage_FileMetadata *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorage_DeleteCache(EOS_HPlayerDataStorage Handle, const EOS_PlayerDataStorage_DeleteCacheOptions* Options, void* ClientData, const EOS_PlayerDataStorage_OnDeleteCacheCompleteCallback CompletionCallback) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorage_DeleteCache", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionCallback;
     eosr::stub_complete(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionCallback), sizeof(EOS_PlayerDataStorage_DeleteCacheCallbackInfo));
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_PlayerDataStorage_DeleteFile(EOS_HPlayerDataStorage Handle, const EOS_PlayerDataStorage_DeleteFileOptions* DeleteOptions, void* ClientData, const EOS_PlayerDataStorage_OnDeleteFileCompleteCallback CompletionCallback) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorage_DeleteFile", (DeleteOptions != NULL) ? DeleteOptions->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)DeleteOptions;
     (void)ClientData;
@@ -1336,6 +1653,7 @@ EOS_DECLARE_FUNC(void) EOS_PlayerDataStorage_DeleteFile(EOS_HPlayerDataStorage H
 }
 
 EOS_DECLARE_FUNC(void) EOS_PlayerDataStorage_DuplicateFile(EOS_HPlayerDataStorage Handle, const EOS_PlayerDataStorage_DuplicateFileOptions* DuplicateOptions, void* ClientData, const EOS_PlayerDataStorage_OnDuplicateFileCompleteCallback CompletionCallback) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorage_DuplicateFile", (DuplicateOptions != NULL) ? DuplicateOptions->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)DuplicateOptions;
     (void)ClientData;
@@ -1345,14 +1663,17 @@ EOS_DECLARE_FUNC(void) EOS_PlayerDataStorage_DuplicateFile(EOS_HPlayerDataStorag
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_PlayerDataStorage_GetFileMetadataCount(EOS_HPlayerDataStorage Handle, const EOS_PlayerDataStorage_GetFileMetadataCountOptions* GetFileMetadataCountOptions, int32_t* OutFileMetadataCount) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorage_GetFileMetadataCount", (GetFileMetadataCountOptions != NULL) ? GetFileMetadataCountOptions->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)GetFileMetadataCountOptions;
     (void)OutFileMetadataCount;
     if (OutFileMetadataCount != NULL) { *OutFileMetadataCount = static_cast<int32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_PlayerDataStorage_QueryFile(EOS_HPlayerDataStorage Handle, const EOS_PlayerDataStorage_QueryFileOptions* QueryFileOptions, void* ClientData, const EOS_PlayerDataStorage_OnQueryFileCompleteCallback CompletionCallback) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorage_QueryFile", (QueryFileOptions != NULL) ? QueryFileOptions->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)QueryFileOptions;
     (void)ClientData;
@@ -1362,6 +1683,7 @@ EOS_DECLARE_FUNC(void) EOS_PlayerDataStorage_QueryFile(EOS_HPlayerDataStorage Ha
 }
 
 EOS_DECLARE_FUNC(void) EOS_PlayerDataStorage_QueryFileList(EOS_HPlayerDataStorage Handle, const EOS_PlayerDataStorage_QueryFileListOptions* QueryFileListOptions, void* ClientData, const EOS_PlayerDataStorage_OnQueryFileListCompleteCallback CompletionCallback) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorage_QueryFileList", (QueryFileListOptions != NULL) ? QueryFileListOptions->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)QueryFileListOptions;
     (void)ClientData;
@@ -1371,52 +1693,63 @@ EOS_DECLARE_FUNC(void) EOS_PlayerDataStorage_QueryFileList(EOS_HPlayerDataStorag
 }
 
 EOS_DECLARE_FUNC(EOS_HPlayerDataStorageFileTransferRequest) EOS_PlayerDataStorage_ReadFile(EOS_HPlayerDataStorage Handle, const EOS_PlayerDataStorage_ReadFileOptions* ReadOptions, void* ClientData, const EOS_PlayerDataStorage_OnReadFileCompleteCallback CompletionCallback) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorage_ReadFile", (ReadOptions != NULL) ? ReadOptions->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)ReadOptions;
     (void)ClientData;
     (void)CompletionCallback;
     eosr::stub_complete(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionCallback), sizeof(EOS_PlayerDataStorage_ReadFileCallbackInfo));
+    eosr_trace.returns(eosr::return_null_handle());
     return NULL;
 }
 
 EOS_DECLARE_FUNC(EOS_HPlayerDataStorageFileTransferRequest) EOS_PlayerDataStorage_WriteFile(EOS_HPlayerDataStorage Handle, const EOS_PlayerDataStorage_WriteFileOptions* WriteOptions, void* ClientData, const EOS_PlayerDataStorage_OnWriteFileCompleteCallback CompletionCallback) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorage_WriteFile", (WriteOptions != NULL) ? WriteOptions->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)WriteOptions;
     (void)ClientData;
     (void)CompletionCallback;
     eosr::stub_complete(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionCallback), sizeof(EOS_PlayerDataStorage_WriteFileCallbackInfo));
+    eosr_trace.returns(eosr::return_null_handle());
     return NULL;
 }
 
 // --- eos_playerdatastorage_types.h ---
 
 EOS_DECLARE_FUNC(void) EOS_PlayerDataStorageFileTransferRequest_Release(EOS_HPlayerDataStorageFileTransferRequest PlayerDataStorageFileTransferHandle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorageFileTransferRequest_Release", 0, eosr::call_mode::sync);
     (void)PlayerDataStorageFileTransferHandle;
 }
 
 EOS_DECLARE_FUNC(void) EOS_PlayerDataStorage_FileMetadata_Release(EOS_PlayerDataStorage_FileMetadata* FileMetadata) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_PlayerDataStorage_FileMetadata_Release", 0, eosr::call_mode::sync);
     (void)FileMetadata;
 }
 
 // --- eos_progressionsnapshot.h ---
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_ProgressionSnapshot_AddProgression(EOS_HProgressionSnapshot Handle, const EOS_ProgressionSnapshot_AddProgressionOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_ProgressionSnapshot_AddProgression", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_ProgressionSnapshot_BeginSnapshot(EOS_HProgressionSnapshot Handle, const EOS_ProgressionSnapshot_BeginSnapshotOptions* Options, uint32_t* OutSnapshotId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_ProgressionSnapshot_BeginSnapshot", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutSnapshotId;
     if (OutSnapshotId != NULL) { *OutSnapshotId = static_cast<uint32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_ProgressionSnapshot_DeleteSnapshot(EOS_HProgressionSnapshot Handle, const EOS_ProgressionSnapshot_DeleteSnapshotOptions* Options, void* ClientData, const EOS_ProgressionSnapshot_OnDeleteSnapshotCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_ProgressionSnapshot_DeleteSnapshot", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1426,12 +1759,15 @@ EOS_DECLARE_FUNC(void) EOS_ProgressionSnapshot_DeleteSnapshot(EOS_HProgressionSn
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_ProgressionSnapshot_EndSnapshot(EOS_HProgressionSnapshot Handle, const EOS_ProgressionSnapshot_EndSnapshotOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_ProgressionSnapshot_EndSnapshot", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_ProgressionSnapshot_SubmitSnapshot(EOS_HProgressionSnapshot Handle, const EOS_ProgressionSnapshot_SubmitSnapshotOptions* Options, void* ClientData, const EOS_ProgressionSnapshot_OnSubmitSnapshotCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_ProgressionSnapshot_SubmitSnapshot", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1443,6 +1779,7 @@ EOS_DECLARE_FUNC(void) EOS_ProgressionSnapshot_SubmitSnapshot(EOS_HProgressionSn
 // --- eos_reports.h ---
 
 EOS_DECLARE_FUNC(void) EOS_Reports_SendPlayerBehaviorReport(EOS_HReports Handle, const EOS_Reports_SendPlayerBehaviorReportOptions* Options, void* ClientData, const EOS_Reports_OnSendPlayerBehaviorReportCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Reports_SendPlayerBehaviorReport", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1454,42 +1791,55 @@ EOS_DECLARE_FUNC(void) EOS_Reports_SendPlayerBehaviorReport(EOS_HReports Handle,
 // --- eos_rtc.h ---
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTC_AddNotifyDisconnected(EOS_HRTC Handle, const EOS_RTC_AddNotifyDisconnectedOptions* Options, void* ClientData, const EOS_RTC_OnDisconnectedCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_AddNotifyDisconnected", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_DisconnectedCallbackInfo), "RTCDisconnected");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTC_AddNotifyParticipantStatusChanged(EOS_HRTC Handle, const EOS_RTC_AddNotifyParticipantStatusChangedOptions* Options, void* ClientData, const EOS_RTC_OnParticipantStatusChangedCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_AddNotifyParticipantStatusChanged", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_ParticipantStatusChangedCallbackInfo), "RTCParticipantStatusChanged");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTC_AddNotifyRoomBeforeJoin(EOS_HRTC Handle, const EOS_RTC_AddNotifyRoomBeforeJoinOptions* Options, void* ClientData, const EOS_RTC_OnRoomBeforeJoinCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_AddNotifyRoomBeforeJoin", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_RoomBeforeJoinCallbackInfo), "RTCRoomBeforeJoin");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTC_AddNotifyRoomStatisticsUpdated(EOS_HRTC Handle, const EOS_RTC_AddNotifyRoomStatisticsUpdatedOptions* Options, void* ClientData, const EOS_RTC_OnRoomStatisticsUpdatedCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_AddNotifyRoomStatisticsUpdated", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTC_RoomStatisticsUpdatedInfo), "RTCRoomStatisticsUpdated");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTC_BlockParticipant(EOS_HRTC Handle, const EOS_RTC_BlockParticipantOptions* Options, void* ClientData, const EOS_RTC_OnBlockParticipantCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_BlockParticipant", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1499,16 +1849,21 @@ EOS_DECLARE_FUNC(void) EOS_RTC_BlockParticipant(EOS_HRTC Handle, const EOS_RTC_B
 }
 
 EOS_DECLARE_FUNC(EOS_HRTCAudio) EOS_RTC_GetAudioInterface(EOS_HRTC Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_GetAudioInterface", 0, eosr::call_mode::sync);
     (void)Handle;
+    eosr_trace.returns(eosr::return_null_handle());
     return NULL;
 }
 
 EOS_DECLARE_FUNC(EOS_HRTCData) EOS_RTC_GetDataInterface(EOS_HRTC Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_GetDataInterface", 0, eosr::call_mode::sync);
     (void)Handle;
+    eosr_trace.returns(eosr::return_null_handle());
     return NULL;
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTC_JoinRoom(EOS_HRTC Handle, const EOS_RTC_JoinRoomOptions* Options, void* ClientData, const EOS_RTC_OnJoinRoomCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_JoinRoom", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1518,6 +1873,7 @@ EOS_DECLARE_FUNC(void) EOS_RTC_JoinRoom(EOS_HRTC Handle, const EOS_RTC_JoinRoomO
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTC_LeaveRoom(EOS_HRTC Handle, const EOS_RTC_LeaveRoomOptions* Options, void* ClientData, const EOS_RTC_OnLeaveRoomCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_LeaveRoom", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1527,56 +1883,69 @@ EOS_DECLARE_FUNC(void) EOS_RTC_LeaveRoom(EOS_HRTC Handle, const EOS_RTC_LeaveRoo
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTC_RemoveNotifyDisconnected(EOS_HRTC Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_RemoveNotifyDisconnected", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTC_RemoveNotifyParticipantStatusChanged(EOS_HRTC Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_RemoveNotifyParticipantStatusChanged", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTC_RemoveNotifyRoomBeforeJoin(EOS_HRTC Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_RemoveNotifyRoomBeforeJoin", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTC_RemoveNotifyRoomStatisticsUpdated(EOS_HRTC Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_RemoveNotifyRoomStatisticsUpdated", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTC_SetRoomSetting(EOS_HRTC Handle, const EOS_RTC_SetRoomSettingOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_SetRoomSetting", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTC_SetSetting(EOS_HRTC Handle, const EOS_RTC_SetSettingOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTC_SetSetting", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 // --- eos_rtc_admin.h ---
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAdmin_CopyUserTokenByIndex(EOS_HRTCAdmin Handle, const EOS_RTCAdmin_CopyUserTokenByIndexOptions* Options, EOS_RTCAdmin_UserToken ** OutUserToken) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAdmin_CopyUserTokenByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutUserToken;
     if (OutUserToken != NULL) { *OutUserToken = static_cast<EOS_RTCAdmin_UserToken *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAdmin_CopyUserTokenByUserId(EOS_HRTCAdmin Handle, const EOS_RTCAdmin_CopyUserTokenByUserIdOptions* Options, EOS_RTCAdmin_UserToken ** OutUserToken) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAdmin_CopyUserTokenByUserId", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutUserToken;
     if (OutUserToken != NULL) { *OutUserToken = static_cast<EOS_RTCAdmin_UserToken *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAdmin_Kick(EOS_HRTCAdmin Handle, const EOS_RTCAdmin_KickOptions* Options, void* ClientData, const EOS_RTCAdmin_OnKickCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAdmin_Kick", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1586,6 +1955,7 @@ EOS_DECLARE_FUNC(void) EOS_RTCAdmin_Kick(EOS_HRTCAdmin Handle, const EOS_RTCAdmi
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAdmin_QueryJoinRoomToken(EOS_HRTCAdmin Handle, const EOS_RTCAdmin_QueryJoinRoomTokenOptions* Options, void* ClientData, const EOS_RTCAdmin_OnQueryJoinRoomTokenCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAdmin_QueryJoinRoomToken", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1595,6 +1965,7 @@ EOS_DECLARE_FUNC(void) EOS_RTCAdmin_QueryJoinRoomToken(EOS_HRTCAdmin Handle, con
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAdmin_SetParticipantHardMute(EOS_HRTCAdmin Handle, const EOS_RTCAdmin_SetParticipantHardMuteOptions* Options, void* ClientData, const EOS_RTCAdmin_OnSetParticipantHardMuteCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAdmin_SetParticipantHardMute", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1606,118 +1977,154 @@ EOS_DECLARE_FUNC(void) EOS_RTCAdmin_SetParticipantHardMute(EOS_HRTCAdmin Handle,
 // --- eos_rtc_admin_types.h ---
 
 EOS_DECLARE_FUNC(void) EOS_RTCAdmin_UserToken_Release(EOS_RTCAdmin_UserToken* UserToken) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAdmin_UserToken_Release", 0, eosr::call_mode::sync);
     (void)UserToken;
 }
 
 // --- eos_rtc_audio.h ---
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioBeforeRender(EOS_HRTCAudio Handle, const EOS_RTCAudio_AddNotifyAudioBeforeRenderOptions* Options, void* ClientData, const EOS_RTCAudio_OnAudioBeforeRenderCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_AddNotifyAudioBeforeRender", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioBeforeRenderCallbackInfo), "RTCAudioBeforeRender");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioBeforeSend(EOS_HRTCAudio Handle, const EOS_RTCAudio_AddNotifyAudioBeforeSendOptions* Options, void* ClientData, const EOS_RTCAudio_OnAudioBeforeSendCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_AddNotifyAudioBeforeSend", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioBeforeSendCallbackInfo), "RTCAudioBeforeSend");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioDevicesChanged(EOS_HRTCAudio Handle, const EOS_RTCAudio_AddNotifyAudioDevicesChangedOptions* Options, void* ClientData, const EOS_RTCAudio_OnAudioDevicesChangedCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_AddNotifyAudioDevicesChanged", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioDevicesChangedCallbackInfo), "RTCAudioDevicesChanged");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioInputState(EOS_HRTCAudio Handle, const EOS_RTCAudio_AddNotifyAudioInputStateOptions* Options, void* ClientData, const EOS_RTCAudio_OnAudioInputStateCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_AddNotifyAudioInputState", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioInputStateCallbackInfo), "RTCAudioInputState");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyAudioOutputState(EOS_HRTCAudio Handle, const EOS_RTCAudio_AddNotifyAudioOutputStateOptions* Options, void* ClientData, const EOS_RTCAudio_OnAudioOutputStateCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_AddNotifyAudioOutputState", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_AudioOutputStateCallbackInfo), "RTCAudioOutputState");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCAudio_AddNotifyParticipantUpdated(EOS_HRTCAudio Handle, const EOS_RTCAudio_AddNotifyParticipantUpdatedOptions* Options, void* ClientData, const EOS_RTCAudio_OnParticipantUpdatedCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_AddNotifyParticipantUpdated", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCAudio_ParticipantUpdatedCallbackInfo), "RTCAudioParticipantUpdated");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAudio_CopyInputDeviceInformationByIndex(EOS_HRTCAudio Handle, const EOS_RTCAudio_CopyInputDeviceInformationByIndexOptions* Options, EOS_RTCAudio_InputDeviceInformation ** OutInputDeviceInformation) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_CopyInputDeviceInformationByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutInputDeviceInformation;
     if (OutInputDeviceInformation != NULL) { *OutInputDeviceInformation = static_cast<EOS_RTCAudio_InputDeviceInformation *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAudio_CopyOutputDeviceInformationByIndex(EOS_HRTCAudio Handle, const EOS_RTCAudio_CopyOutputDeviceInformationByIndexOptions* Options, EOS_RTCAudio_OutputDeviceInformation ** OutOutputDeviceInformation) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_CopyOutputDeviceInformationByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutOutputDeviceInformation;
     if (OutOutputDeviceInformation != NULL) { *OutOutputDeviceInformation = static_cast<EOS_RTCAudio_OutputDeviceInformation *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(const EOS_RTCAudio_AudioInputDeviceInfo *) EOS_RTCAudio_GetAudioInputDeviceByIndex(EOS_HRTCAudio Handle, const EOS_RTCAudio_GetAudioInputDeviceByIndexOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_GetAudioInputDeviceByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_null_handle());
     return NULL;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_RTCAudio_GetAudioInputDevicesCount(EOS_HRTCAudio Handle, const EOS_RTCAudio_GetAudioInputDevicesCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_GetAudioInputDevicesCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(const EOS_RTCAudio_AudioOutputDeviceInfo *) EOS_RTCAudio_GetAudioOutputDeviceByIndex(EOS_HRTCAudio Handle, const EOS_RTCAudio_GetAudioOutputDeviceByIndexOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_GetAudioOutputDeviceByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_null_handle());
     return NULL;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_RTCAudio_GetAudioOutputDevicesCount(EOS_HRTCAudio Handle, const EOS_RTCAudio_GetAudioOutputDevicesCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_GetAudioOutputDevicesCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_RTCAudio_GetInputDevicesCount(EOS_HRTCAudio Handle, const EOS_RTCAudio_GetInputDevicesCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_GetInputDevicesCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_RTCAudio_GetOutputDevicesCount(EOS_HRTCAudio Handle, const EOS_RTCAudio_GetOutputDevicesCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_GetOutputDevicesCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_QueryInputDevicesInformation(EOS_HRTCAudio Handle, const EOS_RTCAudio_QueryInputDevicesInformationOptions* Options, void* ClientData, const EOS_RTCAudio_OnQueryInputDevicesInformationCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_QueryInputDevicesInformation", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1727,6 +2134,7 @@ EOS_DECLARE_FUNC(void) EOS_RTCAudio_QueryInputDevicesInformation(EOS_HRTCAudio H
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_QueryOutputDevicesInformation(EOS_HRTCAudio Handle, const EOS_RTCAudio_QueryOutputDevicesInformationOptions* Options, void* ClientData, const EOS_RTCAudio_OnQueryOutputDevicesInformationCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_QueryOutputDevicesInformation", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1736,12 +2144,15 @@ EOS_DECLARE_FUNC(void) EOS_RTCAudio_QueryOutputDevicesInformation(EOS_HRTCAudio 
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAudio_RegisterPlatformAudioUser(EOS_HRTCAudio Handle, const EOS_RTCAudio_RegisterPlatformAudioUserOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_RegisterPlatformAudioUser", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_RegisterPlatformUser(EOS_HRTCAudio Handle, const EOS_RTCAudio_RegisterPlatformUserOptions* Options, void* ClientData, const EOS_RTCAudio_OnRegisterPlatformUserCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_RegisterPlatformUser", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1751,54 +2162,67 @@ EOS_DECLARE_FUNC(void) EOS_RTCAudio_RegisterPlatformUser(EOS_HRTCAudio Handle, c
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_RemoveNotifyAudioBeforeRender(EOS_HRTCAudio Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_RemoveNotifyAudioBeforeRender", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_RemoveNotifyAudioBeforeSend(EOS_HRTCAudio Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_RemoveNotifyAudioBeforeSend", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_RemoveNotifyAudioDevicesChanged(EOS_HRTCAudio Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_RemoveNotifyAudioDevicesChanged", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_RemoveNotifyAudioInputState(EOS_HRTCAudio Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_RemoveNotifyAudioInputState", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_RemoveNotifyAudioOutputState(EOS_HRTCAudio Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_RemoveNotifyAudioOutputState", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_RemoveNotifyParticipantUpdated(EOS_HRTCAudio Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_RemoveNotifyParticipantUpdated", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAudio_SendAudio(EOS_HRTCAudio Handle, const EOS_RTCAudio_SendAudioOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_SendAudio", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAudio_SetAudioInputSettings(EOS_HRTCAudio Handle, const EOS_RTCAudio_SetAudioInputSettingsOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_SetAudioInputSettings", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAudio_SetAudioOutputSettings(EOS_HRTCAudio Handle, const EOS_RTCAudio_SetAudioOutputSettingsOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_SetAudioOutputSettings", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_SetInputDeviceSettings(EOS_HRTCAudio Handle, const EOS_RTCAudio_SetInputDeviceSettingsOptions* Options, void* ClientData, const EOS_RTCAudio_OnSetInputDeviceSettingsCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_SetInputDeviceSettings", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1808,6 +2232,7 @@ EOS_DECLARE_FUNC(void) EOS_RTCAudio_SetInputDeviceSettings(EOS_HRTCAudio Handle,
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_SetOutputDeviceSettings(EOS_HRTCAudio Handle, const EOS_RTCAudio_SetOutputDeviceSettingsOptions* Options, void* ClientData, const EOS_RTCAudio_OnSetOutputDeviceSettingsCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_SetOutputDeviceSettings", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1817,12 +2242,15 @@ EOS_DECLARE_FUNC(void) EOS_RTCAudio_SetOutputDeviceSettings(EOS_HRTCAudio Handle
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCAudio_UnregisterPlatformAudioUser(EOS_HRTCAudio Handle, const EOS_RTCAudio_UnregisterPlatformAudioUserOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_UnregisterPlatformAudioUser", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_UnregisterPlatformUser(EOS_HRTCAudio Handle, const EOS_RTCAudio_UnregisterPlatformUserOptions* Options, void* ClientData, const EOS_RTCAudio_OnUnregisterPlatformUserCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_UnregisterPlatformUser", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1832,6 +2260,7 @@ EOS_DECLARE_FUNC(void) EOS_RTCAudio_UnregisterPlatformUser(EOS_HRTCAudio Handle,
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_UpdateParticipantVolume(EOS_HRTCAudio Handle, const EOS_RTCAudio_UpdateParticipantVolumeOptions* Options, void* ClientData, const EOS_RTCAudio_OnUpdateParticipantVolumeCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_UpdateParticipantVolume", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1841,6 +2270,7 @@ EOS_DECLARE_FUNC(void) EOS_RTCAudio_UpdateParticipantVolume(EOS_HRTCAudio Handle
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_UpdateReceiving(EOS_HRTCAudio Handle, const EOS_RTCAudio_UpdateReceivingOptions* Options, void* ClientData, const EOS_RTCAudio_OnUpdateReceivingCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_UpdateReceiving", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1850,6 +2280,7 @@ EOS_DECLARE_FUNC(void) EOS_RTCAudio_UpdateReceiving(EOS_HRTCAudio Handle, const 
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_UpdateReceivingVolume(EOS_HRTCAudio Handle, const EOS_RTCAudio_UpdateReceivingVolumeOptions* Options, void* ClientData, const EOS_RTCAudio_OnUpdateReceivingVolumeCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_UpdateReceivingVolume", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1859,6 +2290,7 @@ EOS_DECLARE_FUNC(void) EOS_RTCAudio_UpdateReceivingVolume(EOS_HRTCAudio Handle, 
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_UpdateSending(EOS_HRTCAudio Handle, const EOS_RTCAudio_UpdateSendingOptions* Options, void* ClientData, const EOS_RTCAudio_OnUpdateSendingCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_UpdateSending", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1868,6 +2300,7 @@ EOS_DECLARE_FUNC(void) EOS_RTCAudio_UpdateSending(EOS_HRTCAudio Handle, const EO
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_UpdateSendingVolume(EOS_HRTCAudio Handle, const EOS_RTCAudio_UpdateSendingVolumeOptions* Options, void* ClientData, const EOS_RTCAudio_OnUpdateSendingVolumeCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_UpdateSendingVolume", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1879,50 +2312,63 @@ EOS_DECLARE_FUNC(void) EOS_RTCAudio_UpdateSendingVolume(EOS_HRTCAudio Handle, co
 // --- eos_rtc_audio_types.h ---
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_InputDeviceInformation_Release(EOS_RTCAudio_InputDeviceInformation* DeviceInformation) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_InputDeviceInformation_Release", 0, eosr::call_mode::sync);
     (void)DeviceInformation;
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCAudio_OutputDeviceInformation_Release(EOS_RTCAudio_OutputDeviceInformation* DeviceInformation) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCAudio_OutputDeviceInformation_Release", 0, eosr::call_mode::sync);
     (void)DeviceInformation;
 }
 
 // --- eos_rtc_data.h ---
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCData_AddNotifyDataReceived(EOS_HRTCData Handle, const EOS_RTCData_AddNotifyDataReceivedOptions* Options, void* ClientData, const EOS_RTCData_OnDataReceivedCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCData_AddNotifyDataReceived", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCData_DataReceivedCallbackInfo), "RTCDataReceived");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_RTCData_AddNotifyParticipantUpdated(EOS_HRTCData Handle, const EOS_RTCData_AddNotifyParticipantUpdatedOptions* Options, void* ClientData, const EOS_RTCData_OnParticipantUpdatedCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCData_AddNotifyParticipantUpdated", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionDelegate;
-    return eosr::stub_add_notification(ClientData,
+    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionDelegate), sizeof(EOS_RTCData_ParticipantUpdatedCallbackInfo), "RTCDataParticipantUpdated");
+    eosr_trace.returns(eosr::stub_notification_return(eosr_id));
+    return eosr_id;
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCData_RemoveNotifyDataReceived(EOS_HRTCData Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCData_RemoveNotifyDataReceived", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCData_RemoveNotifyParticipantUpdated(EOS_HRTCData Handle, EOS_NotificationId NotificationId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCData_RemoveNotifyParticipantUpdated", 0, eosr::call_mode::sync);
     (void)Handle;
     eosr::stub_remove_notification(NotificationId);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_RTCData_SendData(EOS_HRTCData Handle, const EOS_RTCData_SendDataOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCData_SendData", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCData_UpdateReceiving(EOS_HRTCData Handle, const EOS_RTCData_UpdateReceivingOptions* Options, void* ClientData, const EOS_RTCData_OnUpdateReceivingCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCData_UpdateReceiving", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1932,6 +2378,7 @@ EOS_DECLARE_FUNC(void) EOS_RTCData_UpdateReceiving(EOS_HRTCData Handle, const EO
 }
 
 EOS_DECLARE_FUNC(void) EOS_RTCData_UpdateSending(EOS_HRTCData Handle, const EOS_RTCData_UpdateSendingOptions* Options, void* ClientData, const EOS_RTCData_OnUpdateSendingCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_RTCData_UpdateSending", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1943,14 +2390,17 @@ EOS_DECLARE_FUNC(void) EOS_RTCData_UpdateSending(EOS_HRTCData Handle, const EOS_
 // --- eos_sanctions.h ---
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Sanctions_CopyPlayerSanctionByIndex(EOS_HSanctions Handle, const EOS_Sanctions_CopyPlayerSanctionByIndexOptions* Options, EOS_Sanctions_PlayerSanction ** OutSanction) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Sanctions_CopyPlayerSanctionByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutSanction;
     if (OutSanction != NULL) { *OutSanction = static_cast<EOS_Sanctions_PlayerSanction *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Sanctions_CreatePlayerSanctionAppeal(EOS_HSanctions Handle, const EOS_Sanctions_CreatePlayerSanctionAppealOptions* Options, void* ClientData, const EOS_Sanctions_CreatePlayerSanctionAppealCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Sanctions_CreatePlayerSanctionAppeal", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1960,12 +2410,15 @@ EOS_DECLARE_FUNC(void) EOS_Sanctions_CreatePlayerSanctionAppeal(EOS_HSanctions H
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Sanctions_GetPlayerSanctionCount(EOS_HSanctions Handle, const EOS_Sanctions_GetPlayerSanctionCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Sanctions_GetPlayerSanctionCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Sanctions_QueryActivePlayerSanctions(EOS_HSanctions Handle, const EOS_Sanctions_QueryActivePlayerSanctionsOptions* Options, void* ClientData, const EOS_Sanctions_OnQueryActivePlayerSanctionsCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Sanctions_QueryActivePlayerSanctions", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -1977,34 +2430,42 @@ EOS_DECLARE_FUNC(void) EOS_Sanctions_QueryActivePlayerSanctions(EOS_HSanctions H
 // --- eos_sanctions_types.h ---
 
 EOS_DECLARE_FUNC(void) EOS_Sanctions_PlayerSanction_Release(EOS_Sanctions_PlayerSanction* Sanction) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Sanctions_PlayerSanction_Release", 0, eosr::call_mode::sync);
     (void)Sanction;
 }
 
 // --- eos_stats.h ---
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Stats_CopyStatByIndex(EOS_HStats Handle, const EOS_Stats_CopyStatByIndexOptions* Options, EOS_Stats_Stat ** OutStat) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Stats_CopyStatByIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutStat;
     if (OutStat != NULL) { *OutStat = static_cast<EOS_Stats_Stat *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Stats_CopyStatByName(EOS_HStats Handle, const EOS_Stats_CopyStatByNameOptions* Options, EOS_Stats_Stat ** OutStat) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Stats_CopyStatByName", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutStat;
     if (OutStat != NULL) { *OutStat = static_cast<EOS_Stats_Stat *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Stats_GetStatsCount(EOS_HStats Handle, const EOS_Stats_GetStatCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Stats_GetStatsCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Stats_IngestStat(EOS_HStats Handle, const EOS_Stats_IngestStatOptions* Options, void* ClientData, const EOS_Stats_OnIngestStatCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Stats_IngestStat", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -2014,6 +2475,7 @@ EOS_DECLARE_FUNC(void) EOS_Stats_IngestStat(EOS_HStats Handle, const EOS_Stats_I
 }
 
 EOS_DECLARE_FUNC(void) EOS_Stats_QueryStats(EOS_HStats Handle, const EOS_Stats_QueryStatsOptions* Options, void* ClientData, const EOS_Stats_OnQueryStatsCompleteCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Stats_QueryStats", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -2025,63 +2487,79 @@ EOS_DECLARE_FUNC(void) EOS_Stats_QueryStats(EOS_HStats Handle, const EOS_Stats_Q
 // --- eos_stats_types.h ---
 
 EOS_DECLARE_FUNC(void) EOS_Stats_Stat_Release(EOS_Stats_Stat* Stat) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Stats_Stat_Release", 0, eosr::call_mode::sync);
     (void)Stat;
 }
 
 // --- eos_titlestorage.h ---
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_TitleStorageFileTransferRequest_CancelRequest(EOS_HTitleStorageFileTransferRequest Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorageFileTransferRequest_CancelRequest", 0, eosr::call_mode::sync);
     (void)Handle;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_TitleStorageFileTransferRequest_GetFileRequestState(EOS_HTitleStorageFileTransferRequest Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorageFileTransferRequest_GetFileRequestState", 0, eosr::call_mode::sync);
     (void)Handle;
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_TitleStorageFileTransferRequest_GetFilename(EOS_HTitleStorageFileTransferRequest Handle, uint32_t FilenameStringBufferSizeBytes, char* OutStringBuffer, int32_t* OutStringLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorageFileTransferRequest_GetFilename", 0, eosr::call_mode::sync);
     (void)Handle;
     (void)FilenameStringBufferSizeBytes;
     (void)OutStringBuffer;
     (void)OutStringLength;
     if (OutStringLength != NULL) { *OutStringLength = static_cast<int32_t>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_TitleStorage_CopyFileMetadataAtIndex(EOS_HTitleStorage Handle, const EOS_TitleStorage_CopyFileMetadataAtIndexOptions* Options, EOS_TitleStorage_FileMetadata ** OutMetadata) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorage_CopyFileMetadataAtIndex", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutMetadata;
     if (OutMetadata != NULL) { *OutMetadata = static_cast<EOS_TitleStorage_FileMetadata *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_TitleStorage_CopyFileMetadataByFilename(EOS_HTitleStorage Handle, const EOS_TitleStorage_CopyFileMetadataByFilenameOptions* Options, EOS_TitleStorage_FileMetadata ** OutMetadata) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorage_CopyFileMetadataByFilename", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     (void)OutMetadata;
     if (OutMetadata != NULL) { *OutMetadata = static_cast<EOS_TitleStorage_FileMetadata *>(0); }
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_TitleStorage_DeleteCache(EOS_HTitleStorage Handle, const EOS_TitleStorage_DeleteCacheOptions* Options, void* ClientData, const EOS_TitleStorage_OnDeleteCacheCompleteCallback CompletionCallback) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorage_DeleteCache", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionCallback;
     eosr::stub_complete(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionCallback), sizeof(EOS_TitleStorage_DeleteCacheCallbackInfo));
+    eosr_trace.returns(eosr::stub_not_implemented_return());
     return EOS_EResult::EOS_NotImplemented;
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_TitleStorage_GetFileMetadataCount(EOS_HTitleStorage Handle, const EOS_TitleStorage_GetFileMetadataCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorage_GetFileMetadataCount", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
+    eosr_trace.returns(eosr::return_count(0));
     return 0;
 }
 
 EOS_DECLARE_FUNC(void) EOS_TitleStorage_QueryFile(EOS_HTitleStorage Handle, const EOS_TitleStorage_QueryFileOptions* Options, void* ClientData, const EOS_TitleStorage_OnQueryFileCompleteCallback CompletionCallback) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorage_QueryFile", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -2091,6 +2569,7 @@ EOS_DECLARE_FUNC(void) EOS_TitleStorage_QueryFile(EOS_HTitleStorage Handle, cons
 }
 
 EOS_DECLARE_FUNC(void) EOS_TitleStorage_QueryFileList(EOS_HTitleStorage Handle, const EOS_TitleStorage_QueryFileListOptions* Options, void* ClientData, const EOS_TitleStorage_OnQueryFileListCompleteCallback CompletionCallback) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorage_QueryFileList", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
@@ -2100,21 +2579,25 @@ EOS_DECLARE_FUNC(void) EOS_TitleStorage_QueryFileList(EOS_HTitleStorage Handle, 
 }
 
 EOS_DECLARE_FUNC(EOS_HTitleStorageFileTransferRequest) EOS_TitleStorage_ReadFile(EOS_HTitleStorage Handle, const EOS_TitleStorage_ReadFileOptions* Options, void* ClientData, const EOS_TitleStorage_OnReadFileCompleteCallback CompletionCallback) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorage_ReadFile", (Options != NULL) ? Options->ApiVersion : 0, eosr::call_mode::async);
     (void)Handle;
     (void)Options;
     (void)ClientData;
     (void)CompletionCallback;
     eosr::stub_complete(ClientData,
         reinterpret_cast<eosr::completion_delegate>(CompletionCallback), sizeof(EOS_TitleStorage_ReadFileCallbackInfo));
+    eosr_trace.returns(eosr::return_null_handle());
     return NULL;
 }
 
 // --- eos_titlestorage_types.h ---
 
 EOS_DECLARE_FUNC(void) EOS_TitleStorageFileTransferRequest_Release(EOS_HTitleStorageFileTransferRequest TitleStorageFileTransferHandle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorageFileTransferRequest_Release", 0, eosr::call_mode::sync);
     (void)TitleStorageFileTransferHandle;
 }
 
 EOS_DECLARE_FUNC(void) EOS_TitleStorage_FileMetadata_Release(EOS_TitleStorage_FileMetadata* FileMetadata) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_TitleStorage_FileMetadata_Release", 0, eosr::call_mode::sync);
     (void)FileMetadata;
 }

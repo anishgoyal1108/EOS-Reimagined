@@ -138,10 +138,18 @@ def notification_event(name):
     return family + event[overlap:]
 
 
+def api_version_expression(params):
+    for p in params:
+        name = param_name(p)
+        type_name = param_type(p)
+        bare = type_name.replace("const", "").replace("*", "").strip()
+        if name and "*" in type_name and bare.endswith("Options"):
+            return "(%s != NULL) ? %s->ApiVersion : 0" % (name, name)
+    return "0"
+
+
 def stub_body(name, ret, params, delegate_info):
     """The honest answer for one unimplemented export."""
-    unused = "".join("    (void)%s;\n" % param_name(p) for p in params if param_name(p))
-
     # Find a completion/notification delegate parameter, and the CallbackInfo it expects.
     delegate, info = None, None
     for p in params:
@@ -150,6 +158,13 @@ def stub_body(name, ret, params, delegate_info):
             delegate, info = param_name(p), delegate_info[t]
             break
 
+    mode = "async" if delegate and info and ret != "EOS_NotificationId" else "sync"
+    traced = (
+        '    eosr::trace_scope eosr_trace(eosr::global_tracer(), "%s", %s, '
+        "eosr::call_mode::%s);\n" % (name, api_version_expression(params), mode)
+    )
+    unused = "".join("    (void)%s;\n" % param_name(p) for p in params if param_name(p))
+    begin = traced + unused
     initialize_outputs = output_initializers(params)
     complete = ""
     if delegate and info:
@@ -164,35 +179,51 @@ def stub_body(name, ret, params, delegate_info):
         if delegate and info:
             # A real id backed by a notification that never fires: the game can pair a Remove with it.
             return (
-                unused
-                + "    return eosr::stub_add_notification(ClientData,\n"
+                begin
+                + "    const EOS_NotificationId eosr_id = eosr::stub_add_notification(ClientData,\n"
                 "        reinterpret_cast<eosr::completion_delegate>(%s), sizeof(%s), \"%s\");\n"
+                "    eosr_trace.returns(eosr::stub_notification_return(eosr_id));\n"
+                "    return eosr_id;\n"
                 % (delegate, info, notification_event(name))
             )
-        return unused + "    return EOS_INVALID_NOTIFICATIONID;\n"
+        return (begin + "    eosr_trace.returns(eosr::return_null_notification_id());\n"
+                "    return EOS_INVALID_NOTIFICATIONID;\n")
 
     if ret == "void":
         if delegate and info:
-            return unused + initialize_outputs + complete
+            return begin + initialize_outputs + complete
         if "RemoveNotify" in name and params:
             last = param_name(params[-1])
             return (
-                "".join("    (void)%s;\n" % param_name(p) for p in params[:-1] if param_name(p))
+                traced
+                + "".join("    (void)%s;\n" % param_name(p) for p in params[:-1] if param_name(p))
                 + "    eosr::stub_remove_notification(%s);\n" % last
             )
-        return unused + initialize_outputs  # a _Release, or a setter with nothing behind it
+        return begin + initialize_outputs  # a _Release, or a setter with nothing behind it
     if ret == "EOS_EResult":
-        return unused + initialize_outputs + complete + "    return EOS_EResult::EOS_NotImplemented;\n"
+        return (begin + initialize_outputs + complete +
+                "    eosr_trace.returns(eosr::stub_not_implemented_return());\n"
+                "    return EOS_EResult::EOS_NotImplemented;\n")
     if ret == "EOS_Bool":
-        return unused + initialize_outputs + complete + "    return EOS_FALSE;\n"
+        return (begin + initialize_outputs + complete +
+                "    eosr_trace.returns(eosr::return_bool(false));\n"
+                "    return EOS_FALSE;\n")
     if ret == "const char*":
-        return unused + initialize_outputs + complete + '    return "";\n'
-    if ret in ("uint32_t", "int32_t", "uint64_t", "int64_t", "double", "float"):
-        return unused + initialize_outputs + complete + "    return 0;\n"
+        raise ValueError("no trace return shape for an empty string: %s" % name)
+    if ret in ("uint32_t", "int32_t", "uint64_t", "int64_t"):
+        return (begin + initialize_outputs + complete +
+                "    eosr_trace.returns(eosr::return_count(0));\n"
+                "    return 0;\n")
+    if ret in ("double", "float"):
+        raise ValueError("no trace return shape for a floating value: %s" % name)
     if ret.endswith("*") or ret.startswith("EOS_H"):
-        return unused + initialize_outputs + complete + "    return NULL;\n"
+        return (begin + initialize_outputs + complete +
+                "    eosr_trace.returns(eosr::return_null_handle());\n"
+                "    return NULL;\n")
     # An opaque id handle (EOS_ProductUserId / EOS_EpicAccountId / ...) is a pointer typedef.
-    return unused + initialize_outputs + complete + "    return NULL;\n"
+    return (begin + initialize_outputs + complete +
+            "    eosr_trace.returns(eosr::return_null_handle());\n"
+            "    return NULL;\n")
 
 
 def main():
@@ -231,7 +262,8 @@ def main():
     includes = sorted({h for h in by_header})
     for h in includes:
         lines.append('#include "%s"' % h)
-    lines += ["", '#include "core/stub_completion.h"', ""]
+    lines += ["", '#include "core/runtime.h"', '#include "core/stub_completion.h"',
+              '#include "core/tracer.h"', ""]
 
     for header in includes:
         lines.append("// --- %s ---" % header)

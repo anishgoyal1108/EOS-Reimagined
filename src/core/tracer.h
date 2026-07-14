@@ -168,6 +168,7 @@ enum class call_mode {
 // otherwise the return is recorded as void.
 class trace_scope {
 public:
+    trace_scope(tracer& trace, const char* fn, i32 api, call_mode mode);
     trace_scope(tracer& trace, const char* fn, i32 api, const std::vector<trace_field>& args,
                 call_mode mode);
     ~trace_scope();

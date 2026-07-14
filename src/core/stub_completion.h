@@ -29,6 +29,9 @@ EOS_NotificationId stub_add_notification(void* client_data, completion_delegate 
                                          std::size_t info_size, const char* event);
 void stub_remove_notification(EOS_NotificationId id);
 
+trace_return stub_not_implemented_return();
+trace_return stub_notification_return(EOS_NotificationId id);
+
 } // namespace eosr
 
 #endif

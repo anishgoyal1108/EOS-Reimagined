@@ -2,10 +2,12 @@
 
 #include <memory>
 
+#include "common/eos_names.h"
 #include "core/callback_manager.h"
 #include "core/i_run_callback.h"
 #include "core/platform.h"
 #include "core/runtime.h"
+#include "core/tracer.h"
 
 namespace eosr {
 
@@ -78,6 +80,27 @@ void stub_remove_notification(EOS_NotificationId id) {
     if (callbacks != 0) {
         callbacks->remove_notification(&owner(), id);
     }
+}
+
+trace_return stub_not_implemented_return() {
+    const EOS_EResult result = EOS_EResult::EOS_NotImplemented;
+    return return_result(static_cast<i32>(result), result_name(result));
+}
+
+trace_return stub_notification_return(EOS_NotificationId id) {
+    callback_manager* callbacks = engine();
+    if (callbacks == 0 || id == EOS_INVALID_NOTIFICATIONID) {
+        return return_null_notification_id();
+    }
+    frame_result* result = callbacks->find_notification(&owner(), id);
+    if (result == 0 || result->notification_token().empty()) {
+        return return_null_notification_id();
+    }
+    tracer& trace = global_tracer();
+    if (!trace.enabled()) {
+        return return_null_notification_id();
+    }
+    return return_notification_id(trace.label(label_kind::notif, result->notification_token()));
 }
 
 } // namespace eosr
