@@ -15,10 +15,12 @@
 #include "core/i_run_network.h"
 #include "core/settings.h"
 #include "interfaces/connect.h"
+#include "interfaces/friends.h"
 #include "interfaces/p2p.h"
 #include "interfaces/lobby.h"
 #include "interfaces/presence.h"
 #include "interfaces/sessions.h"
+#include "interfaces/userinfo.h"
 #include "net/message_router.h"
 #include "net/messages.h"
 #include "net/wire.h"
@@ -1726,5 +1728,154 @@ TEST_CASE("reliability picks the transport, and an unreliable packet really does
     bob.emu_deinit();
     alice_net.stop();
     bob_net.stop();
+    platform::net_shutdown();
+}
+
+// An end-to-end check that Friends and UserInfo are driven by the real mesh, not just synthetic
+// events: two instances discover each other over loopback, log in through Connect (which is what
+// carries each one's display name), and each must then see the other as a friend under the
+// key-derived Epic id, with the name resolvable -- and lose it again when the peer hangs up.
+namespace {
+
+struct social_node {
+    sdk_settings settings;
+    callback_manager cb;
+    message_router net;
+    sdk_connect connect;
+    sdk_friends friends;
+    sdk_userinfo userinfo;
+
+    social_node()
+        : connect(settings, cb, net), friends(settings, cb, net),
+          userinfo(settings, cb, net, connect) {}
+
+    void start(const char* product, const char* username, u16 port) {
+        EOS_Platform_Options options = {};
+        options.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+        options.ProductId = product;
+        settings.apply_platform_options(&options);
+        settings.set_username(username);
+        connect.emu_init();
+        friends.emu_init();
+        userinfo.emu_init();
+        REQUIRE(start_router(net, settings.profile(), settings.product_id(), port));
+
+        EOS_Connect_Credentials credentials = {};
+        credentials.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
+        credentials.Token = "device";
+        credentials.Type = EOS_EExternalCredentialType::EOS_ECT_DEVICEID_ACCESS_TOKEN;
+        EOS_Connect_LoginOptions login = {};
+        login.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
+        login.Credentials = &credentials;
+        connect.login(&login, 0, ignore_login);
+        cb.tick();
+    }
+    void stop() {
+        userinfo.emu_deinit();
+        friends.emu_deinit();
+        connect.emu_deinit();
+        net.stop();
+    }
+    EOS_EpicAccountId epic() {
+        return id_registry::instance().get_epic_account_id(settings.epic_account_id());
+    }
+    i32 friend_count() {
+        EOS_Friends_GetFriendsCountOptions count = {};
+        count.ApiVersion = EOS_FRIENDS_GETFRIENDSCOUNT_API_LATEST;
+        count.LocalUserId = epic();
+        return friends.get_friends_count(&count);
+    }
+};
+
+template <class predicate>
+void pump_social(social_node& a, social_node& b, predicate done, int max_ms = 8000) {
+    for (int elapsed = 0; elapsed < max_ms && !done(); elapsed += 10) {
+        a.net.cb_run_frame();
+        b.net.cb_run_frame();
+        a.cb.tick();
+        b.cb.tick();
+        if (!done()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+}
+
+int g_e2e_updates;
+EOS_EFriendsStatus g_e2e_update_cur;
+std::string g_e2e_update_target;
+void EOS_CALL on_e2e_friends_update(const EOS_Friends_OnFriendsUpdateInfo* info) {
+    g_e2e_updates++;
+    g_e2e_update_cur = info->CurrentStatus;
+    g_e2e_update_target = (info->TargetUserId != 0) ? info->TargetUserId->id_str : std::string();
+}
+
+} // namespace
+
+TEST_CASE("two instances become friends over the mesh with names and part on hangup") {
+    REQUIRE(platform::net_init());
+    g_e2e_updates = 0;
+    g_e2e_update_cur = EOS_EFriendsStatus::EOS_FS_NotFriends;
+    g_e2e_update_target.clear();
+
+    social_node alice;
+    social_node bob;
+    alice.start("social-game", "Alice", 45820);
+    bob.start("social-game", "Bob", 45820);
+    REQUIRE(alice.settings.epic_account_id() != bob.settings.epic_account_id());
+    const std::string bob_epic = bob.settings.epic_account_id();
+
+    EOS_Friends_AddNotifyFriendsUpdateOptions notify = {};
+    notify.ApiVersion = EOS_FRIENDS_ADDNOTIFYFRIENDSUPDATE_API_LATEST;
+    const EOS_NotificationId note =
+        alice.friends.add_notify_friends_update(&notify, 0, on_e2e_friends_update);
+    REQUIRE(note != EOS_INVALID_NOTIFICATIONID);
+
+    // Bob's name reaches Alice only after the Connect handshake that follows peer adoption, so wait
+    // on the name itself: it proves the whole chain -- discovery, mesh, roster exchange -- ran.
+    EOS_UserInfo_CopyUserInfoOptions copy = {};
+    copy.ApiVersion = EOS_USERINFO_COPYUSERINFO_API_LATEST;
+    copy.LocalUserId = alice.epic();
+    copy.TargetUserId = bob.epic();
+    bool name_seen = false;
+    pump_social(alice, bob, [&]() {
+        EOS_UserInfo* info = 0;
+        if (alice.userinfo.copy_user_info(&copy, &info) != EOS_EResult::EOS_Success || info == 0) {
+            return false;
+        }
+        name_seen = (info->DisplayName != 0) && std::string(info->DisplayName) == "Bob";
+        release_user_info(info);
+        return name_seen;
+    });
+    REQUIRE(name_seen);
+
+    // Bob is a friend, under the id his key derived, and the update fired naming him.
+    CHECK(alice.friend_count() == 1);
+    EOS_Friends_GetStatusOptions gs = {};
+    gs.ApiVersion = EOS_FRIENDS_GETSTATUS_API_LATEST;
+    gs.LocalUserId = alice.epic();
+    gs.TargetUserId = bob.epic();
+    CHECK(alice.friends.get_status(&gs) == EOS_EFriendsStatus::EOS_FS_Friends);
+    CHECK(g_e2e_updates >= 1);
+    CHECK(g_e2e_update_cur == EOS_EFriendsStatus::EOS_FS_Friends);
+    CHECK(g_e2e_update_target == bob_epic);
+
+    // Bob's process goes away. Alice must notice the hangup and drop him as a friend, firing the
+    // reverse transition -- not wait out the advertisement timeout.
+    bob.stop();
+    for (int i = 0; i < 400 && alice.friend_count() != 0; i++) {
+        alice.net.cb_run_frame();
+        alice.cb.tick();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    CHECK(alice.friend_count() == 0);
+    CHECK(alice.friends.get_status(&gs) == EOS_EFriendsStatus::EOS_FS_NotFriends);
+
+    // And his info is no longer resolvable.
+    EOS_UserInfo* gone = reinterpret_cast<EOS_UserInfo*>(1);
+    CHECK(alice.userinfo.copy_user_info(&copy, &gone) == EOS_EResult::EOS_NotFound);
+    CHECK((gone == 0));
+
+    alice.friends.remove_notify_friends_update(note);
+    alice.stop();
     platform::net_shutdown();
 }
