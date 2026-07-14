@@ -209,6 +209,12 @@ T traced_count(trace_scope& scope, T value) {
 }
 
 template <class T>
+T traced_flags(trace_scope& scope, T value) {
+    scope.returns(return_flags(static_cast<u64>(value)));
+    return value;
+}
+
+template <class T>
 T traced_enum(trace_scope& scope, T value, const char* name) {
     scope.returns(return_enum(name != 0 ? name : ""));
     return value;

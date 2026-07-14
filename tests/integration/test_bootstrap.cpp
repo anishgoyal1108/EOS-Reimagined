@@ -15,6 +15,7 @@
 #include "eos_achievements.h"
 #include "eos_stats.h"
 #include "eos_p2p.h"
+#include "eos_ui.h"
 #include "eos_integratedplatform.h"
 #include "eos_version.h"
 
@@ -979,6 +980,41 @@ TEST_CASE("the built SDK library exposes the complete social UI compatibility su
         CHECK_MESSAGE((lib.symbol(ui_symbols[i]) != nullptr),
                       (std::string("missing export: ") + ui_symbols[i]));
     }
+
+    RESOLVE(fn_initialize, EOS_Initialize);
+    RESOLVE(fn_shutdown, EOS_Shutdown);
+    RESOLVE(fn_create, EOS_Platform_Create);
+    RESOLVE(fn_release, EOS_Platform_Release);
+    RESOLVE(fn_get_ui, EOS_Platform_GetUIInterface);
+    RESOLVE(fn_set_key, EOS_UI_SetToggleFriendsKey);
+
+    EOS_InitializeOptions initialize = {};
+    initialize.ApiVersion = EOS_INITIALIZE_API_LATEST;
+    initialize.ProductName = "UIHandleTest";
+    initialize.ProductVersion = "1.0.0";
+    REQUIRE(fn_initialize(&initialize) == EOS_EResult::EOS_Success);
+
+    EOS_Platform_Options platform_options = {};
+    platform_options.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    platform_options.ProductId = "prod-ui";
+    platform_options.SandboxId = "sandbox-ui";
+    platform_options.DeploymentId = "deploy-ui";
+    platform_options.ClientCredentials.ClientId = "client";
+    platform_options.ClientCredentials.ClientSecret = "secret";
+    EOS_HPlatform platform = fn_create(&platform_options);
+    REQUIRE(platform != nullptr);
+    EOS_HUI ui = fn_get_ui(platform);
+    REQUIRE(ui != nullptr);
+
+    EOS_UI_SetToggleFriendsKeyOptions set_key = {};
+    set_key.ApiVersion = EOS_UI_SETTOGGLEFRIENDSKEY_API_LATEST;
+    set_key.KeyCombination = static_cast<EOS_UI_EKeyCombination>(
+        static_cast<int>(EOS_UI_EKeyCombination::EOS_UIK_Shift) |
+        static_cast<int>(EOS_UI_EKeyCombination::EOS_UIK_F4));
+    REQUIRE(fn_set_key(ui, &set_key) == EOS_EResult::EOS_Success);
+    fn_release(platform);
+    CHECK(fn_set_key(ui, &set_key) == EOS_EResult::EOS_InvalidParameters);
+    CHECK(fn_shutdown() == EOS_EResult::EOS_Success);
 }
 
 // The whole integrated-platform lifecycle as a game actually performs it: build a container before

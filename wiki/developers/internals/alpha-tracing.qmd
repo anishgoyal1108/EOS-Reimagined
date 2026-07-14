@@ -231,7 +231,8 @@ One JSON object per line. Every record shares an **envelope** and adds a **body*
 - **`return`** — `fn`, `corr`, and whichever of these the function's signature actually produces:
   - `result` `{ code, name }` for an `EOS_EResult` return;
   - `value` `{ type, v }` for a scalar/enum/handle/bool/count/notification-id return — e.g.
-    `{type:"bool", v:true}`, `{type:"count", v:5}`, `{type:"handle", v:"session#3"}`,
+    `{type:"bool", v:true}`, `{type:"count", v:5}`, `{type:"flags", v:131075}`,
+    `{type:"handle", v:"session#3"}`,
     `{type:"enum", v:"EOS_UNL_BottomRight"}`, `{type:"notification_id", v:"notif#2"}`. An
     absent handle or invalid notification id keeps its type and uses `v:null`;
   - `out` for allow-listed out-parameters (e.g. a `Copy*` writing `{ handle:"userinfo#4" }`, or an
@@ -257,7 +258,7 @@ body it does not belong to. A value is an integer / unsigned / flag; a **label**
 `reliable` or `EOS_UNL_BottomRight`). A credential, continuance token, raw account id, or payload
 cannot be represented at all: a raw 32-hex id fails the label check, arbitrary text fails the enum and
 label checks, and there is no string field to smuggle it through. Return values are built through typed
-factories (`return_bool`, `return_count`, `return_handle`, `return_null_handle`, `return_enum`,
+factories (`return_bool`, `return_count`, `return_flags`, `return_handle`, `return_null_handle`, `return_enum`,
 `return_notification_id`, `return_null_notification_id`) so the declared type and its value cannot
 contradict. Null is accepted only for handles and notification ids.
 
@@ -523,14 +524,15 @@ Designed against this contract but built after it:
    - **Also done:** all 282 generated compatibility exports use the same scope, including the five
      non-void async storage calls. Their loaded-library tests cover exact API versions, result and
      null-handle returns, callback correlation, and notification-label continuity.
-   - **Also done:** 186 handwritten bootstrap, common, logging, Platform, Connect, Auth, P2P,
-     Presence, IntegratedPlatform, Friends, and UserInfo exports.
+   - **Also done:** 213 handwritten bootstrap, common, logging, Platform, Connect, Auth, P2P,
+     Presence, IntegratedPlatform, Friends, UserInfo, and UI exports.
      The loaded-library test covers real and rejected calls, typed returns, async correlation, and a
      notification id shared with its register/fire/remove records. P2P packet calls expose only
      labelled endpoints, socket, channel, reliability, and length; payload bytes never enter the
      tracer.
      The dormant `JoinGameAccepted` companion hook is observable as a real registration without a
      fabricated delivery.
-   - **Still to do:** the remaining 170 handwritten interface exports using the same trampoline
-     pattern.
+     UI key/button bitmasks use the numeric `flags` return type rather than being mislabeled as counts.
+   - **Still to do:** the remaining 143 handwritten Sessions and Lobby exports using the same
+     trampoline pattern.
 6. The two-process C-ABI probe as the first full consumer.

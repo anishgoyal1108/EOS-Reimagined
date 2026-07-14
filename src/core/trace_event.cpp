@@ -250,7 +250,7 @@ bool return_value_ok(const trace_return& value) {
     const std::string& t = value.value_type;
     const trace_value::kind k = value.value.type;
     if (t == "bool") return k == trace_value::v_flag;
-    if (t == "count" || t == "length") return k == trace_value::v_uint;
+    if (t == "count" || t == "flags" || t == "length") return k == trace_value::v_uint;
     if (t == "handle" || t == "notification_id") return k == trace_value::v_label;
     if (t == "enum") return k == trace_value::v_enum;
     return false;
@@ -331,6 +331,13 @@ trace_return return_count(u64 value) {
     trace_return r;
     r.type = trace_return::r_value;
     r.value_type = "count";
+    r.value = tv_uint(value);
+    return r;
+}
+trace_return return_flags(u64 value) {
+    trace_return r;
+    r.type = trace_return::r_value;
+    r.value_type = "flags";
     r.value = tv_uint(value);
     return r;
 }

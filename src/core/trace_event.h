@@ -73,7 +73,7 @@ struct trace_return {
     enum kind { r_result, r_value, r_void };
     kind type = r_void;
     trace_result_code result;       // r_result
-    std::string value_type;         // r_value: bool / count / handle / enum / notification_id
+    std::string value_type;         // r_value: bool / count / flags / handle / enum / notification_id
     trace_value value;              // r_value
     bool value_is_null = false;     // r_value: an absent handle / notification id
     std::vector<trace_field> out;   // may be empty
@@ -83,6 +83,7 @@ trace_return return_result(i32 code, const std::string& name);
 trace_return return_void();
 trace_return return_bool(bool value);
 trace_return return_count(u64 value);
+trace_return return_flags(u64 value);
 trace_return return_length(u64 value);
 trace_return return_handle(const std::string& label);
 trace_return return_null_handle();

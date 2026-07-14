@@ -242,6 +242,15 @@ TEST_CASE("a documented EOS enum return is an enum, not void") {
                       "\"value\":{\"type\":\"enum\",\"v\":\"EOS_UNL_BottomRight\"}}");
 }
 
+TEST_CASE("a bitmask return remains numeric without being mislabeled as a count") {
+    const trace_return value = return_flags(0x20003);
+    const std::string line =
+        serialize_return(make_envelope(), "EOS_UI_GetToggleFriendsKey", "", value);
+    CHECK(line == prefix +
+                      "\"kind\":\"return\",\"fn\":\"EOS_UI_GetToggleFriendsKey\","
+                      "\"value\":{\"type\":\"flags\",\"v\":131075}}");
+}
+
 TEST_CASE("an absent handle is explicit null, not void") {
     const trace_return value = return_null_handle();
     const std::string line =
