@@ -33,6 +33,8 @@ Thumbs.db
 
 # Local tooling (not for distribution)
 .clangd
+__pycache__/
+*.pyc
 
 # AI coding assistants: their instruction files and caches are a local convenience and say
 # nothing about the library, so they stay out of the tree.
