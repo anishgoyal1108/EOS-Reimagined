@@ -40,7 +40,7 @@ enum class field_id {
     handle, local, target, puid, eaid, account, socket, lobby, session,
     cred_type, status, index, count, len,
     dropped_files, dropped_bytes, source, level,
-    config_field, action
+    config_field, action, port
 };
 
 struct trace_field {

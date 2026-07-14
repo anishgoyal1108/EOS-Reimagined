@@ -97,6 +97,8 @@ public:
     void record_return(const std::string& fn, const std::string& corr, const trace_return& value);
     void record_callback(const std::string& fn, const std::string& corr,
                         const trace_result_code& result, const std::vector<trace_field>& payload);
+    void record_net(const std::string& event, const std::vector<trace_field>& fields,
+                    bool failure = false);
 
     // trace_meta_source: the envelope for the sink's own run_start / rotate / shutdown records, sharing
     // this run's sequence counter and clock with everything else.

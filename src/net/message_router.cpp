@@ -1,5 +1,11 @@
 #include "net/message_router.h"
 
+#include "core/label_registry.h"
+#include "core/peer_fp.h"
+#include "core/runtime.h"
+#include "core/trace_event.h"
+#include "core/tracer.h"
+
 #include <cstring>
 
 #include "common/byte_buffer.h"
@@ -9,6 +15,41 @@
 #include "platform/net_iface.h"
 
 namespace eosr {
+
+namespace {
+
+void net_record(const std::string& event, const std::vector<trace_field>& fields,
+                bool failure = false) {
+    global_tracer().record_net(event, fields, failure);
+}
+
+trace_field peer_field(const std::string& peer_id) {
+    return make_field(field_id::peer,
+                      tv_label(global_tracer().label(label_kind::puid, peer_id)));
+}
+
+trace_field peer_fp_field(const std::string& peer_id) {
+    return make_field(field_id::peer_fp, tv_fingerprint(peer_fingerprint(peer_id)));
+}
+
+void net_reason(const std::string& event, const std::string& peer_id, const char* reason,
+                bool proved, bool failure = false) {
+    tracer& trace = global_tracer();
+    if (!trace.enabled()) {
+        return;
+    }
+    std::vector<trace_field> fields;
+    if (!peer_id.empty()) {
+        fields.push_back(peer_field(peer_id));
+        if (proved) {
+            fields.push_back(peer_fp_field(peer_id));
+        }
+    }
+    fields.push_back(make_field(field_id::reason, tv_enum(reason)));
+    net_record(event, fields, failure);
+}
+
+} // namespace
 
 using namespace platform;
 
@@ -207,10 +248,22 @@ bool message_router::start() {
     // Without a key there is nothing to prove and nothing a peer could verify, so there is no mesh
     // to be had. Better to say so than to run a network nobody can trust.
     if (!have_profile_) {
+        net_reason("listen", std::string(), "no_profile", false, true);
         log_error("net: no profile key, so no peer could be authenticated; the mesh stays down");
         return false;
     }
-    if (!open_discovery() || !open_mesh() || !open_self_pipe()) {
+    if (!open_discovery()) {
+        net_reason("listen", std::string(), "discovery_failed", false, true);
+        stop();
+        return false;
+    }
+    if (!open_mesh()) {
+        net_reason("listen", std::string(), "mesh_failed", false, true);
+        stop();
+        return false;
+    }
+    if (!open_self_pipe()) {
+        net_reason("listen", std::string(), "loopback_failed", false, true);
         stop();
         return false;
     }
@@ -218,6 +271,17 @@ bool message_router::start() {
     // Announce ourselves on the first tick rather than waiting out an interval.
     last_advertise_ = std::chrono::steady_clock::time_point();
     running_ = true;
+
+    if (global_tracer().enabled()) {
+        // Which discovery slot we took, out of the range we searched: two copies of one game on one
+        // machine must land on different ones, and a trace that shows them on the same one explains
+        // instantly why they never met.
+        std::vector<trace_field> fields;
+        fields.push_back(make_field(field_id::port, tv_uint(discovery_port_)));
+        fields.push_back(make_field(field_id::port_first, tv_uint(config_.discovery_port_first)));
+        fields.push_back(make_field(field_id::port_last, tv_uint(config_.discovery_port_last)));
+        net_record("listen", fields);
+    }
     return true;
 }
 
@@ -225,7 +289,10 @@ void message_router::stop() {
     // Every socket goes, including the connections still proving who they are and the ones we are
     // still dialing: leaving those open would let a stale frame arrive after a restart, and would
     // hold their descriptors for the life of the process.
-    peers_.clear();
+    const std::vector<std::string> connected = peer_ids();
+    for (std::size_t i = 0; i < connected.size(); i++) {
+        drop_peer(connected[i], false, "local_shutdown");
+    }
     handshaking_.clear();
     dialing_.clear();
     self_send_.close();
@@ -355,7 +422,7 @@ bool message_router::send(const net_envelope& msg) {
             !queue_and_flush(it->second, framed)) {
             // The connection is broken, or its counter is spent; either way it cannot carry another
             // frame. Drop it so the interfaces learn the peer left.
-            drop_peer(msg.dest_id, true);
+            drop_peer(msg.dest_id, true, "send_failed");
             return false;
         }
         return true;
@@ -375,7 +442,7 @@ bool message_router::send(const net_envelope& msg) {
         }
     }
     for (std::size_t i = 0; i < dead.size(); i++) {
-        drop_peer(dead[i], true);
+        drop_peer(dead[i], true, "send_failed");
     }
     return true;
 }
@@ -568,12 +635,14 @@ void message_router::accept_peers() {
         entry.remote = from;
         entry.started_at = std::chrono::steady_clock::now();
         handshaking_.push_back(std::move(entry));
+        net_reason("handshake", std::string(), "responder_started", false);
     }
 }
 
 void message_router::finish_dialing() {
     std::vector<std::string> done;
     std::vector<std::string> failed;
+    std::vector<const char*> failure_reasons;
     const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 
     std::map<std::string, dialing_peer>::iterator it = dialing_.begin();
@@ -586,12 +655,15 @@ void message_router::finish_dialing() {
             done.push_back(it->first);
         } else if (!ok && error != sock_error::would_block && error != sock_error::in_progress) {
             failed.push_back(it->first);
+            failure_reasons.push_back("dial_failed");
         } else if (now - it->second.started_at > dial_timeout) {
             failed.push_back(it->first);
+            failure_reasons.push_back("timeout");
         }
     }
 
     for (std::size_t i = 0; i < failed.size(); i++) {
+        net_reason("handshake", failed[i], failure_reasons[i], false, true);
         dialing_.erase(failed[i]); // the peer's next advertisement starts a fresh attempt
     }
     for (std::size_t i = 0; i < done.size(); i++) {
@@ -608,14 +680,17 @@ void message_router::finish_dialing() {
         shaking.expected_id = done[i];
         shaking.remote = address;
         shaking.started_at = now;
+        net_reason("handshake", done[i], "initiator_started", false);
 
         std::vector<u8> opening;
         if (!shaking.channel->open(opening)) {
+            net_reason("handshake", done[i], "random_failed", false, true);
             continue; // no secure randomness; we must not proceed with a guessable ephemeral
         }
         const std::vector<u8> framed = frame_message(opening);
         shaking.outbox.insert(shaking.outbox.end(), framed.begin(), framed.end());
         if (!flush_outbox(shaking.connection, shaking.outbox)) {
+            net_reason("handshake", done[i], "send_failed", false, true);
             continue; // it died between connecting and being spoken to
         }
         handshaking_.push_back(std::move(shaking));
@@ -628,6 +703,7 @@ void message_router::drain_handshaking() {
         handshaking_peer& entry = handshaking_[i];
 
         bool failed = !flush_outbox(entry.connection, entry.outbox);
+        const char* failure_reason = failed ? "send_failed" : 0;
         const stream_health health =
             failed ? stream_closed : read_stream(entry.connection, entry.buffer);
 
@@ -640,6 +716,7 @@ void message_router::drain_handshaking() {
             const frame_state state = take_frame(entry.buffer, message);
             if (state == frame_refused) {
                 failed = true;
+                failure_reason = "frame_too_large";
                 break;
             }
             if (state == frame_none) {
@@ -650,6 +727,7 @@ void message_router::drain_handshaking() {
                 entry.channel->read_handshake(message.data(), message.size(), reply);
             if (result == peer_channel::step_failed) {
                 failed = true;
+                failure_reason = "authentication_failed";
                 break;
             }
             if (!reply.empty()) {
@@ -657,6 +735,7 @@ void message_router::drain_handshaking() {
                 entry.outbox.insert(entry.outbox.end(), framed.begin(), framed.end());
                 if (!flush_outbox(entry.connection, entry.outbox)) {
                     failed = true;
+                    failure_reason = "send_failed";
                     break;
                 }
             }
@@ -672,6 +751,7 @@ void message_router::drain_handshaking() {
             entry.expected_id != proved) {
             log_warn("net: the peer that answered is not the one that was advertised");
             failed = true;
+            failure_reason = "identity_mismatch";
         }
 
         // A peer that hung up is gone, and a valid proof arriving in the same read does not bring it
@@ -680,6 +760,8 @@ void message_router::drain_handshaking() {
         // again on the very next tick when the dead stream reads closed. So the EOF decides,
         // whether or not the handshake finished first.
         if (failed || health == stream_closed) {
+            net_reason("handshake", entry.expected_id,
+                       failure_reason != 0 ? failure_reason : "stream_closed", false, true);
             handshaking_.erase(handshaking_.begin() + i);
             continue;
         }
@@ -696,6 +778,7 @@ void message_router::drain_handshaking() {
         const std::vector<u8> leftover = entry.buffer;
         const std::vector<u8> unsent = entry.outbox;
         handshaking_.erase(handshaking_.begin() + i);
+        net_reason("handshake", proved, "complete", true);
         adopt_peer(proved, std::move(connection), std::move(channel), remote, leftover, unsent);
     }
 }
@@ -704,6 +787,7 @@ bool message_router::adopt_peer(const std::string& id, socket connection,
                                 std::unique_ptr<peer_channel> channel, const endpoint& remote,
                                 const std::vector<u8>& leftover, const std::vector<u8>& unsent) {
     if (id.empty() || id == product_user_id_ || !channel) {
+        net_reason("handshake", id, "invalid_identity", !id.empty(), true);
         return false;
     }
     if (peers_.find(id) != peers_.end()) {
@@ -712,6 +796,7 @@ bool message_router::adopt_peer(const std::string& id, socket connection,
         // session, or a reconnect race would tear down a working one. If the existing connection is
         // actually dead, it is dropped when its stream next reads closed, and the peer's next
         // advertisement dials a clean one. The refused socket closes here.
+        net_reason("handshake", id, "duplicate_peer", true, true);
         return false;
     }
     peer& entry = peers_[id];
@@ -728,6 +813,16 @@ bool message_router::adopt_peer(const std::string& id, socket connection,
     // over the sealed mesh, which it does as soon as it hears from us.
     entry.datagram_addr = endpoint(remote.ip, 0);
     entry.last_seen = std::chrono::steady_clock::now();
+
+    if (global_tracer().enabled()) {
+        // The id is recomputed from the key the handshake proved, so this one is real -- and it is the
+        // first point at which a fingerprint means anything, which is what lets two traces be joined.
+        std::vector<trace_field> fields;
+        fields.push_back(peer_field(id));
+        fields.push_back(peer_fp_field(id));
+        net_record("adopt", fields);
+    }
+
     announce_to(id);
     dispatch_peer_event(message_type::peer_connected, id);
     return true;
@@ -786,14 +881,23 @@ void message_router::handle_advertise(const net_envelope& msg, const endpoint& f
         return; // already on our way there
     }
 
+    if (global_tracer().enabled()) {
+        std::vector<trace_field> fields;
+        fields.push_back(peer_field(infos.product_user_id));
+        fields.push_back(make_field(field_id::port, tv_uint(infos.tcp_port)));
+        net_record("discover", fields);
+    }
+
     socket connection;
     if (!connection.open_tcp()) {
+        net_reason("handshake", infos.product_user_id, "dial_failed", false, true);
         return;
     }
     // Non-blocking before we dial, so a peer whose advertised port is stale or filtered cannot
     // stall the game inside connect() for however long the OS takes to give up. The connect is
     // finished on a later tick instead.
     if (!connection.set_nonblocking(true)) {
+        net_reason("handshake", infos.product_user_id, "dial_failed", false, true);
         return;
     }
 
@@ -801,16 +905,28 @@ void message_router::handle_advertise(const net_envelope& msg, const endpoint& f
     dial.address = endpoint(from.ip, infos.tcp_port);
     dial.started_at = std::chrono::steady_clock::now();
     dial.connection = std::move(connection);
-    dial.connection.connect(dial.address);
+    if (!dial.connection.connect(dial.address)) {
+        net_reason("handshake", infos.product_user_id, "dial_failed", false, true);
+        return;
+    }
     dialing_[infos.product_user_id] = std::move(dial);
 }
 
-void message_router::drop_peer(const std::string& id, bool notify) {
+void message_router::drop_peer(const std::string& id, bool notify, const char* reason) {
     std::map<std::string, peer>::iterator it = peers_.find(id);
     if (it == peers_.end()) {
         return;
     }
     peers_.erase(it);
+
+    if (global_tracer().enabled()) {
+        std::vector<trace_field> fields;
+        fields.push_back(peer_field(id));
+        fields.push_back(peer_fp_field(id));
+        fields.push_back(make_field(field_id::reason, tv_enum(reason)));
+        net_record("drop", fields, std::strcmp(reason, "local_shutdown") != 0);
+    }
+
     if (notify) {
         dispatch_peer_event(message_type::peer_disconnected, id);
     }
@@ -826,7 +942,7 @@ void message_router::expire_peers() {
         }
     }
     for (std::size_t i = 0; i < dead.size(); i++) {
-        drop_peer(dead[i], true);
+        drop_peer(dead[i], true, "timeout");
     }
 }
 
@@ -835,6 +951,7 @@ void message_router::expire_handshaking() {
     std::size_t i = 0;
     while (i < handshaking_.size()) {
         if (now - handshaking_[i].started_at > handshake_timeout) {
+            net_reason("handshake", handshaking_[i].expected_id, "timeout", false, true);
             handshaking_.erase(handshaking_.begin() + i);
             continue;
         }
@@ -850,6 +967,7 @@ void message_router::drain_peers() {
     const std::vector<std::string> ids = peer_ids();
     std::vector<net_envelope> messages;
     std::vector<std::string> dead;
+    std::vector<const char*> drop_reasons;
     for (std::size_t i = 0; i < ids.size(); i++) {
         std::map<std::string, peer>::iterator it = peers_.find(ids[i]);
         if (it == peers_.end()) {
@@ -864,6 +982,7 @@ void message_router::drain_peers() {
             const frame_state state = take_frame(entry.buffer, sealed);
             if (state == frame_refused) {
                 broken = true;
+                drop_reasons.push_back("frame_too_large");
                 break;
             }
             if (state == frame_none) {
@@ -878,6 +997,7 @@ void message_router::drain_peers() {
                 // and there is no way to resynchronize a counter -- the connection ends here.
                 log_warn("net: a frame from a peer failed to authenticate; dropping the connection");
                 broken = true;
+                drop_reasons.push_back("authentication_failed");
                 break;
             }
             byte_reader reader(plain.data(), plain.size());
@@ -901,12 +1021,18 @@ void message_router::drain_peers() {
             }
         }
 
-        if (broken || health == stream_closed || !flush_outbox(entry.connection, entry.outbox)) {
+        if (broken) {
             dead.push_back(ids[i]);
+        } else if (health == stream_closed) {
+            dead.push_back(ids[i]);
+            drop_reasons.push_back("stream_closed");
+        } else if (!flush_outbox(entry.connection, entry.outbox)) {
+            dead.push_back(ids[i]);
+            drop_reasons.push_back("send_failed");
         }
     }
     for (std::size_t i = 0; i < dead.size(); i++) {
-        drop_peer(dead[i], true);
+        drop_peer(dead[i], true, drop_reasons[i]);
     }
 
     // The self-pipe is our own trusted loopback; its frames are in the clear, already carry our id,

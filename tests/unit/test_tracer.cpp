@@ -5,6 +5,7 @@
 
 #include "common/log.h"
 #include "core/config.h"
+#include "core/peer_fp.h"
 #include "core/tracer.h"
 #include "platform/paths.h"
 
@@ -605,5 +606,83 @@ TEST_CASE("a failing return is kept even at the errors level") {
     const std::string trace = slurp(run + "/trace.jsonl");
     CHECK(trace.find("EOS_Connect_GetLoginStatus") == std::string::npos);
     CHECK(trace.find("\"EOS_InvalidParameters\"") != std::string::npos);
+    t.stop();
+}
+
+// --- Network lifecycle: whether two instances ever found each other. ---
+
+TEST_CASE("net records carry opaque peers, and a drop survives the errors level") {
+    tracer_fixture fx("net");
+    const std::string run = fx.make_run("run-net");
+    const std::string raw_peer = "00112233445566778899aabbccddeeff";
+
+    tracer t;
+    t.start(make_config(trace_level::errors, fx.sub("traces"), run)); // errors only
+
+    std::vector<trace_field> found;
+    found.push_back(make_field(field_id::peer, tv_label(t.label(label_kind::puid, raw_peer))));
+    found.push_back(make_field(field_id::port, tv_uint(55790)));
+    t.record_net("discover", found); // a lifecycle record: dropped at errors
+
+    std::vector<trace_field> lost;
+    lost.push_back(make_field(field_id::peer, tv_label(t.label(label_kind::puid, raw_peer))));
+    lost.push_back(make_field(field_id::peer_fp, tv_fingerprint(peer_fingerprint(raw_peer))));
+    lost.push_back(make_field(field_id::reason, tv_enum("timeout")));
+    t.record_net("drop", lost, true); // a failure: kept at every level above off
+    t.flush();
+
+    const std::string trace = slurp(run + "/trace.jsonl");
+    CHECK(trace.find("\"event\":\"discover\"") == std::string::npos);
+    CHECK(trace.find("\"kind\":\"net\",\"event\":\"drop\"") != std::string::npos);
+    CHECK(trace.find("\"peer\":\"puid#0\"") != std::string::npos);
+    CHECK(trace.find("\"peer_fp\":\"ebf65ed621ba531b\"") != std::string::npos); // the golden vector
+    CHECK(trace.find("\"reason\":\"timeout\"") != std::string::npos);
+    CHECK(trace.find(raw_peer) == std::string::npos); // the raw id never reaches the file
+    t.stop();
+}
+
+TEST_CASE("the mesh lifecycle reads as listen, discover, handshake, adopt, drop") {
+    tracer_fixture fx("net-lifecycle");
+    const std::string run = fx.make_run("run-net-life");
+    const std::string peer = "0123456789abcdef0123456789abcdef";
+
+    tracer t;
+    t.start(make_config(trace_level::lifecycle, fx.sub("traces"), run));
+
+    std::vector<trace_field> bound;
+    bound.push_back(make_field(field_id::port, tv_uint(55789)));
+    bound.push_back(make_field(field_id::port_first, tv_uint(55789)));
+    bound.push_back(make_field(field_id::port_last, tv_uint(55798)));
+    t.record_net("listen", bound);
+
+    std::vector<trace_field> one;
+    one.push_back(make_field(field_id::peer, tv_label(t.label(label_kind::puid, peer))));
+    t.record_net("discover", one);
+    one.push_back(make_field(field_id::peer_fp, tv_fingerprint(peer_fingerprint(peer))));
+    one.push_back(make_field(field_id::reason, tv_enum("complete")));
+    t.record_net("handshake", one);
+    one.pop_back();
+    t.record_net("adopt", one);
+    one.push_back(make_field(field_id::reason, tv_enum("local_shutdown")));
+    t.record_net("drop", one);
+    t.flush();
+
+    const std::string trace = slurp(run + "/trace.jsonl");
+    const std::size_t at_listen = trace.find("\"event\":\"listen\"");
+    const std::size_t at_discover = trace.find("\"event\":\"discover\"");
+    const std::size_t at_handshake = trace.find("\"event\":\"handshake\"");
+    const std::size_t at_adopt = trace.find("\"event\":\"adopt\"");
+    const std::size_t at_drop = trace.find("\"event\":\"drop\"");
+    CHECK(at_listen != std::string::npos);
+    CHECK(at_listen < at_discover);
+    CHECK(at_discover < at_handshake);
+    CHECK(at_handshake < at_adopt);
+    CHECK(at_adopt < at_drop);
+    // Which discovery slot we took: two copies on one machine landing on the same one is the whole
+    // explanation for why they never met.
+    CHECK(trace.find("\"port\":55789,\"port_first\":55789,\"port_last\":55798") != std::string::npos);
+    // A claimed id has a label; only a key-proved id has a fingerprint.
+    CHECK(trace.find("\"event\":\"discover\",\"peer\":\"puid#0\"}") != std::string::npos);
+    CHECK(trace.find("\"event\":\"adopt\",\"peer\":\"puid#0\",\"peer_fp\":") != std::string::npos);
     t.stop();
 }

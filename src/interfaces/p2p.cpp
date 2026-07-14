@@ -1,5 +1,11 @@
 #include "interfaces/p2p.h"
 
+#include "common/eos_names.h"
+#include "core/label_registry.h"
+#include "core/runtime.h"
+#include "core/trace_event.h"
+#include "core/tracer.h"
+
 #include <cstring>
 #include <memory>
 
@@ -191,6 +197,33 @@ void sdk_p2p::queue_event(pending_event::kind type, const std::string& peer,
     event.socket = socket;
     event.reason = reason;
     pending_events_.push_back(event);
+
+    tracer& trace = global_tracer();
+    if (!trace.enabled()) {
+        return;
+    }
+    const char* net_event = 0;
+    bool is_close = false;
+    if (type == pending_event::established) {
+        net_event = "p2p_open";
+    } else if (type == pending_event::closed || type == pending_event::interrupted) {
+        net_event = "p2p_close";
+        is_close = true;
+    }
+    if (net_event == 0) {
+        return;
+    }
+    std::vector<trace_field> fields;
+    fields.push_back(make_field(field_id::peer, tv_label(trace.label(label_kind::puid, peer))));
+    if (!socket.empty()) {
+        fields.push_back(
+            make_field(field_id::socket, tv_label(trace.label(label_kind::socket, socket))));
+    }
+    if (is_close) {
+        fields.push_back(
+            make_field(field_id::reason, tv_enum(connection_closed_reason_name(reason))));
+    }
+    trace.record_net(net_event, fields, type == pending_event::interrupted);
 }
 
 // An empty peer or socket means every one of them, so this is both "drop what this peer sent" and

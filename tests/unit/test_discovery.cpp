@@ -21,6 +21,10 @@
 #include "interfaces/presence.h"
 #include "interfaces/sessions.h"
 #include "interfaces/userinfo.h"
+#include "core/config.h"
+#include "core/peer_fp.h"
+#include "core/runtime.h"
+#include "core/tracer.h"
 #include "net/message_router.h"
 #include "net/messages.h"
 #include "net/wire.h"
@@ -1883,4 +1887,85 @@ TEST_CASE("two instances become friends over the mesh with names and part on han
     alice.friends.remove_notify_friends_update(note);
     alice.stop();
     platform::net_shutdown();
+}
+
+TEST_CASE("a real mesh writes its lifecycle into the trace") {
+    REQUIRE(platform::net_init());
+
+    const std::string dir = std::string(EOSR_TEST_PROFILE_DIR) + "/net-trace";
+    platform::make_directories(dir);
+    platform::remove_file(dir + "/trace.jsonl");
+    platform::remove_file(dir + "/runtime.json");
+
+    resolved_config config;
+    config.data_dir = dir;
+    config.run_dir = dir;            // runner mode: a known directory to read back
+    config.trace_dir = dir;
+    config.level = trace_level::lifecycle;
+    config.trace_max_bytes = 1048576;
+    config.trace_max_rotated_files = 2;
+    config.display_name = "Marlowe";
+
+    tracer& trace = global_tracer();
+    trace.stop();
+    trace.start(config);
+    CHECK(trace.enabled());
+    if (!trace.enabled()) {
+        platform::net_shutdown();
+        return;
+    }
+
+    bool meshed = false;
+    {
+        message_router alice;
+        message_router bob;
+        const bool alice_started = start_router(alice, alice_profile(), test_game, 45730);
+        const bool bob_started = start_router(bob, bob_profile(), test_game, 45730);
+        CHECK(alice_started);
+        CHECK(bob_started);
+        if (alice_started && bob_started) {
+            pump(alice, bob, [&]() {
+                return !alice.peer_ids().empty() && !bob.peer_ids().empty();
+            });
+            meshed = alice.peer_ids().size() == 1 && bob.peer_ids().size() == 1;
+            CHECK(meshed);
+        }
+        alice.stop();
+        bob.stop();
+    }
+    trace.stop();
+    platform::net_shutdown();
+
+    std::string text;
+    const platform::file_read read =
+        platform::read_file_capped(dir + "/trace.jsonl", 4 * 1024 * 1024, text);
+    CHECK(read == platform::file_read::ok);
+    if (read != platform::file_read::ok || !meshed) {
+        return;
+    }
+
+    // Both instances bound a discovery slot -- and a *different* one each, which is exactly what lets
+    // two copies on one machine find each other rather than mistake the other's advert for their own.
+    CHECK(text.find("\"event\":\"listen\"") != std::string::npos);
+    CHECK(text.find("\"port\":45730") != std::string::npos);
+    CHECK(text.find("\"port\":45731") != std::string::npos);
+
+    const std::size_t at_discover = text.find("\"event\":\"discover\"");
+    const std::size_t at_handshake = text.find("\"reason\":\"complete\"");
+    const std::size_t at_adopt = text.find("\"event\":\"adopt\"");
+    CHECK(at_discover != std::string::npos);
+    CHECK(at_handshake != std::string::npos);
+    CHECK(at_adopt != std::string::npos);
+    CHECK(at_discover < at_handshake);
+    CHECK(at_handshake < at_adopt);
+    CHECK(text.find("\"event\":\"drop\"") != std::string::npos);
+    CHECK(text.find("\"reason\":\"local_shutdown\"") != std::string::npos);
+
+    // An adopted peer carries the cross-process fingerprint, which is what joins two traces; and the
+    // raw product user id never appears in either.
+    CHECK(text.find("\"peer_fp\":\"" + peer_fingerprint(alice_id()) + "\"") !=
+          std::string::npos);
+    CHECK(text.find("\"peer_fp\":\"" + peer_fingerprint(bob_id()) + "\"") != std::string::npos);
+    CHECK(text.find(alice_id()) == std::string::npos);
+    CHECK(text.find(bob_id()) == std::string::npos);
 }

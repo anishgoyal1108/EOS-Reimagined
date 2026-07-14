@@ -115,6 +115,7 @@ bool field_info(field_id id, const char*& name, trace_value::kind& kind) {
         case field_id::level: name = "level"; kind = trace_value::v_enum; return true;
         case field_id::config_field: name = "field"; kind = trace_value::v_enum; return true;
         case field_id::action: name = "action"; kind = trace_value::v_enum; return true;
+        case field_id::port: name = "port"; kind = trace_value::v_uint; return true;
         case field_id::invalid:
         default:
             return false;
@@ -135,7 +136,8 @@ bool field_allowed(record_kind body, field_id id) {
         case rk_net:
             return id == field_id::peer || id == field_id::peer_fp || id == field_id::bytes ||
                    id == field_id::channel || id == field_id::reliability ||
-                   id == field_id::port_first || id == field_id::port_last || id == field_id::reason;
+                   id == field_id::port || id == field_id::port_first ||
+                   id == field_id::port_last || id == field_id::reason || id == field_id::socket;
         case rk_call:
             return id == field_id::cred_type || id == field_id::local || id == field_id::target ||
                    id == field_id::account || id == field_id::socket || id == field_id::channel ||

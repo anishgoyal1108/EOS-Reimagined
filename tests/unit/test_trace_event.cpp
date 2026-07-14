@@ -135,6 +135,18 @@ TEST_CASE("a net record carries a peer label, a fingerprint, and lengths, never 
                       "\"peer\":\"puid#2\",\"peer_fp\":\"ebf65ed621ba531b\",\"bytes\":128}");
 }
 
+TEST_CASE("a net record carries bounded endpoint and reason metadata") {
+    std::vector<trace_field> fields;
+    fields.push_back(f(field_id::port, tv_uint(55789)));
+    fields.push_back(f(field_id::socket, tv_label("socket#1")));
+    fields.push_back(f(field_id::reason, tv_enum("local_shutdown")));
+    const std::string line = serialize_net(make_envelope(), "drop", fields);
+    const std::string expected = prefix + "\"kind\":\"net\",\"event\":\"drop\"," +
+                                 "\"port\":55789,\"socket\":\"socket#1\"," +
+                                 "\"reason\":\"local_shutdown\"}";
+    CHECK(line == expected);
+}
+
 TEST_CASE("an absent instance label is emitted as null") {
     trace_envelope env = make_envelope();
     env.inst.clear();

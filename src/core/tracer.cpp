@@ -435,6 +435,15 @@ void tracer::record_callback(const std::string& fn, const std::string& corr,
     sink_.write(at, serialize_callback(next_envelope(), fn, corr, result, payload));
 }
 
+void tracer::record_net(const std::string& event, const std::vector<trace_field>& fields,
+                        bool failure) {
+    if (!enabled()) {
+        return;
+    }
+    const trace_level at = failure ? trace_level::errors : trace_level::lifecycle;
+    sink_.write(at, serialize_net(next_envelope(), event, fields));
+}
+
 void tracer::on_profile(const std::string& product_user_id) {
     if (!sink_.active()) {
         return;

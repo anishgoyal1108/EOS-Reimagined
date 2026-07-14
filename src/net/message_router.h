@@ -208,7 +208,8 @@ private:
     // Whether an inbound frame from a meshed peer is one we should deliver: not for a different
     // game, and not addressed to a peer other than us.
     bool accept_inbound(const net_envelope& msg) const;
-    void drop_peer(const std::string& id, bool notify);
+    // `reason` is the stable trace code for why the mesh lost this peer.
+    void drop_peer(const std::string& id, bool notify, const char* reason);
     void expire_peers();
     void expire_handshaking();
 

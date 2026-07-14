@@ -41,4 +41,23 @@ const char* credential_type_name(EOS_EExternalCredentialType type) {
     return "";
 }
 
+const char* connection_closed_reason_name(EOS_EConnectionClosedReason reason) {
+    switch (reason) {
+        case EOS_EConnectionClosedReason::EOS_CCR_ClosedByLocalUser: return "EOS_CCR_ClosedByLocalUser";
+        case EOS_EConnectionClosedReason::EOS_CCR_ClosedByPeer: return "EOS_CCR_ClosedByPeer";
+        case EOS_EConnectionClosedReason::EOS_CCR_ConnectionClosed: return "EOS_CCR_ConnectionClosed";
+        case EOS_EConnectionClosedReason::EOS_CCR_ConnectionFailed: return "EOS_CCR_ConnectionFailed";
+        case EOS_EConnectionClosedReason::EOS_CCR_ConnectionIgnored: return "EOS_CCR_ConnectionIgnored";
+        case EOS_EConnectionClosedReason::EOS_CCR_InvalidData: return "EOS_CCR_InvalidData";
+        case EOS_EConnectionClosedReason::EOS_CCR_InvalidMessage: return "EOS_CCR_InvalidMessage";
+        case EOS_EConnectionClosedReason::EOS_CCR_NegotiationFailed: return "EOS_CCR_NegotiationFailed";
+        case EOS_EConnectionClosedReason::EOS_CCR_TimedOut: return "EOS_CCR_TimedOut";
+        case EOS_EConnectionClosedReason::EOS_CCR_TooManyConnections: return "EOS_CCR_TooManyConnections";
+        case EOS_EConnectionClosedReason::EOS_CCR_UnexpectedError: return "EOS_CCR_UnexpectedError";
+        case EOS_EConnectionClosedReason::EOS_CCR_Unknown: return "EOS_CCR_Unknown";
+    }
+    // An out-of-range value cast into the enum: say Unknown rather than invent a cause.
+    return "EOS_CCR_Unknown";
+}
+
 } // namespace eosr
