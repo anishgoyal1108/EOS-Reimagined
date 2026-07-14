@@ -1,6 +1,7 @@
 #ifndef EOSR_COMMON_JSON_WRITER_H
 #define EOSR_COMMON_JSON_WRITER_H
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -15,7 +16,9 @@ namespace eosr {
 // Spec: docs/alpha-tracing.md §7.
 class json_writer {
 public:
-    json_writer();
+    // `max_bytes` caps the serialized output: once it would be exceeded the writer goes invalid and
+    // stops emitting, so a consumer can refuse to persist an over-long record. 0 means no cap.
+    explicit json_writer(std::size_t max_bytes = 0);
 
     void begin_object();
     void end_object();
@@ -41,10 +44,11 @@ public:
     // The serialized JSON built so far.
     const std::string& str() const { return out_; }
 
-    // Whether every call so far formed a well-formed, complete document: no mismatched close, no key
-    // outside an object, no value without a key, no dangling key, and every container closed. A
-    // misused writer stops emitting once invalid, so a consumer can check this before persisting.
-    bool ok() const { return valid_ && levels_.empty(); }
+    // Whether the calls so far formed exactly one complete, well-formed document: one root value,
+    // every container closed, no mismatched close, no key outside an object, no value without a key,
+    // no dangling key, and the output cap not exceeded. A fresh (untouched) writer is not a document,
+    // so this is false until a root value completes. A consumer checks it before persisting.
+    bool ok() const { return valid_ && root_done_ && levels_.empty() && !over_cap(); }
 
 private:
     // Prepare to emit a value: validate the position and emit the separator a value needs (a comma
@@ -59,10 +63,17 @@ private:
         bool first;
     };
 
+    // Whether the output cap has been reached (and the writer is therefore invalid).
+    bool over_cap() const;
+    // Mark the single root value complete when a top-level scalar was just written.
+    void mark_root_if_top();
+
     std::string out_;
     std::vector<level> levels_;
+    std::size_t max_bytes_;
     bool after_key_;
     bool valid_;
+    bool root_done_;
 };
 
 } // namespace eosr

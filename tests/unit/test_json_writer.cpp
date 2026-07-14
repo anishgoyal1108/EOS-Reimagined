@@ -116,6 +116,19 @@ TEST_CASE("a well-formed document reports ok") {
     CHECK(writer.ok());
 }
 
+TEST_CASE("an untouched writer is not a complete JSON document") {
+    json_writer writer;
+    CHECK_FALSE(writer.ok());
+}
+
+TEST_CASE("the output cap makes an over-long document not ok") {
+    json_writer writer(16); // a tiny ceiling
+    writer.begin_object();
+    writer.field_string("k", "a value long enough to exceed sixteen bytes");
+    writer.end_object();
+    CHECK_FALSE(writer.ok());
+}
+
 TEST_CASE("misuse leaves the writer not ok") {
     SUBCASE("a mismatched close") {
         json_writer writer;

@@ -209,12 +209,19 @@ One JSON object per line. Every record shares an **envelope** and adds a **body*
   peer's labelled id, its cross-process `peer_fp` on adopt/drop, byte lengths, and packet metadata — no
   payloads, keys, tokens, or raw ids.
 
-Body fields are not free-form. A field is emitted only if its key is on the allow-list of known field
-names (never a reserved envelope/body key like `seq`, `kind`, `event`, `fn`, or `result`), so a record
-always has one unambiguous set of schema fields; every string value is bounded (≤ 512 bytes) and every
-body's field count is bounded (≤ 32). Those caps put a hard ceiling on one record — comfortably under
-the 64 KiB sink minimum, which must hold a full record *and* the rotate record — so no single event can
-outgrow the sink.
+Body fields are not free-form, and they are typed rather than merely name-filtered. A field is one of
+a fixed set of schema field ids, each with exactly one required value kind, so it can never appear
+under an arbitrary key, shadow an envelope/body field like `seq`/`kind`/`event`/`fn`/`result`, or carry
+the wrong type. A value is one of: an integer / unsigned / flag; a **label** (`session#3`, `puid#2` —
+`<letter><word>#<digits>`); a 16-hex **fingerprint**; a short **enum** token; or explicitly-**sanitized
+diagnostic** text. There is no generic string, so a credential, a raw account id, or a payload cannot
+enter as free text: a raw 32-hex id fails the label check and is dropped, and only the deliberate,
+auditable diagnostic type carries free text (bounded to 200 bytes). A value that fails its check or a
+field whose id repeats is dropped; the diagnostic text and every fixed name (`fn`, `event`, `corr`,
+`id`, result name) are length-bounded; and the field count is capped (≤ 32). Those caps, plus a writer
+output ceiling below the 64 KiB sink minimum, put a hard bound on one record — and serialization
+returns the empty string rather than a partial or over-long line whenever the writer did not complete
+exactly one bounded, well-formed document.
 
 ### Correlation
 

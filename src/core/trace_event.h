@@ -8,35 +8,47 @@
 
 namespace eosr {
 
-// A scalar that may be traced: an int, unsigned, bool, or short string. There is deliberately no
-// pointer or byte-buffer form -- a payload or pointer cannot be traced at all -- and serialization is
-// the second line of defence: a field is emitted only if its key is on the allow-list (§4's known
-// field names), never a reserved envelope/body key, and every string is length-bounded and every body
-// field-count bounded, so an arbitrary token, an over-long value, or a key that would shadow the
-// schema cannot reach the file. See the caps in trace_event.cpp.
-// Spec: docs/alpha-tracing.md §5.
-struct trace_scalar {
-    enum kind { s_int, s_uint, s_bool, s_string };
-    kind type = s_int;
+// A semantic trace value. There is no generic string: text can enter a trace only as a validated
+// label, a 16-hex fingerprint, a short enum token, or explicitly-sanitized diagnostic text. So a
+// credential, a raw account id, or a payload cannot be passed as free text -- and a value that fails
+// its format check is marked invalid and dropped at serialization rather than emitted.
+// Spec: docs/alpha-tracing.md §4, §5.
+struct trace_value {
+    enum kind { v_int, v_uint, v_flag, v_label, v_fingerprint, v_enum, v_diag };
+    kind type = v_int;
     i64 int_value = 0;
     u64 uint_value = 0;
-    bool bool_value = false;
-    std::string string_value;
+    bool flag_value = false;
+    std::string text;      // label / fingerprint / enum / diag
+    bool valid = false;
 };
 
-trace_scalar scalar_int(i64 value);
-trace_scalar scalar_uint(u64 value);
-trace_scalar scalar_bool(bool value);
-trace_scalar scalar_string(const std::string& value);
+trace_value tv_int(i64 value);
+trace_value tv_uint(u64 value);
+trace_value tv_flag(bool value);
+trace_value tv_label(const std::string& value);        // <letter><word chars>#<digits>, e.g. session#3
+trace_value tv_fingerprint(const std::string& value);  // exactly 16 lowercase hex characters
+trace_value tv_enum(const std::string& value);         // a short [a-z0-9_.] token, e.g. reliable
+trace_value tv_diag(const std::string& value);         // explicitly-safe diagnostic text, bounded
 
-// A named scalar for an args / payload / fields list.
+// The schema field names a body may carry. Each has exactly one required value kind, so a field can
+// never appear with the wrong type, under an arbitrary key, or shadowing an envelope/body field.
+enum class field_id {
+    peer, peer_fp, bytes, channel, reliability, port_first, port_last, reason,
+    handle, local, target, puid, eaid, account, socket, lobby, session,
+    cred_type, status, index, count, len,
+    dropped_files, dropped_bytes, level, detail, message
+};
+
 struct trace_field {
-    std::string key;
-    trace_scalar value;
+    field_id id;
+    trace_value value;
 };
 
-// The envelope every record shares. `inst` empty is emitted as null; `tid` is a logical thread label
-// (e.g. "t#0"), never an OS id.
+// A body field in one call. The id fixes the JSON key and the required value kind.
+trace_field make_field(field_id id, const trace_value& value);
+
+// The envelope every record shares. `inst` empty is emitted as null; `tid` is a logical thread label.
 // Spec: docs/alpha-tracing.md §4.
 struct trace_envelope {
     u32 schema_version = 1;
@@ -53,20 +65,20 @@ struct trace_result_code {
     std::string name;
 };
 
-// What a return produced. Exactly one of: an EOS_EResult, a scalar value (a getter's bool / count /
-// handle label / enum name / notification-id label), or nothing (void). Any allow-listed
-// out-parameters go in `out`.
+// What a return produced: an EOS_EResult, a typed scalar value, or nothing (void), plus any
+// out-parameters.
 struct trace_return {
     enum kind { r_result, r_value, r_void };
     kind type = r_void;
     trace_result_code result;       // r_result
-    std::string value_type;         // r_value: "bool" / "count" / "handle" / "enum" / "notification_id"
-    trace_scalar value;             // r_value
+    std::string value_type;         // r_value: bool / count / handle / enum / notification_id
+    trace_value value;              // r_value
     std::vector<trace_field> out;   // may be empty
 };
 
-// Serialize one record to a single JSON-object line (no trailing newline). Field order is fixed, so a
-// record's golden form is stable. Each takes only the safe, typed parameters its kind allows.
+// Serialize one record to a single JSON-object line (no trailing newline), with fixed field order.
+// Fields whose value fails validation or whose id repeats are dropped, and if the writer could not
+// complete one bounded, well-formed document the result is the empty string -- never a partial line.
 // Spec: docs/alpha-tracing.md §4.
 std::string serialize_meta(const trace_envelope& env, const std::string& event,
                            const std::vector<trace_field>& fields);

@@ -25,24 +25,7 @@ trace_envelope make_envelope() {
 const std::string prefix =
     "{\"v\":1,\"seq\":7,\"t\":123,\"pid\":4242,\"inst\":\"alice\",\"tid\":\"t#0\",";
 
-trace_field f_str(const std::string& key, const std::string& value) {
-    trace_field field;
-    field.key = key;
-    field.value = scalar_string(value);
-    return field;
-}
-trace_field f_int(const std::string& key, i64 value) {
-    trace_field field;
-    field.key = key;
-    field.value = scalar_int(value);
-    return field;
-}
-trace_field f_uint(const std::string& key, u64 value) {
-    trace_field field;
-    field.key = key;
-    field.value = scalar_uint(value);
-    return field;
-}
+trace_field f(field_id id, const trace_value& value) { return make_field(id, value); }
 
 std::vector<trace_field> none() { return std::vector<trace_field>(); }
 
@@ -58,10 +41,10 @@ std::size_t occurrences(const std::string& text, const std::string& needle) {
 
 } // namespace
 
-TEST_CASE("a meta record serializes its event and inline fields in order") {
+TEST_CASE("a meta record serializes its event and typed fields in order") {
     std::vector<trace_field> fields;
-    fields.push_back(f_uint("dropped_files", 2));
-    fields.push_back(f_uint("dropped_bytes", 65536));
+    fields.push_back(f(field_id::dropped_files, tv_uint(2)));
+    fields.push_back(f(field_id::dropped_bytes, tv_uint(65536)));
     const std::string line = serialize_meta(make_envelope(), "rotate", fields);
     CHECK(line == prefix +
                       "\"kind\":\"meta\",\"event\":\"rotate\","
@@ -70,7 +53,7 @@ TEST_CASE("a meta record serializes its event and inline fields in order") {
 
 TEST_CASE("a call record carries fn, api, correlation, and nested args") {
     std::vector<trace_field> args;
-    args.push_back(f_str("cred_type", "device"));
+    args.push_back(f(field_id::cred_type, tv_enum("device")));
     const std::string line = serialize_call(make_envelope(), "EOS_Connect_Login", 3, "c#1", args);
     CHECK(line == prefix +
                       "\"kind\":\"call\",\"fn\":\"EOS_Connect_Login\",\"api\":3,"
@@ -93,11 +76,11 @@ TEST_CASE("a return can carry an EOS_EResult") {
                       "\"result\":{\"code\":0,\"name\":\"EOS_Success\"}}");
 }
 
-TEST_CASE("a return can carry a scalar value") {
+TEST_CASE("a return can carry a typed scalar value") {
     trace_return value;
     value.type = trace_return::r_value;
     value.value_type = "count";
-    value.value = scalar_int(3);
+    value.value = tv_uint(3);
     const std::string line =
         serialize_return(make_envelope(), "EOS_Friends_GetFriendsCount", "", value);
     CHECK(line == prefix +
@@ -112,12 +95,12 @@ TEST_CASE("a void return is marked explicitly") {
     CHECK(line == prefix + "\"kind\":\"return\",\"fn\":\"EOS_Platform_Tick\",\"void\":true}");
 }
 
-TEST_CASE("a return can carry allow-listed out-parameters") {
+TEST_CASE("a return can carry typed out-parameters") {
     trace_return value;
     value.type = trace_return::r_result;
     value.result.code = 0;
     value.result.name = "EOS_Success";
-    value.out.push_back(f_str("handle", "userinfo#4"));
+    value.out.push_back(f(field_id::handle, tv_label("userinfo#4")));
     const std::string line =
         serialize_return(make_envelope(), "EOS_UserInfo_CopyUserInfo", "", value);
     CHECK(line == prefix +
@@ -128,7 +111,7 @@ TEST_CASE("a return can carry allow-listed out-parameters") {
 
 TEST_CASE("a callback carries its correlation, result, and nested payload") {
     std::vector<trace_field> payload;
-    payload.push_back(f_str("puid", "puid#2"));
+    payload.push_back(f(field_id::puid, tv_label("puid#2")));
     trace_result_code result;
     result.code = 0;
     result.name = "EOS_Success";
@@ -142,7 +125,7 @@ TEST_CASE("a callback carries its correlation, result, and nested payload") {
 
 TEST_CASE("a notify distinguishes register, remove, and fire") {
     std::vector<trace_field> fields;
-    fields.push_back(f_str("target", "eaid#2"));
+    fields.push_back(f(field_id::target, tv_label("eaid#2")));
     const std::string line =
         serialize_notify(make_envelope(), "FriendsUpdate", "fire", "notif#3", fields);
     CHECK(line == prefix +
@@ -152,9 +135,9 @@ TEST_CASE("a notify distinguishes register, remove, and fire") {
 
 TEST_CASE("a net record carries a peer label, a fingerprint, and lengths, never bytes") {
     std::vector<trace_field> fields;
-    fields.push_back(f_str("peer", "puid#2"));
-    fields.push_back(f_str("peer_fp", "ebf65ed621ba531b"));
-    fields.push_back(f_uint("bytes", 128));
+    fields.push_back(f(field_id::peer, tv_label("puid#2")));
+    fields.push_back(f(field_id::peer_fp, tv_fingerprint("ebf65ed621ba531b")));
+    fields.push_back(f(field_id::bytes, tv_uint(128)));
     const std::string line = serialize_net(make_envelope(), "p2p_open", fields);
     CHECK(line == prefix +
                       "\"kind\":\"net\",\"event\":\"p2p_open\","
@@ -170,38 +153,70 @@ TEST_CASE("an absent instance label is emitted as null") {
           "\"kind\":\"meta\",\"event\":\"run_start\"}");
 }
 
-TEST_CASE("a string field with an invalid byte is made safe by the writer") {
+TEST_CASE("sanitized diagnostic text is escaped, and an invalid byte replaced") {
     std::vector<trace_field> fields;
-    fields.push_back(f_str("detail", std::string("bad\xFF", 4)));
+    fields.push_back(f(field_id::detail, tv_diag(std::string("bad\xFF", 4))));
     const std::string line = serialize_meta(make_envelope(), "config", fields);
     CHECK(line == prefix + "\"kind\":\"meta\",\"event\":\"config\","
                            "\"detail\":\"bad\xEF\xBF\xBD\"}");
 }
 
-TEST_CASE("trace fields cannot carry arbitrary sensitive text") {
+// --- The structural privacy and bounding guarantees. ---
+
+TEST_CASE("arbitrary text cannot enter a typed field") {
     const std::string token = "credential-token-that-must-not-enter-a-trace";
     std::vector<trace_field> args;
-    args.push_back(f_str("credential", token));
-
+    args.push_back(f(field_id::cred_type, tv_enum(token))); // dashes + length -> not a valid enum
+    args.push_back(f(field_id::puid, tv_label(token)));     // no '#' -> not a valid label
     const std::string line = serialize_call(make_envelope(), "EOS_Connect_Login", 3, "c#1", args);
     CHECK(line.find(token) == std::string::npos);
 }
 
-TEST_CASE("inline fields cannot shadow the trace envelope or body") {
+TEST_CASE("a label field accepts only an opaque label, never a raw id") {
+    const std::string raw_puid = "00112233445566778899aabbccddeeff"; // 32 hex, no '#'
     std::vector<trace_field> fields;
-    fields.push_back(f_uint("seq", 999));
-    fields.push_back(f_str("kind", "not-meta"));
-    fields.push_back(f_str("event", "not-rotate"));
-
-    const std::string line = serialize_meta(make_envelope(), "rotate", fields);
-    CHECK(occurrences(line, "\"seq\":") == 1);
-    CHECK(occurrences(line, "\"kind\":") == 1);
-    CHECK(occurrences(line, "\"event\":") == 1);
+    fields.push_back(f(field_id::puid, tv_label(raw_puid)));
+    const std::string line =
+        serialize_callback(make_envelope(), "EOS_Connect_Login", "c#1", trace_result_code(), fields);
+    CHECK(line.find(raw_puid) == std::string::npos);
 }
 
-TEST_CASE("one trace record cannot exceed the minimum sink capacity") {
+TEST_CASE("a fingerprint field rejects anything but sixteen lowercase hex") {
     std::vector<trace_field> fields;
-    fields.push_back(f_str("detail", std::string(70000, 'x')));
+    fields.push_back(f(field_id::peer_fp, tv_fingerprint("EBF65ED621BA531B"))); // uppercase
+    fields.push_back(f(field_id::peer_fp, tv_fingerprint("deadbeef")));         // too short
+    const std::string line = serialize_net(make_envelope(), "adopt", fields);
+    CHECK(line == prefix + "\"kind\":\"net\",\"event\":\"adopt\"}"); // both dropped
+}
+
+TEST_CASE("duplicate fields cannot create duplicate JSON members") {
+    std::vector<trace_field> fields;
+    fields.push_back(f(field_id::detail, tv_diag("first")));
+    fields.push_back(f(field_id::detail, tv_diag("second")));
     const std::string line = serialize_meta(make_envelope(), "config", fields);
-    CHECK(line.size() < 65536u); // room must remain for the rotate record at the 64 KiB minimum
+    CHECK(occurrences(line, "\"detail\":") == 1);
+    CHECK(line.find("first") != std::string::npos);   // the first wins
+    CHECK(line.find("second") == std::string::npos);
+}
+
+TEST_CASE("a mistyped field value is dropped, never a partial record") {
+    trace_field corrupt;
+    corrupt.id = field_id::detail; // expects a diag
+    corrupt.value = tv_uint(5);    // but carries a uint
+    std::vector<trace_field> fields;
+    fields.push_back(corrupt);
+    const std::string line = serialize_meta(make_envelope(), "config", fields);
+    REQUIRE_FALSE(line.empty());
+    CHECK(line[line.size() - 1] == '}');                      // complete, not truncated
+    CHECK(line == prefix + "\"kind\":\"meta\",\"event\":\"config\"}"); // the field was dropped
+}
+
+TEST_CASE("one record cannot exceed the minimum sink capacity, worst-case escaping included") {
+    std::vector<trace_field> fields;
+    // The only free-text fields, each filled with control bytes that escape to six bytes apiece; the
+    // diagnostic cap keeps even these small.
+    fields.push_back(f(field_id::detail, tv_diag(std::string(70000, '\x01'))));
+    fields.push_back(f(field_id::message, tv_diag(std::string(70000, '\x01'))));
+    const std::string line = serialize_meta(make_envelope(), "config", fields);
+    CHECK(line.size() < 65536u);
 }

@@ -57,15 +57,24 @@ bool decode_utf8(const std::string& s, std::size_t i, std::size_t& length) {
 
 } // namespace
 
-json_writer::json_writer() : after_key_(false), valid_(true) {}
+json_writer::json_writer(std::size_t max_bytes)
+    : max_bytes_(max_bytes), after_key_(false), valid_(true), root_done_(false) {}
+
+bool json_writer::over_cap() const {
+    return max_bytes_ != 0 && out_.size() >= max_bytes_;
+}
 
 void json_writer::pre_value() {
     if (!valid_) {
         return;
     }
+    if (over_cap()) {
+        valid_ = false;
+        return;
+    }
     if (levels_.empty()) {
         // A value at the top level is allowed only as the single whole document.
-        if (!out_.empty()) {
+        if (root_done_ || !out_.empty()) {
             valid_ = false;
         }
         return;
@@ -154,6 +163,9 @@ void json_writer::end_object() {
     }
     out_ += '}';
     levels_.pop_back();
+    if (levels_.empty()) {
+        root_done_ = true;
+    }
 }
 
 void json_writer::begin_array() {
@@ -176,10 +188,17 @@ void json_writer::end_array() {
     }
     out_ += ']';
     levels_.pop_back();
+    if (levels_.empty()) {
+        root_done_ = true;
+    }
 }
 
 void json_writer::key(const std::string& name) {
     if (!valid_) {
+        return;
+    }
+    if (over_cap()) {
+        valid_ = false;
         return;
     }
     // A key belongs only inside an object, and only where a key is expected.
@@ -197,12 +216,19 @@ void json_writer::key(const std::string& name) {
     after_key_ = true;
 }
 
+void json_writer::mark_root_if_top() {
+    if (levels_.empty()) {
+        root_done_ = true;
+    }
+}
+
 void json_writer::value_string(const std::string& value) {
     pre_value();
     if (!valid_) {
         return;
     }
     write_string(value);
+    mark_root_if_top();
 }
 
 void json_writer::value_int(i64 value) {
@@ -211,6 +237,7 @@ void json_writer::value_int(i64 value) {
         return;
     }
     out_ += std::to_string(value);
+    mark_root_if_top();
 }
 
 void json_writer::value_uint(u64 value) {
@@ -219,6 +246,7 @@ void json_writer::value_uint(u64 value) {
         return;
     }
     out_ += std::to_string(value);
+    mark_root_if_top();
 }
 
 void json_writer::value_bool(bool value) {
@@ -227,6 +255,7 @@ void json_writer::value_bool(bool value) {
         return;
     }
     out_ += value ? "true" : "false";
+    mark_root_if_top();
 }
 
 void json_writer::value_null() {
@@ -235,6 +264,7 @@ void json_writer::value_null() {
         return;
     }
     out_ += "null";
+    mark_root_if_top();
 }
 
 void json_writer::field_string(const std::string& name, const std::string& value) {
