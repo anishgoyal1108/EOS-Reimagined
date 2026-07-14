@@ -20,19 +20,23 @@ const char* const recognized_env[] = {
     "EOSR_TRACE_MAX_BYTES", "EOSR_TRACE_MAX_ROTATED", "EOSR_DISCOVERY_PORTS", "EOSR_INSTANCE_LABEL"
 };
 
+// A stable machine-readable reason; the free-text detail (a parser message, say) goes in `message` so
+// tooling can aggregate failures without matching prose.
 void add_config_diag(std::vector<config_diagnostic>& diagnostics, const char* source,
-                     const std::string& reason) {
+                     const char* reason, const std::string& message) {
     config_diagnostic diagnostic;
     diagnostic.field = "config";
     diagnostic.source = source;
     diagnostic.reason = reason;
     diagnostic.action = "ignored";
+    diagnostic.message = message;
     diagnostics.push_back(diagnostic);
 }
 
 } // namespace
 
-system_config_source::system_config_source(const std::string& data_dir) {
+system_config_source::system_config_source(const std::string& data_dir)
+    : config_env_present_(false) {
     snapshot_env();
     load_file(data_dir);
 }
@@ -46,14 +50,23 @@ void system_config_source::snapshot_env() {
             env_[name] = value;
         }
     }
+    // The file selector is captured here too, so selecting the file and reading its values come from
+    // one coherent snapshot rather than a second getenv the environment could change under.
+    const char* selector = std::getenv("EOSR_CONFIG");
+    if (selector != 0) {
+        config_env_present_ = true;
+        config_env_value_ = selector;
+    }
 }
 
 void system_config_source::load_file(const std::string& data_dir) {
     std::string path;
     bool explicit_path = false;
-    const char* configured = std::getenv("EOSR_CONFIG");
-    if (configured != 0 && configured[0] != '\0') {
-        path = configured;
+    if (config_env_present_ && !config_env_value_.empty()) {
+        // A relative EOSR_CONFIG resolves against data_dir, never the process cwd -- which varies
+        // wildly between launchers -- so the same setting means the same file everywhere.
+        path = is_absolute_path(config_env_value_) ? config_env_value_
+                                                   : (data_dir + "/" + config_env_value_);
         explicit_path = true;
     } else {
         path = data_dir + "/eosr.json";
@@ -65,22 +78,23 @@ void system_config_source::load_file(const std::string& data_dir) {
     if (result == platform::file_read::missing) {
         // A missing default file is normal; a missing explicitly-selected one is worth reporting.
         if (explicit_path) {
-            add_config_diag(diagnostics_, source, "config file not found");
+            add_config_diag(diagnostics_, source, "file not found", std::string());
         }
         return;
     }
     if (result == platform::file_read::unreadable) {
-        add_config_diag(diagnostics_, source, "config file could not be read");
+        add_config_diag(diagnostics_, source, "unreadable", std::string());
         return;
     }
     if (result == platform::file_read::too_large) {
-        add_config_diag(diagnostics_, source, "config file exceeds the size limit");
+        add_config_diag(diagnostics_, source, "too large", std::string());
         return;
     }
     std::string error;
     if (!parse_config_file(bytes, file_, error)) {
-        // parse_config_file cleared file_ on failure, so no partial values survive.
-        add_config_diag(diagnostics_, source, "config file is not valid JSON: " + error);
+        // parse_config_file cleared file_ on failure, so no partial values survive. The parser's
+        // detail is the message; the reason stays stable.
+        add_config_diag(diagnostics_, source, "parse error", error);
     }
 }
 
@@ -103,6 +117,20 @@ lookup system_config_source::file_int(const std::string& key, i64& out) const {
 
 lookup system_config_source::file_int_pair(const std::string& key, i64& first, i64& second) const {
     return file_.get_int_pair(key, first, second);
+}
+
+resolved_config load_resolved_config(const std::string& data_dir,
+                                     const discovery_range& default_ports) {
+    system_config_source source(data_dir);
+    config_defaults defaults;
+    defaults.data_dir = data_dir;
+    defaults.default_ports = default_ports;
+    resolved_config config = resolve_config(source, defaults);
+    // Fold the file-loading diagnostics in after resolution's own, exactly once, so a malformed or
+    // unreadable file is never silently lost.
+    const std::vector<config_diagnostic>& loading = source.diagnostics();
+    config.diagnostics.insert(config.diagnostics.end(), loading.begin(), loading.end());
+    return config;
 }
 
 } // namespace eosr

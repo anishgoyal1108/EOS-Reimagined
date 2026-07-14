@@ -157,20 +157,6 @@ std::string utf8_truncate(const std::string& text, std::size_t max_chars, std::s
     return text.substr(0, i);
 }
 
-bool is_absolute_path(const std::string& path) {
-    if (path.empty()) {
-        return false;
-    }
-    if (path[0] == '/' || path[0] == '\\') {
-        return true;
-    }
-    // A Windows drive-absolute path needs a slash after the colon (C:\ or C:/). C:traces is
-    // drive-relative -- it depends on the current directory on drive C -- so it is not absolute.
-    const char c = path[0];
-    return path.size() >= 3 && path[1] == ':' && (path[2] == '/' || path[2] == '\\') &&
-           ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
-}
-
 bool valid_label(const std::string& label) {
     if (label.empty() || label.size() > max_label_chars || label == "." || label == "..") {
         return false;
@@ -245,6 +231,20 @@ u32 clamp_rotated(i64 value, std::vector<config_diagnostic>& diagnostics, const 
 }
 
 } // namespace
+
+bool is_absolute_path(const std::string& path) {
+    if (path.empty()) {
+        return false;
+    }
+    if (path[0] == '/' || path[0] == '\\') {
+        return true;
+    }
+    // A Windows drive-absolute path needs a slash after the colon (C:\ or C:/). C:traces is
+    // drive-relative -- it depends on the current directory on drive C -- so it is not absolute.
+    const char c = path[0];
+    return path.size() >= 3 && path[1] == ':' && (path[2] == '/' || path[2] == '\\') &&
+           ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
+}
 
 resolved_config resolve_config(const config_source& source, const config_defaults& defaults) {
     resolved_config config;

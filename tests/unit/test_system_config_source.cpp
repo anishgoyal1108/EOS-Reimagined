@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <string>
 
 #include "core/config.h"
@@ -139,6 +140,32 @@ TEST_CASE("a malformed file is diagnosed and leaves no values") {
     CHECK(has_field(source.diagnostics(), "config"));
 }
 
+TEST_CASE("a parse diagnostic keeps its machine reason separate from parser prose") {
+    source_fixture fx("parse-diagnostic-shape");
+    fx.write("eosr.json", "{ malformed ");
+
+    system_config_source source(fx.dir);
+    REQUIRE(source.diagnostics().size() == 1);
+    CHECK(source.diagnostics()[0].reason == "parse error");
+    CHECK_FALSE(source.diagnostics()[0].message.empty());
+}
+
+TEST_CASE("bounded reads handle exact, over-limit, and maximum-size caps") {
+    source_fixture fx("read-cap-boundaries");
+    const std::string path = fx.write("small.bin", "abcd");
+    std::string out = "stale";
+
+    CHECK(platform::read_file_capped(path, 4, out) == platform::file_read::ok);
+    CHECK(out == "abcd");
+
+    CHECK(platform::read_file_capped(path, 3, out) == platform::file_read::too_large);
+    CHECK(out.empty());
+
+    CHECK(platform::read_file_capped(path, std::numeric_limits<std::size_t>::max(), out) ==
+          platform::file_read::ok);
+    CHECK(out == "abcd");
+}
+
 TEST_CASE("the environment is snapshotted at construction") {
     source_fixture fx("env-snapshot");
     set_env("EOSR_DISPLAY_NAME", "Snapshot");
@@ -163,4 +190,35 @@ TEST_CASE("a wrong-typed file value reaches the resolver as a diagnostic") {
 
     CHECK(config.trace_max_bytes == 67108864u); // the wrong-typed value was ignored
     CHECK(has_field(config.diagnostics, "trace_max_bytes"));
+}
+
+TEST_CASE("load_resolved_config merges a file diagnostic exactly once") {
+    source_fixture fx("merge-once");
+    fx.write("eosr.json", "{ malformed ");
+
+    discovery_range ports;
+    ports.first = 55789;
+    ports.last = 55798;
+    const resolved_config config = load_resolved_config(fx.dir, ports);
+
+    int config_diagnostics = 0;
+    for (std::size_t i = 0; i < config.diagnostics.size(); i++) {
+        if (config.diagnostics[i].field == "config") {
+            config_diagnostics++;
+        }
+    }
+    CHECK(config_diagnostics == 1); // the malformed file is reported, and only once
+    CHECK(config.display_name == "Player"); // resolution still succeeded on defaults
+}
+
+TEST_CASE("a relative EOSR_CONFIG resolves against the data directory") {
+    source_fixture fx("relative-config");
+    fx.write("nested.json", "{ \"display_name\": \"FromRelative\" }");
+    set_env("EOSR_CONFIG", "nested.json"); // relative, not absolute
+
+    system_config_source source(fx.dir);
+    std::string value;
+    CHECK(source.file_string("display_name", value) == lookup::ok);
+    CHECK(value == "FromRelative");
+    CHECK(source.diagnostics().empty());
 }

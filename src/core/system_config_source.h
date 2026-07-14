@@ -36,9 +36,20 @@ private:
     void load_file(const std::string& data_dir);
 
     std::map<std::string, std::string> env_;
+    // The config-file selector is captured with the other variables so file selection and the value
+    // reads come from one coherent snapshot, not two separate getenv calls.
+    bool config_env_present_;
+    std::string config_env_value_;
     config_file file_;
     std::vector<config_diagnostic> diagnostics_;
 };
+
+// Load and resolve the run configuration in one step: construct the system source (env snapshot plus
+// the bounded file read), resolve over it, and merge the source's file-loading diagnostics into the
+// result exactly once. This is the single entry point EOS_Initialize calls, so no caller can forget
+// to fold in a malformed/missing/unreadable-file diagnostic.
+resolved_config load_resolved_config(const std::string& data_dir,
+                                     const discovery_range& default_ports);
 
 } // namespace eosr
 

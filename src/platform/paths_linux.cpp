@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <cstdlib>
+#include <limits>
 
 #include <fcntl.h>
 #include <pwd.h>
@@ -102,8 +103,10 @@ file_read read_file_capped(const std::string& path, std::size_t max_bytes, std::
         return (errno == ENOENT) ? file_read::missing : file_read::unreadable;
     }
     // Read at most one byte past the cap, which is enough to tell "larger than max_bytes" apart from
-    // "exactly max_bytes" without reading the whole oversized file.
-    const std::size_t cap = max_bytes + 1;
+    // "exactly max_bytes" without reading the whole oversized file. Guard the +1 against wrapping at
+    // the maximum representable cap.
+    const std::size_t cap = (max_bytes == std::numeric_limits<std::size_t>::max()) ? max_bytes
+                                                                                   : max_bytes + 1;
     std::string buffer;
     char chunk[4096];
     std::size_t total = 0;

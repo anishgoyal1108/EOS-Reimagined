@@ -71,7 +71,9 @@ An override that fails validation at any layer is discarded and resolution falls
 layer (an invalid `EOSR_TRACE` does not win, and does not force the default either — it yields to the
 file value, then the default). An environment variable set to the empty string counts as **unset**.
 
-The config file is `$EOSR_CONFIG` if set, else `<data_dir>/eosr.json`. `data_dir` is resolved from
+The config file is `$EOSR_CONFIG` if set, else `<data_dir>/eosr.json`. A relative `EOSR_CONFIG`
+resolves against `data_dir`, not the process cwd (which varies between launchers), so one setting
+means one file everywhere. `data_dir` is resolved from
 `EOSR_DATA_DIR` or the platform default *before* the file is read, so locating the file never depends
 on the file; `data_dir` is the one field the file cannot set.
 
@@ -103,7 +105,7 @@ on the file; `data_dir` is the one field the file cannot set.
   separator, a dot segment, an over-long value) is rejected back to unset. It is metadata and *may* be
   echoed by tooling, so it is slug-checked even though the library no longer puts it in a path.
 - **Paths** (`trace_dir`, `EOSR_RUN_DIR`, `EOSR_CONFIG`) are literal: the library performs no `~` or
-  environment expansion. A relative `trace_dir` is taken against `data_dir`.
+  environment expansion. A relative `trace_dir` or `EOSR_CONFIG` is taken against `data_dir`.
 - **`display_name`** — must be valid UTF-8; invalid sequences reject the value to the default. It is
   bounded by **both** EOS caps — 16 displayable characters (`EOS_USERINFO_MAX_DISPLAYNAME_CHARACTERS`)
   and 64 UTF-8 bytes (`EOS_USERINFO_MAX_DISPLAYNAME_UTF8_LENGTH`) — and truncated to whichever bound
