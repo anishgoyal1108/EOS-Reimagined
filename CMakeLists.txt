@@ -28,6 +28,7 @@ add_library(eosr_core STATIC
     src/core/frame_result.cpp
     src/core/callback_manager.cpp
     src/common/json_writer.cpp
+    src/core/trace_event.cpp
     src/core/config.cpp
     src/core/config_file.cpp
     src/core/system_config_source.cpp
