@@ -86,6 +86,42 @@ bool write_private_file(const std::string& path, const std::string& text) {
     return true;
 }
 
+file_read read_file_capped(const std::string& path, std::size_t max_bytes, std::string& out) {
+    out.clear();
+    const HANDLE file = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING,
+                                    FILE_ATTRIBUTE_NORMAL, 0);
+    if (file == INVALID_HANDLE_VALUE) {
+        const DWORD last = GetLastError();
+        return (last == ERROR_FILE_NOT_FOUND || last == ERROR_PATH_NOT_FOUND) ? file_read::missing
+                                                                              : file_read::unreadable;
+    }
+    // Read at most one byte past the cap: enough to tell "larger than max_bytes" from "exactly
+    // max_bytes" without reading the whole oversized file.
+    const std::size_t cap = max_bytes + 1;
+    std::string buffer;
+    char chunk[4096];
+    std::size_t total = 0;
+    while (total < cap) {
+        const std::size_t want = (cap - total < sizeof(chunk)) ? (cap - total) : sizeof(chunk);
+        DWORD count = 0;
+        if (!ReadFile(file, chunk, static_cast<DWORD>(want), &count, 0)) {
+            CloseHandle(file);
+            return file_read::unreadable;
+        }
+        if (count == 0) {
+            break;
+        }
+        total += count;
+        buffer.append(chunk, count);
+    }
+    CloseHandle(file);
+    if (total > max_bytes) {
+        return file_read::too_large;
+    }
+    out.swap(buffer);
+    return file_read::ok;
+}
+
 file_lock::file_lock() : handle_(-1), held_(false) {
 }
 

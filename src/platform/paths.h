@@ -1,12 +1,27 @@
 #ifndef EOSR_PLATFORM_PATHS_H
 #define EOSR_PLATFORM_PATHS_H
 
+#include <cstddef>
 #include <string>
 
 #include "common/types.h"
 
 namespace eosr {
 namespace platform {
+
+// The outcome of a bounded file read.
+enum class file_read {
+    ok,          // the read succeeded and `out` holds the bytes
+    missing,     // the file does not exist
+    unreadable,  // it exists but could not be opened or read
+    too_large    // it is larger than the cap
+};
+
+// Read `path` into `out`, reading at most `max_bytes` + 1 bytes so a file larger than `max_bytes` is
+// detected as `too_large` (and leaves `out` empty) without slurping the whole thing. Missing is
+// distinguished from unreadable, so a caller can treat an absent optional file as normal and an
+// absent required one as an error.
+file_read read_file_capped(const std::string& path, std::size_t max_bytes, std::string& out);
 
 // Where this instance keeps its profile. EOSR_DATA_DIR overrides it, which is how a launcher hands
 // each local copy of a game its own profile -- and so its own identity -- without the copies having

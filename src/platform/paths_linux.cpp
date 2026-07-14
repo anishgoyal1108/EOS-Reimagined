@@ -95,6 +95,42 @@ bool write_private_file(const std::string& path, const std::string& text) {
     return ::close(file) == 0;
 }
 
+file_read read_file_capped(const std::string& path, std::size_t max_bytes, std::string& out) {
+    out.clear();
+    const int file = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (file < 0) {
+        return (errno == ENOENT) ? file_read::missing : file_read::unreadable;
+    }
+    // Read at most one byte past the cap, which is enough to tell "larger than max_bytes" apart from
+    // "exactly max_bytes" without reading the whole oversized file.
+    const std::size_t cap = max_bytes + 1;
+    std::string buffer;
+    char chunk[4096];
+    std::size_t total = 0;
+    while (total < cap) {
+        const std::size_t want = (cap - total < sizeof(chunk)) ? (cap - total) : sizeof(chunk);
+        const ssize_t count = ::read(file, chunk, want);
+        if (count < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            ::close(file);
+            return file_read::unreadable;
+        }
+        if (count == 0) {
+            break;
+        }
+        total += static_cast<std::size_t>(count);
+        buffer.append(chunk, static_cast<std::size_t>(count));
+    }
+    ::close(file);
+    if (total > max_bytes) {
+        return file_read::too_large;
+    }
+    out.swap(buffer);
+    return file_read::ok;
+}
+
 file_lock::file_lock() : handle_(-1), held_(false) {
 }
 

@@ -11,6 +11,7 @@ add_executable(unit_tests
     unit/test_handle_store.cpp
     unit/test_config.cpp
     unit/test_config_file.cpp
+    unit/test_system_config_source.cpp
     unit/test_crypto.cpp
     unit/test_secure_channel.cpp
     unit/test_identity.cpp
