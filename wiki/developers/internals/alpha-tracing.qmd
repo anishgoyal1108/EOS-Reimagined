@@ -523,5 +523,9 @@ Designed against this contract but built after it:
    - **Also done:** all 282 generated compatibility exports use the same scope, including the five
      non-void async storage calls. Their loaded-library tests cover exact API versions, result and
      null-handle returns, callback correlation, and notification-label continuity.
-   - **Still to do:** the 356 handwritten exports using the same trampoline pattern.
+   - **Also done:** 106 handwritten bootstrap, common, logging, Platform, Connect, and Auth exports.
+     The loaded-library test covers real and rejected calls, typed returns, async correlation, and a
+     notification id shared with its register/fire/remove records.
+   - **Still to do:** the remaining 250 handwritten interface exports using the same trampoline
+     pattern.
 6. The two-process C-ABI probe as the first full consumer.

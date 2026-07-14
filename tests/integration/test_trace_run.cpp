@@ -7,6 +7,7 @@
 #include "eos_sdk.h"
 #include "eos_init.h"
 #include "eos_connect.h"
+#include "eos_auth.h"
 #include "eos_ecom.h"
 #include "eos_achievements.h"
 #include "eos_playerdatastorage.h"
@@ -32,6 +33,7 @@ int g_status_changed = 0;
 bool g_ecom_fired = false;
 EOS_EResult g_ecom_result = EOS_EResult::EOS_Success;
 int g_storage_callbacks = 0;
+bool g_auth_delete_fired = false;
 void EOS_CALL on_login(const EOS_Connect_LoginCallbackInfo* info) {
     g_login_fired = true;
     g_login_result = info->ResultCode;
@@ -53,6 +55,10 @@ void EOS_CALL on_storage_read(const EOS_PlayerDataStorage_ReadFileCallbackInfo* 
     g_storage_callbacks++;
 }
 void EOS_CALL on_achievement_unlocked(const EOS_Achievements_OnAchievementsUnlockedCallbackV2Info*) {}
+void EOS_CALL on_auth_delete(const EOS_Auth_DeletePersistentAuthCallbackInfo* info) {
+    CHECK(info->ResultCode == EOS_EResult::EOS_NotImplemented);
+    g_auth_delete_fired = true;
+}
 
 void set_env(const char* name, const char* value) {
 #if defined(_WIN32)
@@ -197,6 +203,9 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     RESOLVE(fn_get_achievements, EOS_Platform_GetAchievementsInterface);
     RESOLVE(fn_add_achievement, EOS_Achievements_AddNotifyAchievementsUnlockedV2);
     RESOLVE(fn_remove_achievement, EOS_Achievements_RemoveNotifyAchievementsUnlocked);
+    RESOLVE(fn_get_auth, EOS_Platform_GetAuthInterface);
+    RESOLVE(fn_auth_delete, EOS_Auth_DeletePersistentAuth);
+    RESOLVE(fn_connect_status, EOS_Connect_GetLoginStatus);
     EOS_HConnect connect = fn_get_connect(platform);
     REQUIRE((connect != nullptr));
 
@@ -229,6 +238,7 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
             EOS_EResult::EOS_Success);
     const std::string raw_user(raw_user_buffer);
     REQUIRE_FALSE(raw_user.empty());
+    CHECK(fn_connect_status(connect, g_login_user) == EOS_ELoginStatus::EOS_LS_LoggedIn);
 
     // A diagnostic trace must retain calls that fail before dispatch too. Bad/stale handles are one
     // of the first things an in-game alpha probe needs to explain, not a reason for the probe itself
@@ -264,6 +274,14 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
         fn_get_achievements(platform), &achievement_options, nullptr, on_achievement_unlocked);
     REQUIRE(achievement_id != EOS_INVALID_NOTIFICATIONID);
     fn_remove_achievement(fn_get_achievements(platform), achievement_id);
+
+    EOS_Auth_DeletePersistentAuthOptions auth_delete = {};
+    auth_delete.ApiVersion = EOS_AUTH_DELETEPERSISTENTAUTH_API_LATEST;
+    fn_auth_delete(fn_get_auth(platform), &auth_delete, nullptr, on_auth_delete);
+    for (int i = 0; i < 8 && !g_auth_delete_fired; i++) {
+        fn_tick(platform);
+    }
+    CHECK(g_auth_delete_fired);
 
     fn_remove_status(connect, status_id);
 
@@ -332,6 +350,11 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     const std::string shutdown_return =
         find_line(lines, "\"kind\":\"return\",\"fn\":\"EOS_Shutdown\"");
     CHECK(shutdown_return.find("\"name\":\"EOS_Success\"") != std::string::npos);
+    const std::string connect_status_return = find_line(
+        lines, "\"kind\":\"return\",\"fn\":\"EOS_Connect_GetLoginStatus\"");
+    CHECK(connect_status_return.find(
+              "\"value\":{\"type\":\"enum\",\"v\":\"EOS_LS_LoggedIn\"}") !=
+          std::string::npos);
 
     // The asynchronous login: its call, its synchronous return, and the callback that completed it a
     // tick later all carry one correlation id, so a reader can stitch the operation back together.
@@ -375,6 +398,19 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     CHECK(field_of(ecom_return, "corr") == ecom_corr);
     CHECK(field_of(ecom_callback, "corr") == ecom_corr);
     CHECK(ecom_callback.find("\"name\":\"EOS_NotImplemented\"") != std::string::npos);
+
+    const std::string auth_delete_call = find_line(
+        lines, "\"kind\":\"call\",\"fn\":\"EOS_Auth_DeletePersistentAuth\"");
+    const std::string auth_delete_return = find_line(
+        lines, "\"kind\":\"return\",\"fn\":\"EOS_Auth_DeletePersistentAuth\"");
+    const std::string auth_delete_callback = find_line(
+        lines, "\"kind\":\"callback\",\"fn\":\"EOS_Auth_DeletePersistentAuth\"");
+    REQUIRE_FALSE(auth_delete_call.empty());
+    REQUIRE_FALSE(auth_delete_return.empty());
+    REQUIRE_FALSE(auth_delete_callback.empty());
+    const std::string auth_delete_corr = field_of(auth_delete_call, "corr");
+    CHECK(field_of(auth_delete_return, "corr") == auth_delete_corr);
+    CHECK(field_of(auth_delete_callback, "corr") == auth_delete_corr);
 
     const std::string storage_delete_call = find_line(
         lines, "\"kind\":\"call\",\"fn\":\"EOS_PlayerDataStorage_DeleteCache\"");
@@ -435,6 +471,11 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     CHECK(field_of(fired, "id") == field_of(removed, "id"));
     CHECK(parse_seq(registered) < parse_seq(fired));
     CHECK(parse_seq(fired) < parse_seq(removed));
+    const std::string status_notify_return = find_line(
+        lines,
+        "\"kind\":\"return\",\"fn\":\"EOS_Connect_AddNotifyLoginStatusChanged\"");
+    REQUIRE_FALSE(status_notify_return.empty());
+    CHECK(field_of(status_notify_return, "v") == field_of(registered, "id"));
 
     // The kind of credential is recorded; the token is not. The local user is a label, not an id.
     CHECK(call.find("\"cred_type\":\"EOS_ECT_DEVICEID_ACCESS_TOKEN\"") != std::string::npos);

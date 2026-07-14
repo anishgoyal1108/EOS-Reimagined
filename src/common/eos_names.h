@@ -21,6 +21,7 @@ const char* credential_type_name(EOS_EExternalCredentialType type);
 const char* connection_closed_reason_name(EOS_EConnectionClosedReason reason);
 const char* application_status_name(EOS_EApplicationStatus status);
 const char* network_status_name(EOS_ENetworkStatus status);
+const char* login_status_name(EOS_ELoginStatus status);
 
 } // namespace eosr
 

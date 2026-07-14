@@ -8,7 +8,9 @@
 #include "common/eos_names.h"
 #include "common/json_writer.h"
 #include "common/log.h"
+#include "core/platform.h"
 #include "core/peer_fp.h"
+#include "core/runtime.h"
 #include "core/trace_event.h"
 #include "platform/paths.h"
 #include "platform/rng.h"
@@ -562,6 +564,14 @@ void trace_scope::returns_handle(const void* value, label_kind kind) {
     returns(return_handle(tracer_.label_pointer(kind, value)));
 }
 
+void trace_scope::returns_notification(const std::string& token) {
+    if (token.empty()) {
+        returns(return_null_notification_id());
+        return;
+    }
+    returns(return_notification_id(tracer_.label(label_kind::notif, token)));
+}
+
 EOS_EResult traced_result(trace_scope& scope, EOS_EResult value) {
     scope.returns(return_result(static_cast<i32>(value), result_name(value)));
     return value;
@@ -574,6 +584,15 @@ EOS_Bool traced_bool(trace_scope& scope, EOS_Bool value) {
 
 const char* traced_string(trace_scope& scope, const char* value) {
     scope.returns(return_length(value != 0 ? std::strlen(value) : 0));
+    return value;
+}
+
+EOS_NotificationId traced_notification(trace_scope& scope, EOS_NotificationId value) {
+    sdk_platform* platform = platform_current();
+    const std::string token = (platform != 0 && value != EOS_INVALID_NOTIFICATIONID)
+                                  ? platform->callbacks().notification_trace_token(value)
+                                  : std::string();
+    scope.returns_notification(token);
     return value;
 }
 

@@ -83,4 +83,13 @@ const char* network_status_name(EOS_ENetworkStatus status) {
     return "EOS_NS_Online";
 }
 
+const char* login_status_name(EOS_ELoginStatus status) {
+    switch (status) {
+        case EOS_ELoginStatus::EOS_LS_NotLoggedIn: return "EOS_LS_NotLoggedIn";
+        case EOS_ELoginStatus::EOS_LS_UsingLocalProfile: return "EOS_LS_UsingLocalProfile";
+        case EOS_ELoginStatus::EOS_LS_LoggedIn: return "EOS_LS_LoggedIn";
+    }
+    return "EOS_LS_NotLoggedIn";
+}
+
 } // namespace eosr

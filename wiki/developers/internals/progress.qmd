@@ -122,6 +122,10 @@ A game resolves every `EOS_*` symbol it imports when the library loads; one it c
   Callback-bearing calls share one correlation across call, return, and deferred callback, including
   the non-void storage calls; absent transfer handles are explicit nulls, and notification return /
   register / remove records share one opaque label.
+- **Handwritten ABI tracing:** bootstrap, common, logging, Platform, Connect, and Auth are covered
+  (106 of 356 handwritten exports). Calls rejected before dispatch remain visible; synchronous
+  results use typed return values; asynchronous calls retain one correlation through callback
+  delivery; returned notification ids use the same opaque labels as register/fire/remove records.
 
 ## Reimplementation (the from-scratch build under src/)
 - **Sessions** (2026-07-13): implemented over the mesh. One roster per session (leave frees the seat); active-session handle is a live view, not a snapshot. Only a session's host is surfaced as a search result — a peer answers a search, and seeds its own local results, only for sessions it hosts, so a member never echoes back a session it merely joined. A search response is taken only from a peer we actually asked, and every returned session is re-matched against our own query, so a peer cannot plant an unrequested or non-matching result. The roster is the host's to manage: an inbound register/unregister is honoured from the owner for anyone, and from a participant only to remove itself — so a participant cannot evict the host, drop others, or pad past capacity. Inbound `session_join_response` is accepted only from the owner and only while a join we started is pending. Register/Unregister callbacks report the players they changed. Wire list lengths are bounded to the ABI maxima before reserve.

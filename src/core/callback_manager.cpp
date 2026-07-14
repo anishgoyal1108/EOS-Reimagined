@@ -154,6 +154,20 @@ frame_result* callback_manager::find_notification(i_run_callback* owner, EOS_Not
     return note->second.get();
 }
 
+std::string callback_manager::notification_trace_token(EOS_NotificationId id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    std::map<i_run_callback*, std::map<EOS_NotificationId, std::unique_ptr<frame_result>>>::iterator
+        owner = notifications_.begin();
+    for (; owner != notifications_.end(); ++owner) {
+        std::map<EOS_NotificationId, std::unique_ptr<frame_result>>::iterator note =
+            owner->second.find(id);
+        if (note != owner->second.end()) {
+            return note->second->notification_token();
+        }
+    }
+    return std::string();
+}
+
 void callback_manager::set_max_tick_budget(std::chrono::milliseconds budget) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     max_tick_budget_ = budget;

@@ -186,6 +186,7 @@ public:
     // What this function returned. Defaults to void, which is what an async EOS function gives back.
     void returns(const trace_return& value) { value_ = value; }
     void returns_handle(const void* value, label_kind kind);
+    void returns_notification(const std::string& token);
 
 private:
     tracer& tracer_;
@@ -199,6 +200,7 @@ private:
 EOS_EResult traced_result(trace_scope& scope, EOS_EResult value);
 EOS_Bool traced_bool(trace_scope& scope, EOS_Bool value);
 const char* traced_string(trace_scope& scope, const char* value);
+EOS_NotificationId traced_notification(trace_scope& scope, EOS_NotificationId value);
 
 template <class T>
 T traced_count(trace_scope& scope, T value) {

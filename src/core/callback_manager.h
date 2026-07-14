@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "eos_common.h"
@@ -46,6 +47,7 @@ public:
     // The notification `owner` registered under `id`, or null if it was never registered or has
     // since been removed. The pointer is owned by the manager; fire it immediately, do not cache.
     frame_result* find_notification(i_run_callback* owner, EOS_NotificationId id);
+    std::string notification_trace_token(EOS_NotificationId id);
 
     void set_max_tick_budget(std::chrono::milliseconds budget);
 

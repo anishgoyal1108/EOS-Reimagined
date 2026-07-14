@@ -70,6 +70,9 @@ EOS_DECLARE_FUNC(void) EOS_Connect_Login(EOS_HConnect Handle, const EOS_Connect_
 
 EOS_DECLARE_FUNC(void) EOS_Connect_Logout(EOS_HConnect Handle, const EOS_Connect_LogoutOptions* Options,
                                           void* ClientData, const EOS_Connect_OnLogoutCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_Logout",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::async);
     eosr::sdk_connect* connect = checked_connect(Handle);
     if (connect != 0) {
         connect->logout(Options, ClientData, CompletionDelegate);
@@ -79,6 +82,10 @@ EOS_DECLARE_FUNC(void) EOS_Connect_Logout(EOS_HConnect Handle, const EOS_Connect
 EOS_DECLARE_FUNC(void) EOS_Connect_QueryProductUserIdMappings(
     EOS_HConnect Handle, const EOS_Connect_QueryProductUserIdMappingsOptions* Options,
     void* ClientData, const EOS_Connect_OnQueryProductUserIdMappingsCallback CompletionDelegate) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(),
+                                 "EOS_Connect_QueryProductUserIdMappings",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::async);
     eosr::sdk_connect* connect = checked_connect(Handle);
     if (connect != 0) {
         connect->query_product_user_id_mappings(Options, ClientData, CompletionDelegate);
@@ -88,37 +95,62 @@ EOS_DECLARE_FUNC(void) EOS_Connect_QueryProductUserIdMappings(
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_GetProductUserIdMapping(
     EOS_HConnect Handle, const EOS_Connect_GetProductUserIdMappingOptions* Options,
     char* OutBuffer, int32_t* InOutBufferLength) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_GetProductUserIdMapping",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_connect* connect = checked_connect(Handle);
     if (connect == 0) {
-        return EOS_EResult::EOS_InvalidParameters;
+        return eosr::traced_result(eosr_trace, EOS_EResult::EOS_InvalidParameters);
     }
-    return connect->get_product_user_id_mapping(Options, OutBuffer, InOutBufferLength);
+    return eosr::traced_result(
+        eosr_trace, connect->get_product_user_id_mapping(Options, OutBuffer, InOutBufferLength));
 }
 
 EOS_DECLARE_FUNC(int32_t) EOS_Connect_GetLoggedInUsersCount(EOS_HConnect Handle) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_GetLoggedInUsersCount", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_connect* connect = checked_connect(Handle);
-    return (connect != 0) ? connect->logged_in_users_count() : 0;
+    return eosr::traced_count(eosr_trace,
+                              (connect != 0) ? connect->logged_in_users_count() : 0);
 }
 
 EOS_DECLARE_FUNC(EOS_ProductUserId) EOS_Connect_GetLoggedInUserByIndex(EOS_HConnect Handle, int32_t Index) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_GetLoggedInUserByIndex", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_connect* connect = checked_connect(Handle);
-    return (connect != 0) ? connect->logged_in_user_by_index(Index) : 0;
+    const EOS_ProductUserId result =
+        (connect != 0) ? connect->logged_in_user_by_index(Index) : 0;
+    return eosr::traced_handle(eosr_trace, result, eosr::label_kind::puid);
 }
 
 EOS_DECLARE_FUNC(EOS_ELoginStatus) EOS_Connect_GetLoginStatus(EOS_HConnect Handle, EOS_ProductUserId LocalUserId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_GetLoginStatus", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_connect* connect = checked_connect(Handle);
-    return (connect != 0) ? connect->login_status(LocalUserId) : EOS_ELoginStatus::EOS_LS_NotLoggedIn;
+    const EOS_ELoginStatus result = (connect != 0)
+                                        ? connect->login_status(LocalUserId)
+                                        : EOS_ELoginStatus::EOS_LS_NotLoggedIn;
+    return eosr::traced_enum(eosr_trace, result, eosr::login_status_name(result));
 }
 
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Connect_AddNotifyLoginStatusChanged(
     EOS_HConnect Handle, const EOS_Connect_AddNotifyLoginStatusChangedOptions* Options,
     void* ClientData, const EOS_Connect_OnLoginStatusChangedCallback Notification) {
-    (void)Options;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(),
+                                 "EOS_Connect_AddNotifyLoginStatusChanged",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_connect* connect = checked_connect(Handle);
-    return (connect != 0) ? connect->add_notify_login_status_changed(ClientData, Notification) : 0;
+    const EOS_NotificationId result =
+        (connect != 0) ? connect->add_notify_login_status_changed(ClientData, Notification)
+                       : EOS_INVALID_NOTIFICATIONID;
+    return eosr::traced_notification(eosr_trace, result);
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_RemoveNotifyLoginStatusChanged(EOS_HConnect Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(),
+                                 "EOS_Connect_RemoveNotifyLoginStatusChanged", 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_connect* connect = checked_connect(Handle);
     if (connect != 0) {
         connect->remove_notify_login_status_changed(InId);
@@ -128,12 +160,19 @@ EOS_DECLARE_FUNC(void) EOS_Connect_RemoveNotifyLoginStatusChanged(EOS_HConnect H
 EOS_DECLARE_FUNC(EOS_NotificationId) EOS_Connect_AddNotifyAuthExpiration(
     EOS_HConnect Handle, const EOS_Connect_AddNotifyAuthExpirationOptions* Options,
     void* ClientData, const EOS_Connect_OnAuthExpirationCallback Notification) {
-    (void)Options;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_AddNotifyAuthExpiration",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::sync);
     eosr::sdk_connect* connect = checked_connect(Handle);
-    return (connect != 0) ? connect->add_notify_auth_expiration(ClientData, Notification) : 0;
+    const EOS_NotificationId result =
+        (connect != 0) ? connect->add_notify_auth_expiration(ClientData, Notification)
+                       : EOS_INVALID_NOTIFICATIONID;
+    return eosr::traced_notification(eosr_trace, result);
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_RemoveNotifyAuthExpiration(EOS_HConnect Handle, EOS_NotificationId InId) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_RemoveNotifyAuthExpiration",
+                                 0, eosr::call_mode::sync);
     eosr::sdk_connect* connect = checked_connect(Handle);
     if (connect != 0) {
         connect->remove_notify_auth_expiration(InId);
@@ -144,49 +183,67 @@ EOS_DECLARE_FUNC(void) EOS_Connect_RemoveNotifyAuthExpiration(EOS_HConnect Handl
 
 EOS_DECLARE_FUNC(void) EOS_Connect_CreateUser(EOS_HConnect Handle, const EOS_Connect_CreateUserOptions* Options,
                                               void* ClientData, const EOS_Connect_OnCreateUserCallback CompletionDelegate) {
-    (void)Options;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_CreateUser",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::async);
     stub_async(Handle, ClientData, CompletionDelegate, sizeof(EOS_Connect_CreateUserCallbackInfo));
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_LinkAccount(EOS_HConnect Handle, const EOS_Connect_LinkAccountOptions* Options,
                                                void* ClientData, const EOS_Connect_OnLinkAccountCallback CompletionDelegate) {
-    (void)Options;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_LinkAccount",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::async);
     stub_async(Handle, ClientData, CompletionDelegate, sizeof(EOS_Connect_LinkAccountCallbackInfo));
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_UnlinkAccount(EOS_HConnect Handle, const EOS_Connect_UnlinkAccountOptions* Options,
                                                  void* ClientData, const EOS_Connect_OnUnlinkAccountCallback CompletionDelegate) {
-    (void)Options;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_UnlinkAccount",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::async);
     stub_async(Handle, ClientData, CompletionDelegate, sizeof(EOS_Connect_UnlinkAccountCallbackInfo));
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_CreateDeviceId(EOS_HConnect Handle, const EOS_Connect_CreateDeviceIdOptions* Options,
                                                   void* ClientData, const EOS_Connect_OnCreateDeviceIdCallback CompletionDelegate) {
-    (void)Options;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_CreateDeviceId",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::async);
     stub_async(Handle, ClientData, CompletionDelegate, sizeof(EOS_Connect_CreateDeviceIdCallbackInfo));
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_DeleteDeviceId(EOS_HConnect Handle, const EOS_Connect_DeleteDeviceIdOptions* Options,
                                                   void* ClientData, const EOS_Connect_OnDeleteDeviceIdCallback CompletionDelegate) {
-    (void)Options;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_DeleteDeviceId",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::async);
     stub_async(Handle, ClientData, CompletionDelegate, sizeof(EOS_Connect_DeleteDeviceIdCallbackInfo));
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_TransferDeviceIdAccount(EOS_HConnect Handle, const EOS_Connect_TransferDeviceIdAccountOptions* Options,
                                                            void* ClientData, const EOS_Connect_OnTransferDeviceIdAccountCallback CompletionDelegate) {
-    (void)Options;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(),
+                                 "EOS_Connect_TransferDeviceIdAccount",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::async);
     stub_async(Handle, ClientData, CompletionDelegate, sizeof(EOS_Connect_TransferDeviceIdAccountCallbackInfo));
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_QueryExternalAccountMappings(EOS_HConnect Handle, const EOS_Connect_QueryExternalAccountMappingsOptions* Options,
                                                                 void* ClientData, const EOS_Connect_OnQueryExternalAccountMappingsCallback CompletionDelegate) {
-    (void)Options;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(),
+                                 "EOS_Connect_QueryExternalAccountMappings",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::async);
     stub_async(Handle, ClientData, CompletionDelegate, sizeof(EOS_Connect_QueryExternalAccountMappingsCallbackInfo));
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_VerifyIdToken(EOS_HConnect Handle, const EOS_Connect_VerifyIdTokenOptions* Options,
                                                  void* ClientData, const EOS_Connect_OnVerifyIdTokenCallback CompletionDelegate) {
-    (void)Options;
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_VerifyIdToken",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::async);
     stub_async(Handle, ClientData, CompletionDelegate, sizeof(EOS_Connect_VerifyIdTokenCallbackInfo));
 }
 
@@ -194,78 +251,108 @@ EOS_DECLARE_FUNC(void) EOS_Connect_VerifyIdToken(EOS_HConnect Handle, const EOS_
 
 EOS_DECLARE_FUNC(EOS_ProductUserId) EOS_Connect_GetExternalAccountMapping(
     EOS_HConnect Handle, const EOS_Connect_GetExternalAccountMappingsOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(),
+                                 "EOS_Connect_GetExternalAccountMapping",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
-    return 0;
+    return eosr::traced_handle(eosr_trace, static_cast<EOS_ProductUserId>(0),
+                               eosr::label_kind::puid);
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Connect_GetProductUserExternalAccountCount(
     EOS_HConnect Handle, const EOS_Connect_GetProductUserExternalAccountCountOptions* Options) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(),
+                                 "EOS_Connect_GetProductUserExternalAccountCount",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
-    return 0;
+    return eosr::traced_count(eosr_trace, static_cast<uint32_t>(0));
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserExternalAccountByIndex(
     EOS_HConnect Handle, const EOS_Connect_CopyProductUserExternalAccountByIndexOptions* Options,
     EOS_Connect_ExternalAccountInfo** OutExternalAccountInfo) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(),
+                                 "EOS_Connect_CopyProductUserExternalAccountByIndex",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     if (OutExternalAccountInfo != 0) {
         *OutExternalAccountInfo = 0;
     }
-    return EOS_EResult::EOS_NotFound;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserExternalAccountByAccountType(
     EOS_HConnect Handle, const EOS_Connect_CopyProductUserExternalAccountByAccountTypeOptions* Options,
     EOS_Connect_ExternalAccountInfo** OutExternalAccountInfo) {
+    eosr::trace_scope eosr_trace(
+        eosr::global_tracer(), "EOS_Connect_CopyProductUserExternalAccountByAccountType",
+        Options != 0 ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     if (OutExternalAccountInfo != 0) {
         *OutExternalAccountInfo = 0;
     }
-    return EOS_EResult::EOS_NotFound;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserExternalAccountByAccountId(
     EOS_HConnect Handle, const EOS_Connect_CopyProductUserExternalAccountByAccountIdOptions* Options,
     EOS_Connect_ExternalAccountInfo** OutExternalAccountInfo) {
+    eosr::trace_scope eosr_trace(
+        eosr::global_tracer(), "EOS_Connect_CopyProductUserExternalAccountByAccountId",
+        Options != 0 ? Options->ApiVersion : 0, eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     if (OutExternalAccountInfo != 0) {
         *OutExternalAccountInfo = 0;
     }
-    return EOS_EResult::EOS_NotFound;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserInfo(
     EOS_HConnect Handle, const EOS_Connect_CopyProductUserInfoOptions* Options,
     EOS_Connect_ExternalAccountInfo** OutExternalAccountInfo) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_CopyProductUserInfo",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     if (OutExternalAccountInfo != 0) {
         *OutExternalAccountInfo = 0;
     }
-    return EOS_EResult::EOS_NotFound;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyIdToken(
     EOS_HConnect Handle, const EOS_Connect_CopyIdTokenOptions* Options, EOS_Connect_IdToken** OutIdToken) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_CopyIdToken",
+                                 Options != 0 ? Options->ApiVersion : 0,
+                                 eosr::call_mode::sync);
     (void)Handle;
     (void)Options;
     if (OutIdToken != 0) {
         *OutIdToken = 0;
     }
-    return EOS_EResult::EOS_NotFound;
+    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
 }
 
 // --- Release helpers: we never hand out these objects, so there is nothing to free ---
 
 EOS_DECLARE_FUNC(void) EOS_Connect_ExternalAccountInfo_Release(EOS_Connect_ExternalAccountInfo* ExternalAccountInfo) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(),
+                                 "EOS_Connect_ExternalAccountInfo_Release", 0,
+                                 eosr::call_mode::sync);
     (void)ExternalAccountInfo;
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_IdToken_Release(EOS_Connect_IdToken* IdToken) {
+    eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_IdToken_Release", 0,
+                                 eosr::call_mode::sync);
     (void)IdToken;
 }
