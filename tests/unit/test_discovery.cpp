@@ -1861,6 +1861,7 @@ TEST_CASE("two instances become friends over the mesh with names and part on han
 
     // Bob's process goes away. Alice must notice the hangup and drop him as a friend, firing the
     // reverse transition -- not wait out the advertisement timeout.
+    const int updates_before_hangup = g_e2e_updates;
     bob.stop();
     for (int i = 0; i < 400 && alice.friend_count() != 0; i++) {
         alice.net.cb_run_frame();
@@ -1869,6 +1870,10 @@ TEST_CASE("two instances become friends over the mesh with names and part on han
     }
     CHECK(alice.friend_count() == 0);
     CHECK(alice.friends.get_status(&gs) == EOS_EFriendsStatus::EOS_FS_NotFriends);
+    // The reverse FriendsUpdate fired, naming Bob dropping to NotFriends.
+    CHECK(g_e2e_updates > updates_before_hangup);
+    CHECK(g_e2e_update_cur == EOS_EFriendsStatus::EOS_FS_NotFriends);
+    CHECK(g_e2e_update_target == bob_epic);
 
     // And his info is no longer resolvable.
     EOS_UserInfo* gone = reinterpret_cast<EOS_UserInfo*>(1);
