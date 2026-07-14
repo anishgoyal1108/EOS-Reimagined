@@ -16,6 +16,7 @@ sdk_platform::sdk_platform()
       presence_(settings_, cb_manager_, network_),
       lobby_(settings_, cb_manager_, network_, connect_),
       ui_(settings_, cb_manager_),
+      integrated_platform_(cb_manager_),
       // A game that never says otherwise is in the foreground with a working network, which is the
       // only state an emulator running beside it could be in.
       application_status_(EOS_EApplicationStatus::EOS_AS_Foreground),
@@ -57,6 +58,24 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
         log_warn("platform: peer discovery unavailable; running without peers");
     }
 
+    // The game builds an options container before the platform exists and hands it in here; we copy
+    // what it registered and it releases the container afterwards, which is why copying is the point.
+    //
+    // The handle arrived in EOS_Platform_Options at version 12 (v11 ends at RTCOptions), so an older
+    // game's struct stops before it and reading it would read the game's own memory.
+    const i32 options_with_integrated_platform = 12;
+    if (
+        options != 0 &&
+        options->ApiVersion >= options_with_integrated_platform &&
+        options->IntegratedPlatformOptionsContainerHandle != 0
+    ) {
+        const integrated_platform_container* container =
+            find_integrated_platform_container(options->IntegratedPlatformOptionsContainerHandle);
+        if (container != 0) {
+            integrated_platform_.configure(container->entries());
+        }
+    }
+
     connect_.emu_init();
     auth_.emu_init();
     p2p_.emu_init();
@@ -64,6 +83,7 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
     presence_.emu_init();
     lobby_.emu_init();
     ui_.emu_init();
+    integrated_platform_.emu_init();
     created_ = true;
     log_info("platform created for product '" + settings_.product_id() + "'");
     return true;
@@ -83,6 +103,7 @@ void sdk_platform::release() {
     presence_.emu_deinit();
     lobby_.emu_deinit();
     ui_.emu_deinit();
+    integrated_platform_.emu_deinit();
     network_.stop();
     cb_manager_.clear();
     platform::net_shutdown();
@@ -151,6 +172,9 @@ void* sdk_platform::interface_handle(interface_id id) {
     }
     if (id == if_ui) {
         return &ui_;
+    }
+    if (id == if_integratedplatform) {
+        return &integrated_platform_;
     }
     return &interfaces_[id];
 }

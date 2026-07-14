@@ -11,6 +11,7 @@
 #include "eos_auth.h"
 #include "eos_lobby.h"
 #include "eos_p2p.h"
+#include "eos_integratedplatform.h"
 #include "eos_version.h"
 
 #include <cstring>
@@ -974,4 +975,114 @@ TEST_CASE("the built SDK library exposes the complete social UI compatibility su
         CHECK_MESSAGE((lib.symbol(ui_symbols[i]) != nullptr),
                       (std::string("missing export: ") + ui_symbols[i]));
     }
+}
+
+// The whole integrated-platform lifecycle as a game actually performs it: build a container before
+// any platform exists, add Steam to it, create the platform *from* it, release the container, and
+// only then use the interface. The container is released while the platform is still running, which
+// is exactly why platform creation has to copy what it needs rather than hold the handle.
+TEST_CASE("the built SDK library takes an integrated-platform container and outlives it") {
+    REQUIRE_FALSE(g_library_path.empty());
+    dynamic_library lib;
+    REQUIRE(lib.open(g_library_path.c_str()));
+
+    RESOLVE(fn_initialize, EOS_Initialize);
+    RESOLVE(fn_shutdown, EOS_Shutdown);
+    RESOLVE(fn_create, EOS_Platform_Create);
+    RESOLVE(fn_release, EOS_Platform_Release);
+    RESOLVE(fn_get_integrated, EOS_Platform_GetIntegratedPlatformInterface);
+    RESOLVE(fn_create_container, EOS_IntegratedPlatform_CreateIntegratedPlatformOptionsContainer);
+    RESOLVE(fn_container_add, EOS_IntegratedPlatformOptionsContainer_Add);
+    RESOLVE(fn_container_release, EOS_IntegratedPlatformOptionsContainer_Release);
+    RESOLVE(fn_set_login, EOS_IntegratedPlatform_SetUserLoginStatus);
+    RESOLVE(fn_finalize, EOS_IntegratedPlatform_FinalizeDeferredUserLogout);
+
+    EOS_InitializeOptions iopts = {};
+    iopts.ApiVersion = EOS_INITIALIZE_API_LATEST;
+    iopts.ProductName = "IntegratedTest";
+    iopts.ProductVersion = "1.0.0";
+    REQUIRE(fn_initialize(&iopts) == EOS_EResult::EOS_Success);
+
+    // The container comes first: it is what the platform is created from.
+    EOS_IntegratedPlatform_CreateIntegratedPlatformOptionsContainerOptions create_container = {};
+    create_container.ApiVersion =
+        EOS_INTEGRATEDPLATFORM_CREATEINTEGRATEDPLATFORMOPTIONSCONTAINER_API_LATEST;
+    EOS_HIntegratedPlatformOptionsContainer container = nullptr;
+    REQUIRE(fn_create_container(&create_container, &container) == EOS_EResult::EOS_Success);
+    REQUIRE((container != nullptr));
+
+    EOS_IntegratedPlatform_Options steam = {};
+    steam.ApiVersion = EOS_INTEGRATEDPLATFORM_OPTIONS_API_LATEST;
+    steam.Type = EOS_IPT_Steam;
+    steam.Flags =
+        EOS_EIntegratedPlatformManagementFlags::EOS_IPMF_ApplicationManagedIdentityLogin;
+    EOS_IntegratedPlatformOptionsContainer_AddOptions add = {};
+    add.ApiVersion = EOS_INTEGRATEDPLATFORMOPTIONSCONTAINER_ADD_API_LATEST;
+    add.Options = &steam;
+    CHECK(fn_container_add(container, &add) == EOS_EResult::EOS_Success);
+    CHECK(fn_container_add(container, &add) == EOS_EResult::EOS_DuplicateNotAllowed);
+
+    EOS_Platform_Options popts = {};
+    popts.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    popts.ProductId = "prod-abc";
+    popts.SandboxId = "sandbox-1";
+    popts.DeploymentId = "deploy-2";
+    popts.ClientCredentials.ClientId = "client";
+    popts.ClientCredentials.ClientSecret = "secret";
+    popts.IntegratedPlatformOptionsContainerHandle = container;
+    EOS_HPlatform platform = fn_create(&popts);
+    REQUIRE((platform != nullptr));
+
+    // The game releases the container now, as the header instructs, and the platform keeps working.
+    fn_container_release(container);
+
+    EOS_HIntegratedPlatform integrated = fn_get_integrated(platform);
+    REQUIRE((integrated != nullptr));
+
+    // Steam was registered as application-managed, so the game may set its user's login status.
+    EOS_IntegratedPlatform_SetUserLoginStatusOptions login = {};
+    login.ApiVersion = EOS_INTEGRATEDPLATFORM_SETUSERLOGINSTATUS_API_LATEST;
+    login.PlatformType = EOS_IPT_Steam;
+    login.LocalPlatformUserId = "76561198000000000";
+    login.CurrentLoginStatus = EOS_ELoginStatus::EOS_LS_LoggedIn;
+    CHECK(fn_set_login(integrated, &login) == EOS_EResult::EOS_Success);
+
+    // A platform the game never registered is NotConfigured, which is a different thing entirely.
+    login.PlatformType = "PSN";
+    CHECK(fn_set_login(integrated, &login) == EOS_EResult::EOS_NotConfigured);
+
+    // Nothing ever tells us a user signed out, so there is never a deferred logout to finalize.
+    EOS_IntegratedPlatform_FinalizeDeferredUserLogoutOptions finalize = {};
+    finalize.ApiVersion = EOS_INTEGRATEDPLATFORM_FINALIZEDEFERREDUSERLOGOUT_API_LATEST;
+    finalize.PlatformType = EOS_IPT_Steam;
+    finalize.LocalPlatformUserId = "76561198000000000";
+    finalize.ExpectedLoginStatus = EOS_ELoginStatus::EOS_LS_NotLoggedIn;
+    CHECK(fn_finalize(integrated, &finalize) == EOS_EResult::EOS_InvalidUser);
+
+    fn_release(platform);
+
+    // The handle arrived in EOS_Platform_Options at version 12 -- a version-11 struct ends at
+    // RTCOptions. So an older game's struct stops before the field, and reading it would read the
+    // game's own memory. We hand ourselves a full-size struct with an old version and a *valid*
+    // container in that slot: if we read it, Steam would be registered and the login below would
+    // succeed. It must not be.
+    EOS_HIntegratedPlatformOptionsContainer older_container = nullptr;
+    REQUIRE(fn_create_container(&create_container, &older_container) == EOS_EResult::EOS_Success);
+    add.Options = &steam;
+    REQUIRE(fn_container_add(older_container, &add) == EOS_EResult::EOS_Success);
+
+    EOS_Platform_Options older = popts;
+    older.ApiVersion = 11;
+    older.IntegratedPlatformOptionsContainerHandle = older_container;
+    EOS_HPlatform older_platform = fn_create(&older);
+    REQUIRE((older_platform != nullptr));
+    EOS_HIntegratedPlatform older_integrated = fn_get_integrated(older_platform);
+    REQUIRE((older_integrated != nullptr));
+
+    login.PlatformType = EOS_IPT_Steam;
+    CHECK(fn_set_login(older_integrated, &login) == EOS_EResult::EOS_NotConfigured);
+
+    fn_container_release(older_container);
+    fn_release(older_platform);
+    CHECK(fn_shutdown() == EOS_EResult::EOS_Success);
 }

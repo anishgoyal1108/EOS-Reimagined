@@ -8,6 +8,7 @@
 #include "interfaces/auth.h"
 #include "interfaces/connect.h"
 #include "interfaces/lobby.h"
+#include "interfaces/integratedplatform.h"
 #include "interfaces/ui.h"
 #include "interfaces/p2p.h"
 #include "interfaces/presence.h"
@@ -101,6 +102,7 @@ public:
     sdk_presence& presence() { return presence_; }
     sdk_lobby& lobby() { return lobby_; }
     sdk_ui& ui() { return ui_; }
+    sdk_integrated_platform& integrated_platform() { return integrated_platform_; }
 
 private:
     sdk_settings settings_;
@@ -115,6 +117,7 @@ private:
     sdk_presence presence_;
     sdk_lobby lobby_;
     sdk_ui ui_;
+    sdk_integrated_platform integrated_platform_;
     stub_interface interfaces_[if_count];
     EOS_EApplicationStatus application_status_;
     EOS_ENetworkStatus network_status_;

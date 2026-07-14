@@ -28,6 +28,7 @@ add_executable(unit_tests
     unit/test_presence.cpp
     unit/test_lobby.cpp
     unit/test_ui.cpp
+    unit/test_integratedplatform.cpp
 )
 target_link_libraries(unit_tests PRIVATE eosr_core doctest)
 
