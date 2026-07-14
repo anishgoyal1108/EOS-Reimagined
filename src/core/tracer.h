@@ -77,9 +77,13 @@ public:
     // queued while it is live inherits the correlation id, so the callback that fires ticks later can
     // be stitched back to the call that made it -- without threading a corr through every interface.
     // It is per-thread, because the game may call EOS from more than one.
+    // The frames nest: a game may re-enter the SDK from inside a synchronous log or completion
+    // callback, and finishing that inner call must reveal the outer one again, so a result queued
+    // afterwards still correlates to the operation that actually created it.
     std::string begin_async_call(const std::string& fn, i32 api,
                                  const std::vector<trace_field>& args);
     void end_async_call(const std::string& fn, const std::string& corr);
+    void end_async_call(const std::string& fn, const std::string& corr, const trace_return& value);
     std::string pending_fn() const;
     std::string pending_corr() const;
 
@@ -134,9 +138,38 @@ private:
     // writing: next_envelope() takes it, and the sink calls next_envelope() under its own lock.
     mutable std::mutex label_mutex_;
     std::map<std::thread::id, std::string> thread_labels_;
-    std::map<std::thread::id, call_frame> call_frames_;
+    // A stack per thread, so nested EOS calls do not overwrite one another's correlation.
+    std::map<std::thread::id, std::vector<call_frame> > call_frames_;
     label_registry labels_;
     u32 next_thread_label_;
+};
+
+// One exported EOS function's trace, as a scope. Construct it at the very top of a C ABI entry point,
+// *before* the handle and options are validated, so a call rejected for a null, stale, or foreign
+// handle is still recorded -- that failure is exactly what an in-game probe exists to reveal, not a
+// reason for the probe to go quiet. The `return` record is emitted when the scope closes, so every
+// exit path -- including an early return -- is paired with its call.
+//
+// A function that returns something other than void tells the scope what it returned, via returns().
+class trace_scope {
+public:
+    trace_scope(tracer& trace, const char* fn, i32 api, const std::vector<trace_field>& args);
+    ~trace_scope();
+
+    trace_scope(const trace_scope&) = delete;
+    trace_scope& operator=(const trace_scope&) = delete;
+
+    // The correlation id of this call, or empty when tracing is off.
+    const std::string& corr() const { return corr_; }
+
+    // What this function returned. Defaults to void, which is what an async EOS function gives back.
+    void returns(const trace_return& value) { value_ = value; }
+
+private:
+    tracer& tracer_;
+    std::string fn_;
+    std::string corr_;
+    trace_return value_;
 };
 
 } // namespace eosr

@@ -45,13 +45,12 @@ void stub_async(EOS_HConnect handle, void* client_data, Delegate delegate, std::
 
 EOS_DECLARE_FUNC(void) EOS_Connect_Login(EOS_HConnect Handle, const EOS_Connect_LoginOptions* Options,
                                          void* ClientData, const EOS_Connect_OnLoginCallback CompletionDelegate) {
-    eosr::sdk_connect* connect = checked_connect(Handle);
-    if (connect == 0) {
-        return;
-    }
-    // An asynchronous call: it mints a correlation id and holds it for the duration, so the result
-    // queued inside login() inherits it and the callback firing a tick later stitches back to here.
-    // Only the *kind* of credential is recorded -- never the token.
+    // The trace scope opens at the ABI boundary, ahead of every check: a call rejected for a null,
+    // stale, or foreign handle is exactly what an in-game probe must be able to explain, so it is
+    // recorded like any other. The scope's destructor pairs it with a return on whichever way we exit.
+    // It also holds the correlation id for the duration, so the result queued inside login() inherits
+    // it and the callback firing a tick later stitches back to here. Only the *kind* of credential is
+    // ever recorded -- never the token.
     eosr::tracer& trace = eosr::global_tracer();
     std::vector<eosr::trace_field> args;
     if (trace.enabled() && Options != 0 && Options->Credentials != 0) {
@@ -60,11 +59,13 @@ EOS_DECLARE_FUNC(void) EOS_Connect_Login(EOS_HConnect Handle, const EOS_Connect_
             eosr::tv_enum(eosr::credential_type_name(Options->Credentials->Type))));
     }
     const i32 api = (Options != 0) ? Options->ApiVersion : 0;
-    const std::string corr = trace.begin_async_call("EOS_Connect_Login", api, args);
+    eosr::trace_scope scope(trace, "EOS_Connect_Login", api, args);
 
+    eosr::sdk_connect* connect = checked_connect(Handle);
+    if (connect == 0) {
+        return;
+    }
     connect->login(Options, ClientData, CompletionDelegate);
-
-    trace.end_async_call("EOS_Connect_Login", corr);
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_Logout(EOS_HConnect Handle, const EOS_Connect_LogoutOptions* Options,

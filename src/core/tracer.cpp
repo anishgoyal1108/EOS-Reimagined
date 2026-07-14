@@ -280,6 +280,7 @@ void tracer::start(const resolved_config& config) {
     run_id_.clear();
     run_dir_.clear();
     next_corr_.store(0);
+    enabled_.store(false); // an off run must not inherit the previous run's gate
     {
         std::lock_guard<std::mutex> lock(label_mutex_);
         thread_labels_.clear();
@@ -339,39 +340,66 @@ std::string tracer::begin_async_call(const std::string& fn, i32 api,
     const std::string corr = next_corr();
     {
         std::lock_guard<std::mutex> lock(label_mutex_);
-        call_frame& frame = call_frames_[std::this_thread::get_id()];
+        call_frame frame;
         frame.fn = fn;
         frame.corr = corr;
+        call_frames_[std::this_thread::get_id()].push_back(frame); // nest, never overwrite
     }
     record_call(fn, api, corr, args); // emitted with the lock released: the sink nests our lock
     return corr;
 }
 
 void tracer::end_async_call(const std::string& fn, const std::string& corr) {
+    // An async EOS function hands its result to the callback, so its synchronous return carries the
+    // correlation and nothing else.
+    end_async_call(fn, corr, return_void());
+}
+
+void tracer::end_async_call(const std::string& fn, const std::string& corr,
+                            const trace_return& value) {
     if (corr.empty()) {
         return; // tracing was off when the call began; it stays off for the whole call
     }
     {
         std::lock_guard<std::mutex> lock(label_mutex_);
-        call_frames_.erase(std::this_thread::get_id());
+        std::map<std::thread::id, std::vector<call_frame> >::iterator it =
+            call_frames_.find(std::this_thread::get_id());
+        if (it != call_frames_.end()) {
+            // Pop this call's own frame, not merely the newest: a trampoline that nested another EOS
+            // call must leave the stack exactly as it found it.
+            std::vector<call_frame>& stack = it->second;
+            for (std::size_t i = stack.size(); i > 0; i--) {
+                if (stack[i - 1].corr == corr) {
+                    stack.erase(stack.begin() + static_cast<std::ptrdiff_t>(i - 1));
+                    break;
+                }
+            }
+            if (stack.empty()) {
+                call_frames_.erase(it);
+            }
+        }
     }
-    // An async EOS function hands its result to the callback, so the synchronous return carries the
-    // correlation and nothing else.
-    record_return(fn, corr, return_void());
+    record_return(fn, corr, value);
 }
 
 std::string tracer::pending_fn() const {
     std::lock_guard<std::mutex> lock(label_mutex_);
-    std::map<std::thread::id, call_frame>::const_iterator it =
+    std::map<std::thread::id, std::vector<call_frame> >::const_iterator it =
         call_frames_.find(std::this_thread::get_id());
-    return (it == call_frames_.end()) ? std::string() : it->second.fn;
+    if (it == call_frames_.end() || it->second.empty()) {
+        return std::string();
+    }
+    return it->second.back().fn; // the innermost call in progress on this thread
 }
 
 std::string tracer::pending_corr() const {
     std::lock_guard<std::mutex> lock(label_mutex_);
-    std::map<std::thread::id, call_frame>::const_iterator it =
+    std::map<std::thread::id, std::vector<call_frame> >::const_iterator it =
         call_frames_.find(std::this_thread::get_id());
-    return (it == call_frames_.end()) ? std::string() : it->second.corr;
+    if (it == call_frames_.end() || it->second.empty()) {
+        return std::string();
+    }
+    return it->second.back().corr;
 }
 
 void tracer::record_call(const std::string& fn, i32 api, const std::string& corr,
@@ -425,12 +453,31 @@ void tracer::flush() {
 }
 
 void tracer::stop() {
+    // Drop the hot-path gate first: a call racing the shutdown must not mint a correlation, or build
+    // a record, for a sink that is closing.
+    enabled_.store(false);
     sink_.close();
     started_ = false;
+    std::lock_guard<std::mutex> lock(label_mutex_);
+    call_frames_.clear();
 }
 
 bool tracer::active() const {
     return sink_.active();
+}
+
+trace_scope::trace_scope(tracer& trace, const char* fn, i32 api,
+                         const std::vector<trace_field>& args)
+    : tracer_(trace), fn_(fn), value_(return_void()) {
+    // Opened before the trampoline validates anything, so a call rejected for a bad handle is still
+    // a call in the trace. When tracing is off this mints nothing and the corr stays empty.
+    corr_ = tracer_.begin_async_call(fn_, api, args);
+}
+
+trace_scope::~trace_scope() {
+    // Whatever path the trampoline took out -- an early return on a bad handle included -- the call
+    // is closed by its return record here.
+    tracer_.end_async_call(fn_, corr_, value_);
 }
 
 } // namespace eosr

@@ -481,3 +481,16 @@ TEST_CASE("options we cannot honour are reported rather than silently ignored") 
     CHECK(config.diagnostics[0].field == "enable_overlay");
     CHECK(config.diagnostics[1].field == "unlock_dlcs");
 }
+
+TEST_CASE("unsupported option diagnostics preserve the source that selected the value") {
+    fake_source source;
+    source.envs["EOSR_ENABLE_OVERLAY"] = "true";
+    source.envs["EOSR_UNLOCK_DLCS"] = "true";
+
+    const resolved_config config = resolve_config(source, make_defaults());
+    REQUIRE(config.diagnostics.size() == 2);
+    CHECK(config.diagnostics[0].field == "enable_overlay");
+    CHECK(config.diagnostics[0].source == "environment");
+    CHECK(config.diagnostics[1].field == "unlock_dlcs");
+    CHECK(config.diagnostics[1].source == "environment");
+}

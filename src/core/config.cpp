@@ -290,14 +290,16 @@ u32 clamp_rotated(i64 value, std::vector<config_diagnostic>& diagnostics, const 
 
 // One boolean field, environment then file then the default already in `out`. An unparseable value at
 // either layer is discarded with a diagnostic and yields to the next, exactly like every other field.
-void resolve_flag(const config_source& source, const char* env_name, const char* file_key,
-                  std::vector<config_diagnostic>& diagnostics, bool& out) {
+// Returns which layer actually selected the value, or null when the default stood -- a later
+// diagnostic about the field has to name the layer it really came from.
+const char* resolve_flag(const config_source& source, const char* env_name, const char* file_key,
+                         std::vector<config_diagnostic>& diagnostics, bool& out) {
     std::string raw;
     if (env_value(source, env_name, raw)) {
         bool value = false;
         if (parse_flag_text(raw, value)) {
             out = value;
-            return;
+            return "environment";
         }
         add_diag(diagnostics, file_key, "environment", "not a boolean", "ignored");
     }
@@ -305,9 +307,12 @@ void resolve_flag(const config_source& source, const char* env_name, const char*
     const lookup found = source.file_bool(file_key, value);
     if (found == lookup::ok) {
         out = value;
-    } else if (found == lookup::wrong_type) {
+        return "file";
+    }
+    if (found == lookup::wrong_type) {
         add_diag(diagnostics, file_key, "file", "wrong type", "ignored");
     }
+    return 0;
 }
 
 // A key we accept so a config written for another Epic emulator loads cleanly, but which we cannot
@@ -610,8 +615,11 @@ resolved_config resolve_config(const config_source& source, const config_default
     }
 
     resolve_flag(source, "EOSR_ENABLE_LAN", "enable_lan", diagnostics, config.enable_lan);
-    resolve_flag(source, "EOSR_ENABLE_OVERLAY", "enable_overlay", diagnostics, config.enable_overlay);
-    resolve_flag(source, "EOSR_UNLOCK_DLCS", "unlock_dlcs", diagnostics, config.unlock_dlcs);
+    const char* overlay_source =
+        resolve_flag(source, "EOSR_ENABLE_OVERLAY", "enable_overlay", diagnostics,
+                     config.enable_overlay);
+    const char* dlcs_source =
+        resolve_flag(source, "EOSR_UNLOCK_DLCS", "unlock_dlcs", diagnostics, config.unlock_dlcs);
 
     // Options we accept so an ecosystem config loads, but cannot honour. Identity is derived from the
     // profile key and recomputed by every peer from the key the handshake proves (docs/adr/0001), so an
@@ -619,11 +627,13 @@ resolved_config resolve_config(const config_source& source, const config_default
     reject_unsupported(source, "epicid", "identity is derived from the profile key", diagnostics);
     reject_unsupported(source, "productuserid", "identity is derived from the profile key",
                        diagnostics);
-    if (config.enable_overlay) {
-        add_diag(diagnostics, "enable_overlay", "file", "no overlay to show", "ignored");
+    // Only a layer that actually asked for these can have turned them on -- both default to false --
+    // so the diagnostic names that layer rather than assuming the file.
+    if (config.enable_overlay && overlay_source != 0) {
+        add_diag(diagnostics, "enable_overlay", overlay_source, "no overlay to show", "ignored");
     }
-    if (config.unlock_dlcs) {
-        add_diag(diagnostics, "unlock_dlcs", "file", "no ecom interface yet", "ignored");
+    if (config.unlock_dlcs && dlcs_source != 0) {
+        add_diag(diagnostics, "unlock_dlcs", dlcs_source, "no ecom interface yet", "ignored");
     }
 
     return config;

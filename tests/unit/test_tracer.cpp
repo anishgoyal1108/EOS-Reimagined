@@ -387,6 +387,53 @@ TEST_CASE("tracing off costs nothing and mints no correlation") {
     t.stop();
 }
 
+TEST_CASE("ending a nested async call restores the outer ambient context") {
+    tracer_fixture fx("corr-nested");
+    const std::string run = fx.make_run("run-nested");
+    tracer t;
+    t.start(make_config(trace_level::lifecycle, fx.sub("traces"), run));
+    REQUIRE(t.enabled());
+
+    const std::string outer =
+        t.begin_async_call("EOS_Connect_Login", 2, std::vector<trace_field>());
+    CHECK(t.pending_fn() == "EOS_Connect_Login");
+    CHECK(t.pending_corr() == outer);
+
+    // A synchronous EOS log callback can re-enter the SDK before the outer trampoline returns.
+    // Finishing that nested call must reveal the outer frame again, so a result queued afterwards
+    // still correlates to the operation that actually created it.
+    const std::string inner =
+        t.begin_async_call("EOS_Auth_Login", 3, std::vector<trace_field>());
+    CHECK(t.pending_fn() == "EOS_Auth_Login");
+    CHECK(t.pending_corr() == inner);
+    t.end_async_call("EOS_Auth_Login", inner);
+
+    CHECK(t.pending_fn() == "EOS_Connect_Login");
+    CHECK(t.pending_corr() == outer);
+    t.end_async_call("EOS_Connect_Login", outer);
+    CHECK(t.pending_corr().empty());
+    t.stop();
+}
+
+TEST_CASE("stop disables the tracer hot path before a later off run") {
+    tracer_fixture fx("corr-stop-gate");
+    const std::string run = fx.make_run("run-enabled");
+    tracer t;
+    t.start(make_config(trace_level::lifecycle, fx.sub("traces"), run));
+    REQUIRE(t.enabled());
+
+    t.stop();
+    CHECK_FALSE(t.enabled());
+    CHECK(t.begin_async_call("EOS_Connect_Login", 2, std::vector<trace_field>()).empty());
+
+    // The component's documented isolated stop/start cycle must not carry an enabled gate from the
+    // previous run when the new configuration explicitly turns tracing off.
+    t.start(make_config(trace_level::off, fx.sub("traces"), std::string()));
+    CHECK_FALSE(t.enabled());
+    CHECK(t.begin_async_call("EOS_Connect_Login", 2, std::vector<trace_field>()).empty());
+    t.stop();
+}
+
 TEST_CASE("the level decides which half of a pair is kept") {
     tracer_fixture fx("corr-levels");
     const std::string run = fx.make_run("run-errors");

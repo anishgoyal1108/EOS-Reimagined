@@ -24,9 +24,11 @@ namespace {
 
 bool g_login_fired = false;
 EOS_EResult g_login_result = EOS_EResult::EOS_UnexpectedError;
+EOS_ProductUserId g_login_user = nullptr;
 void EOS_CALL on_login(const EOS_Connect_LoginCallbackInfo* info) {
     g_login_fired = true;
     g_login_result = info->ResultCode;
+    g_login_user = info->LocalUserId;
 }
 
 void set_env(const char* name, const char* value) {
@@ -100,6 +102,17 @@ std::string field_of(const std::string& line, const std::string& name) {
     return (end == std::string::npos) ? std::string() : line.substr(start, end - start);
 }
 
+std::size_t count_records(const std::vector<std::string>& lines, const std::string& kind,
+                          const std::string& fn) {
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < lines.size(); i++) {
+        if (field_of(lines[i], "kind") == kind && field_of(lines[i], "fn") == fn) {
+            count++;
+        }
+    }
+    return count;
+}
+
 } // namespace
 
 // The real observability path: enable tracing through the loaded library and drive one whole EOS
@@ -150,6 +163,7 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     // completion fires. This is what the call/return/callback correlation is checked against below.
     RESOLVE(fn_get_connect, EOS_Platform_GetConnectInterface);
     RESOLVE(fn_login, EOS_Connect_Login);
+    RESOLVE(fn_puid_to_string, EOS_ProductUserId_ToString);
     EOS_HConnect connect = fn_get_connect(platform);
     REQUIRE((connect != nullptr));
 
@@ -167,6 +181,19 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     }
     CHECK(g_login_fired);
     CHECK(g_login_result == EOS_EResult::EOS_Success);
+    REQUIRE((g_login_user != nullptr));
+
+    char raw_user_buffer[128] = {};
+    int32_t raw_user_length = static_cast<int32_t>(sizeof(raw_user_buffer));
+    REQUIRE(fn_puid_to_string(g_login_user, raw_user_buffer, &raw_user_length) ==
+            EOS_EResult::EOS_Success);
+    const std::string raw_user(raw_user_buffer);
+    REQUIRE_FALSE(raw_user.empty());
+
+    // A diagnostic trace must retain calls that fail before dispatch too. Bad/stale handles are one
+    // of the first things an in-game alpha probe needs to explain, not a reason for the probe itself
+    // to go silent. The emulator already treats this as a safe no-op.
+    fn_login(nullptr, &login, nullptr, on_login);
 
     fn_release(platform);
     REQUIRE(fn_shutdown() == EOS_EResult::EOS_Success);
@@ -223,9 +250,16 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     CHECK(field_of(call, "fn") == "EOS_Connect_Login");
     CHECK(field_of(callback, "fn") == "EOS_Connect_Login");
 
+    // Both the valid call and the call rejected for its null handle are visible. Only the valid one
+    // has a completion callback, because the rejected call never reached the interface.
+    CHECK(count_records(lines, "call", "EOS_Connect_Login") == 2);
+    CHECK(count_records(lines, "return", "EOS_Connect_Login") == 2);
+    CHECK(count_records(lines, "callback", "EOS_Connect_Login") == 1);
+
     // The kind of credential is recorded; the token is not. The local user is a label, not an id.
     CHECK(call.find("\"cred_type\":\"EOS_ECT_DEVICEID_ACCESS_TOKEN\"") != std::string::npos);
     CHECK(callback.find("\"name\":\"EOS_Success\"") != std::string::npos);
     CHECK(callback.find("\"puid\":\"puid#") != std::string::npos);
     CHECK(trace.find("\"unused\"") == std::string::npos); // the credential token never appears
+    CHECK(trace.find(raw_user) == std::string::npos); // nor does the real id returned by the ABI
 }
