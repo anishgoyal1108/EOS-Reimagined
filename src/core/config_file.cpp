@@ -91,15 +91,24 @@ bool token_to_i64(const std::string& text, i64& out) {
     if (negative) {
         i = 1;
     }
-    i64 value = 0;
+    // Accumulate magnitude as unsigned. A negative token may reach 2^63 (INT64_MIN); a positive one
+    // only 2^63 - 1, so the limit depends on the sign.
+    const u64 int64_min_magnitude = 9223372036854775808ULL;
+    const u64 limit = negative ? int64_min_magnitude : (int64_min_magnitude - 1);
+    u64 value = 0;
     for (; i < text.size(); i++) {
-        const i64 digit = text[i] - '0';
-        if (value > (std::numeric_limits<i64>::max() - digit) / 10) {
+        const u64 digit = static_cast<u64>(text[i] - '0');
+        if (value > (limit - digit) / 10) {
             return false;
         }
         value = value * 10 + digit;
     }
-    out = negative ? -value : value;
+    if (negative) {
+        out = (value == int64_min_magnitude) ? std::numeric_limits<i64>::min()
+                                             : -static_cast<i64>(value);
+    } else {
+        out = static_cast<i64>(value);
+    }
     return true;
 }
 
@@ -192,6 +201,7 @@ bool parser::read_hex4(u32& out) {
 
 bool parser::parse_string(std::string& out) {
     pos_++; // opening quote
+    const std::size_t content_start = pos_;
     out.clear();
     while (pos_ < s_.size()) {
         const unsigned char c = static_cast<unsigned char>(s_[pos_]);
@@ -203,8 +213,44 @@ bool parser::parse_string(std::string& out) {
             return fail("unescaped control character in string");
         }
         if (c != '\\') {
-            out += static_cast<char>(c);
-            pos_++;
+            // An unescaped byte must be a valid UTF-8 scalar, copied whole. The contract is UTF-8
+            // only, so a stray or overlong byte is rejected rather than smuggled through.
+            if (c < 0x80) {
+                out += static_cast<char>(c);
+                pos_++;
+            } else {
+                std::size_t length;
+                u32 codepoint;
+                if ((c >> 5) == 0x6) {
+                    length = 2;
+                    codepoint = c & 0x1F;
+                } else if ((c >> 4) == 0xE) {
+                    length = 3;
+                    codepoint = c & 0x0F;
+                } else if ((c >> 3) == 0x1E) {
+                    length = 4;
+                    codepoint = c & 0x07;
+                } else {
+                    return fail("invalid UTF-8 in string");
+                }
+                if (pos_ + length > s_.size()) {
+                    return fail("invalid UTF-8 in string");
+                }
+                for (std::size_t k = 1; k < length; k++) {
+                    const unsigned char cont = static_cast<unsigned char>(s_[pos_ + k]);
+                    if ((cont >> 6) != 0x2) {
+                        return fail("invalid UTF-8 in string");
+                    }
+                    codepoint = (codepoint << 6) | (cont & 0x3F);
+                }
+                if ((length == 2 && codepoint < 0x80) || (length == 3 && codepoint < 0x800) ||
+                    (length == 4 && codepoint < 0x10000) || codepoint > 0x10FFFF ||
+                    (codepoint >= 0xD800 && codepoint <= 0xDFFF)) {
+                    return fail("invalid UTF-8 in string");
+                }
+                out.append(s_, pos_, length);
+                pos_ += length;
+            }
         } else {
             pos_++;
             if (pos_ >= s_.size()) {
@@ -254,7 +300,9 @@ bool parser::parse_string(std::string& out) {
                 return fail("invalid escape");
             }
         }
-        if (out.size() > max_token) {
+        // Bound both the decoded output and the source span, so an escape-heavy token cannot slip
+        // past the cap by decoding to fewer bytes than it occupies.
+        if (out.size() > max_token || (pos_ - content_start) > max_token) {
             return fail("string too long");
         }
     }
@@ -509,6 +557,9 @@ bool parser::parse(config_file& out) {
 } // namespace
 
 bool parse_config_file(const std::string& bytes, config_file& out, std::string& error) {
+    // The contract is that failure leaves `out` empty, so clear any prior contents up front -- a
+    // caller reusing the object must never mistake stale values for the malformed file's.
+    out = config_file();
     if (bytes.size() > max_input) {
         error = "input too large";
         return false;
