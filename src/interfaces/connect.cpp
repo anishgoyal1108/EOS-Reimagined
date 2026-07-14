@@ -1,5 +1,8 @@
 #include "interfaces/connect.h"
 
+#include "core/runtime.h"
+#include "core/tracer.h"
+
 #include <memory>
 
 #include "common/ids.h"
@@ -112,6 +115,16 @@ void sdk_connect::deliver_login_result(EOS_EResult result_code, EOS_ProductUserI
     info->LocalUserId = user;
     info->ContinuanceToken = 0;
     result->set_done(true);
+
+    // The local user the login resolved to, as an opaque label -- the raw id never reaches the trace.
+    tracer& trace = global_tracer();
+    if (trace.enabled() && user != 0) {
+        std::vector<trace_field> payload;
+        payload.push_back(make_field(
+            field_id::puid,
+            tv_label(trace.label(label_kind::puid, settings_.product_user_id()))));
+        result->set_trace_payload(payload);
+    }
     callbacks_.add_callback(this, std::move(result));
 }
 

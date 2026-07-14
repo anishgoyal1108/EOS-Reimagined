@@ -3,9 +3,16 @@
 // an empty result) so a game never hangs or dereferences an unimplemented interface.
 #include "eos_connect.h"
 
+#include <string>
+#include <vector>
+
+#include "common/eos_names.h"
+#include "common/types.h"
 #include "core/frame_result.h"
 #include "core/platform.h"
 #include "core/runtime.h"
+#include "core/trace_event.h"
+#include "core/tracer.h"
 #include "interfaces/connect.h"
 
 namespace {
@@ -39,9 +46,25 @@ void stub_async(EOS_HConnect handle, void* client_data, Delegate delegate, std::
 EOS_DECLARE_FUNC(void) EOS_Connect_Login(EOS_HConnect Handle, const EOS_Connect_LoginOptions* Options,
                                          void* ClientData, const EOS_Connect_OnLoginCallback CompletionDelegate) {
     eosr::sdk_connect* connect = checked_connect(Handle);
-    if (connect != 0) {
-        connect->login(Options, ClientData, CompletionDelegate);
+    if (connect == 0) {
+        return;
     }
+    // An asynchronous call: it mints a correlation id and holds it for the duration, so the result
+    // queued inside login() inherits it and the callback firing a tick later stitches back to here.
+    // Only the *kind* of credential is recorded -- never the token.
+    eosr::tracer& trace = eosr::global_tracer();
+    std::vector<eosr::trace_field> args;
+    if (trace.enabled() && Options != 0 && Options->Credentials != 0) {
+        args.push_back(eosr::make_field(
+            eosr::field_id::cred_type,
+            eosr::tv_enum(eosr::credential_type_name(Options->Credentials->Type))));
+    }
+    const i32 api = (Options != 0) ? Options->ApiVersion : 0;
+    const std::string corr = trace.begin_async_call("EOS_Connect_Login", api, args);
+
+    connect->login(Options, ClientData, CompletionDelegate);
+
+    trace.end_async_call("EOS_Connect_Login", corr);
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_Logout(EOS_HConnect Handle, const EOS_Connect_LogoutOptions* Options,

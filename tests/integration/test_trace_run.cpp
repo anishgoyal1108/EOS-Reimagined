@@ -6,6 +6,7 @@
 
 #include "eos_sdk.h"
 #include "eos_init.h"
+#include "eos_connect.h"
 
 #include "platform/dynlib.h"
 #include "platform/paths.h"
@@ -20,6 +21,13 @@ namespace {
 #define RESOLVE(var, api_name) \
     auto var = reinterpret_cast<decltype(&api_name)>(lib.symbol(#api_name)); \
     REQUIRE((var != nullptr))
+
+bool g_login_fired = false;
+EOS_EResult g_login_result = EOS_EResult::EOS_UnexpectedError;
+void EOS_CALL on_login(const EOS_Connect_LoginCallbackInfo* info) {
+    g_login_fired = true;
+    g_login_result = info->ResultCode;
+}
 
 void set_env(const char* name, const char* value) {
 #if defined(_WIN32)
@@ -70,6 +78,28 @@ long parse_seq(const std::string& line) {
     return any ? value : -1;
 }
 
+// The first line whose text contains `needle`, or empty if there is none.
+std::string find_line(const std::vector<std::string>& lines, const std::string& needle) {
+    for (std::size_t i = 0; i < lines.size(); i++) {
+        if (lines[i].find(needle) != std::string::npos) {
+            return lines[i];
+        }
+    }
+    return std::string();
+}
+
+// The value of a string field ("corr":"c#0" -> c#0), or empty if the field is absent.
+std::string field_of(const std::string& line, const std::string& name) {
+    const std::string key = "\"" + name + "\":\"";
+    const std::size_t at = line.find(key);
+    if (at == std::string::npos) {
+        return std::string();
+    }
+    const std::size_t start = at + key.size();
+    const std::size_t end = line.find('"', start);
+    return (end == std::string::npos) ? std::string() : line.substr(start, end - start);
+}
+
 } // namespace
 
 // The real observability path: enable tracing through the loaded library and drive one whole EOS
@@ -116,9 +146,28 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     EOS_HPlatform platform = fn_create(&popts);
     REQUIRE((platform != nullptr));
 
-    for (int i = 0; i < 4; i++) {
+    // Drive one real asynchronous operation, exactly as a game would: log in, then tick until the
+    // completion fires. This is what the call/return/callback correlation is checked against below.
+    RESOLVE(fn_get_connect, EOS_Platform_GetConnectInterface);
+    RESOLVE(fn_login, EOS_Connect_Login);
+    EOS_HConnect connect = fn_get_connect(platform);
+    REQUIRE((connect != nullptr));
+
+    EOS_Connect_Credentials creds = {};
+    creds.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
+    creds.Token = "unused";
+    creds.Type = EOS_EExternalCredentialType::EOS_ECT_DEVICEID_ACCESS_TOKEN;
+    EOS_Connect_LoginOptions login = {};
+    login.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
+    login.Credentials = &creds;
+    fn_login(connect, &login, nullptr, on_login);
+
+    for (int i = 0; i < 8 && !g_login_fired; i++) {
         fn_tick(platform);
     }
+    CHECK(g_login_fired);
+    CHECK(g_login_result == EOS_EResult::EOS_Success);
+
     fn_release(platform);
     REQUIRE(fn_shutdown() == EOS_EResult::EOS_Success);
     lib.close();
@@ -157,4 +206,26 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
         CHECK(parse_seq(lines[i]) == expected); // monotonic, contiguous, from zero
         expected++;
     }
+
+    // The asynchronous login: its call, its synchronous return, and the callback that completed it a
+    // tick later all carry one correlation id, so a reader can stitch the operation back together.
+    const std::string call = find_line(lines, "\"kind\":\"call\"");
+    const std::string ret = find_line(lines, "\"kind\":\"return\"");
+    const std::string callback = find_line(lines, "\"kind\":\"callback\"");
+    REQUIRE_FALSE(call.empty());
+    REQUIRE_FALSE(ret.empty());
+    REQUIRE_FALSE(callback.empty());
+
+    const std::string corr = field_of(call, "corr");
+    CHECK_FALSE(corr.empty());
+    CHECK(field_of(ret, "corr") == corr);
+    CHECK(field_of(callback, "corr") == corr);
+    CHECK(field_of(call, "fn") == "EOS_Connect_Login");
+    CHECK(field_of(callback, "fn") == "EOS_Connect_Login");
+
+    // The kind of credential is recorded; the token is not. The local user is a label, not an id.
+    CHECK(call.find("\"cred_type\":\"EOS_ECT_DEVICEID_ACCESS_TOKEN\"") != std::string::npos);
+    CHECK(callback.find("\"name\":\"EOS_Success\"") != std::string::npos);
+    CHECK(callback.find("\"puid\":\"puid#") != std::string::npos);
+    CHECK(trace.find("\"unused\"") == std::string::npos); // the credential token never appears
 }

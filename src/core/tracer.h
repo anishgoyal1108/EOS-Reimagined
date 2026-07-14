@@ -9,9 +9,10 @@
 #include <thread>
 
 #include "common/types.h"
-#include "core/config.h"       // resolved_config, trace_level
-#include "core/trace_event.h"  // trace_envelope
-#include "core/trace_sink.h"   // trace_sink, trace_meta_source
+#include "core/config.h"          // resolved_config, trace_level
+#include "core/label_registry.h"  // label_kind, label_registry
+#include "core/trace_event.h"     // trace_envelope
+#include "core/trace_sink.h"      // trace_sink, trace_meta_source
 
 namespace eosr {
 
@@ -52,11 +53,46 @@ public:
 
     bool active() const;
 
+    // A cheap gate for the hot path: one atomic load, so a game with tracing off pays nothing per EOS
+    // call. active() takes the sink's lock; this does not.
+    bool enabled() const { return enabled_.load(); }
+
     // The resolved run identity and directory for this run, or empty when off / not started. The run
     // directory has a random suffix in manual mode, so a caller (and a test) reads it back here rather
     // than reconstructing it.
     const std::string& run_id() const { return run_id_; }
     const std::string& run_directory() const { return run_dir_; }
+
+    // --- Correlation and labels ---
+
+    // A fresh correlation id (c#0, c#1, ...) for one asynchronous operation.
+    std::string next_corr();
+
+    // The stable opaque label for a handle or id, so neither ever reaches the file raw.
+    std::string label(label_kind kind, const std::string& token);
+
+    // --- The ambient call context ---
+    //
+    // An exported EOS function establishes it for the duration of the call. Any asynchronous result
+    // queued while it is live inherits the correlation id, so the callback that fires ticks later can
+    // be stitched back to the call that made it -- without threading a corr through every interface.
+    // It is per-thread, because the game may call EOS from more than one.
+    std::string begin_async_call(const std::string& fn, i32 api,
+                                 const std::vector<trace_field>& args);
+    void end_async_call(const std::string& fn, const std::string& corr);
+    std::string pending_fn() const;
+    std::string pending_corr() const;
+
+    // --- Record emitters ---
+    //
+    // Each picks its own verbosity: an asynchronous call/callback pair is `lifecycle`, a plain
+    // call/return is `full`, and anything carrying a non-Success result is `errors`, so raising the
+    // level only ever adds records.
+    void record_call(const std::string& fn, i32 api, const std::string& corr,
+                    const std::vector<trace_field>& args);
+    void record_return(const std::string& fn, const std::string& corr, const trace_return& value);
+    void record_callback(const std::string& fn, const std::string& corr,
+                        const trace_result_code& result, const std::vector<trace_field>& payload);
 
     // trace_meta_source: the envelope for the sink's own run_start / rotate / shutdown records, sharing
     // this run's sequence counter and clock with everything else.
@@ -75,8 +111,16 @@ private:
     // logger line. The free-form message stays logger-only.
     void emit_diagnostics(const std::vector<config_diagnostic>& diagnostics);
 
+    // The correlation id and the fn of the exported call in progress on one thread.
+    struct call_frame {
+        std::string fn;
+        std::string corr;
+    };
+
     trace_sink sink_;
     std::atomic<u64> seq_;                          // per-process monotonic record counter
+    std::atomic<bool> enabled_;                     // the hot-path gate: no lock to read
+    std::atomic<u64> next_corr_;                    // per-run correlation counter
     std::chrono::steady_clock::time_point epoch_;   // t = now - epoch, nanoseconds
     u64 pid_;
     std::string instance_label_;
@@ -85,9 +129,13 @@ private:
     trace_level level_;
     bool started_;
 
-    // Guards only the thread-label map -- a leaf lock the sink's mutex may nest, never the reverse.
-    std::mutex label_mutex_;
+    // Guards the thread-label map, the per-thread call frames, and the label registry -- all leaf
+    // state. The sink's mutex may nest this, never the reverse, so no emitter may hold it while
+    // writing: next_envelope() takes it, and the sink calls next_envelope() under its own lock.
+    mutable std::mutex label_mutex_;
     std::map<std::thread::id, std::string> thread_labels_;
+    std::map<std::thread::id, call_frame> call_frames_;
+    label_registry labels_;
     u32 next_thread_label_;
 };
 

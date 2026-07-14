@@ -58,6 +58,16 @@ public:
     void tick();
 
 private:
+    // The prefix every EOS_*CallbackInfo shares, so the outcome of any completion can be read without
+    // knowing which one it is.
+    struct callback_info_head {
+        EOS_EResult ResultCode;
+        void* ClientData;
+    };
+
+    // Emit the `callback` record for a completion about to fire, correlated back to the call.
+    void record_callback_for(const frame_result& result);
+
     // A result that is ready to deliver, kept with its owner so free_callback can run.
     struct ready_callback {
         i_run_callback* owner;

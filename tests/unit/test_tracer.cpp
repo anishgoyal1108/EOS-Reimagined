@@ -317,3 +317,128 @@ TEST_CASE("on_profile is a safe no-op when inactive or given a bad id") {
     CHECK(slurp(run + "/trace.jsonl").find("profile") == std::string::npos);
     t.stop();
 }
+
+// --- Correlation: an async call, its return, and the callback that completes it. ---
+
+TEST_CASE("a call, its return, and its callback share one correlation id") {
+    tracer_fixture fx("corr");
+    const std::string run = fx.make_run("run-corr");
+    tracer t;
+    t.start(make_config(trace_level::lifecycle, fx.sub("traces"), run));
+    REQUIRE(t.enabled());
+
+    std::vector<trace_field> args;
+    args.push_back(make_field(field_id::cred_type, tv_enum("EOS_ECT_DEVICEID_ACCESS_TOKEN")));
+    const std::string corr = t.begin_async_call("EOS_Connect_Login", 2, args);
+    CHECK(corr == "c#0");
+    CHECK(t.pending_corr() == corr); // live for the duration of the call
+    CHECK(t.pending_fn() == "EOS_Connect_Login");
+    t.end_async_call("EOS_Connect_Login", corr);
+    CHECK(t.pending_corr().empty()); // and cleared afterwards
+
+    trace_result_code ok;
+    ok.code = 0;
+    ok.name = "EOS_Success";
+    std::vector<trace_field> payload;
+    payload.push_back(make_field(field_id::puid, tv_label(t.label(label_kind::puid, "abc"))));
+    t.record_callback("EOS_Connect_Login", corr, ok, payload);
+    t.flush();
+
+    const std::string trace = slurp(run + "/trace.jsonl");
+    CHECK(trace.find("\"kind\":\"call\",\"fn\":\"EOS_Connect_Login\",\"api\":2,\"corr\":\"c#0\"") !=
+          std::string::npos);
+    CHECK(trace.find("\"cred_type\":\"EOS_ECT_DEVICEID_ACCESS_TOKEN\"") != std::string::npos);
+    CHECK(trace.find("\"kind\":\"return\",\"fn\":\"EOS_Connect_Login\",\"corr\":\"c#0\",\"void\":true") !=
+          std::string::npos);
+    CHECK(trace.find("\"kind\":\"callback\",\"fn\":\"EOS_Connect_Login\",\"corr\":\"c#0\"") !=
+          std::string::npos);
+    CHECK(trace.find("\"puid\":\"puid#0\"") != std::string::npos);
+
+    // A second async call gets its own correlation id.
+    CHECK(t.begin_async_call("EOS_Connect_Login", 2, args) == "c#1");
+    t.stop();
+}
+
+TEST_CASE("correlation ids and labels reset with the run") {
+    tracer_fixture fx("corr-reset");
+    const std::string run_a = fx.make_run("runA");
+    const std::string run_b = fx.make_run("runB");
+    tracer t;
+
+    t.start(make_config(trace_level::lifecycle, fx.sub("traces"), run_a));
+    CHECK(t.begin_async_call("EOS_Connect_Login", 2, std::vector<trace_field>()) == "c#0");
+    CHECK(t.label(label_kind::puid, "abc") == "puid#0");
+    t.stop();
+
+    t.start(make_config(trace_level::lifecycle, fx.sub("traces"), run_b));
+    CHECK(t.begin_async_call("EOS_Connect_Login", 2, std::vector<trace_field>()) == "c#0");
+    CHECK(t.label(label_kind::puid, "xyz") == "puid#0"); // a wholly new run
+    t.stop();
+}
+
+TEST_CASE("tracing off costs nothing and mints no correlation") {
+    tracer_fixture fx("corr-off");
+    tracer t;
+    t.start(make_config(trace_level::off, fx.sub("traces"), std::string()));
+    CHECK_FALSE(t.enabled());
+    CHECK(t.begin_async_call("EOS_Connect_Login", 2, std::vector<trace_field>()).empty());
+    CHECK(t.pending_corr().empty());
+    t.end_async_call("EOS_Connect_Login", std::string()); // a safe no-op
+    t.stop();
+}
+
+TEST_CASE("the level decides which half of a pair is kept") {
+    tracer_fixture fx("corr-levels");
+    const std::string run = fx.make_run("run-errors");
+    tracer t;
+    t.start(make_config(trace_level::errors, fx.sub("traces"), run)); // errors only
+
+    const std::string corr = t.begin_async_call("EOS_Connect_Login", 2, std::vector<trace_field>());
+    t.end_async_call("EOS_Connect_Login", corr);
+
+    trace_result_code ok;
+    ok.code = 0;
+    ok.name = "EOS_Success";
+    t.record_callback("EOS_Connect_Login", corr, ok, std::vector<trace_field>());
+
+    trace_result_code bad;
+    bad.code = 2;
+    bad.name = "EOS_InvalidParameters";
+    t.record_callback("EOS_Connect_Login", corr, bad, std::vector<trace_field>());
+    t.flush();
+
+    const std::string trace = slurp(run + "/trace.jsonl");
+    CHECK(trace.find("\"kind\":\"call\"") == std::string::npos);     // a lifecycle record: dropped
+    CHECK(trace.find("\"EOS_Success\"") == std::string::npos);       // a successful completion: dropped
+    CHECK(trace.find("\"EOS_InvalidParameters\"") != std::string::npos); // the failure is kept
+    t.stop();
+}
+
+TEST_CASE("no raw id or credential can reach the trace through a call or callback") {
+    tracer_fixture fx("corr-privacy");
+    const std::string run = fx.make_run("run-privacy");
+    const std::string raw_puid = "00112233445566778899aabbccddeeff";
+    const std::string token = "a-real-credential-token";
+
+    tracer t;
+    t.start(make_config(trace_level::full, fx.sub("traces"), run));
+
+    std::vector<trace_field> args;
+    args.push_back(make_field(field_id::cred_type, tv_enum(token))); // dashes: not a valid enum
+    const std::string corr = t.begin_async_call("EOS_Connect_Login", 2, args);
+    t.end_async_call("EOS_Connect_Login", corr);
+
+    trace_result_code ok;
+    ok.code = 0;
+    ok.name = "EOS_Success";
+    std::vector<trace_field> payload;
+    payload.push_back(make_field(field_id::puid, tv_label(raw_puid))); // no '#': not a valid label
+    t.record_callback("EOS_Connect_Login", corr, ok, payload);
+    t.flush();
+
+    const std::string trace = slurp(run + "/trace.jsonl");
+    CHECK(trace.find(raw_puid) == std::string::npos); // the id never reaches the file
+    CHECK(trace.find(token) == std::string::npos);    // nor the credential
+    CHECK(trace.find("\"kind\":\"call\"") != std::string::npos); // the records themselves still land
+    t.stop();
+}

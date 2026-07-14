@@ -5,8 +5,11 @@
 #include <cstddef>
 #include <vector>
 
+#include <string>
+
 #include "eos_common.h"
 #include "common/types.h"
+#include "core/trace_event.h"
 
 namespace eosr {
 
@@ -55,6 +58,19 @@ public:
     // Invoke the delegate with the payload, if a delegate was set.
     void fire() const;
 
+    // The trace context of the exported call that queued this result: the operation's name and its
+    // correlation id, plus whatever typed fields its callback record should carry. Stamped when the
+    // result is queued, so the callback that fires ticks later can be stitched back to its call.
+    void set_trace(const std::string& fn, const std::string& corr) {
+        trace_fn_ = fn;
+        trace_corr_ = corr;
+    }
+    void set_trace_payload(const std::vector<trace_field>& fields) { trace_payload_ = fields; }
+    const std::string& trace_fn() const { return trace_fn_; }
+    const std::string& trace_corr() const { return trace_corr_; }
+    const std::vector<trace_field>& trace_payload() const { return trace_payload_; }
+    bool has_payload() const { return !payload_.empty(); }
+
     callback_type_id type_id() const { return type_id_; }
     bool done() const { return done_; }
     void set_done(bool value) { done_ = value; }
@@ -67,6 +83,9 @@ private:
     completion_delegate func_;
     std::chrono::milliseconds ok_timeout_;
     std::chrono::steady_clock::time_point created_time_;
+    std::string trace_fn_;
+    std::string trace_corr_;
+    std::vector<trace_field> trace_payload_;
     bool done_;
     bool remove_on_timeout_;
 };

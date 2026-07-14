@@ -13,6 +13,7 @@ add_executable(unit_tests
     unit/test_trace_event.cpp
     unit/test_trace_sink.cpp
     unit/test_tracer.cpp
+    unit/test_label_registry.cpp
     unit/test_peer_fp.cpp
     unit/test_config.cpp
     unit/test_config_file.cpp

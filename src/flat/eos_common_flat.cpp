@@ -5,6 +5,8 @@
 #include <string>
 
 #include "eos_common.h"
+
+#include "common/eos_names.h"
 #include "eos_types.h"
 #include "eos_version.h"
 
@@ -34,15 +36,8 @@ EOS_EResult id_to_string(const std::string& id_str, bool valid, char* out_buffer
 } // namespace
 
 EOS_DECLARE_FUNC(const char*) EOS_EResult_ToString(EOS_EResult Result) {
-    switch (Result) {
-#define EOS_RESULT_VALUE(Name, Value) case EOS_EResult::Name: return #Name;
-#define EOS_RESULT_VALUE_LAST(Name, Value) case EOS_EResult::Name: return #Name;
-#include "eos_result.h"
-#undef EOS_RESULT_VALUE
-#undef EOS_RESULT_VALUE_LAST
-    }
-    // Reached only for an out-of-range value cast into the enum.
-    return "EOS_UnexpectedError";
+    // The same mapping the trace records use, so the exported name and the traced name cannot drift.
+    return eosr::result_name(Result);
 }
 
 EOS_DECLARE_FUNC(EOS_Bool) EOS_EpicAccountId_IsValid(EOS_EpicAccountId AccountId) {

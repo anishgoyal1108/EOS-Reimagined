@@ -132,7 +132,8 @@ std::string to_code(const std::string& text) {
 } // namespace
 
 tracer::tracer()
-    : seq_(0), pid_(0), level_(trace_level::off), started_(false), next_thread_label_(0) {}
+    : seq_(0), enabled_(false), next_corr_(0), pid_(0), level_(trace_level::off), started_(false),
+      next_thread_label_(0) {}
 
 tracer::~tracer() {
     stop();
@@ -278,9 +279,12 @@ void tracer::start(const resolved_config& config) {
     level_ = config.level;
     run_id_.clear();
     run_dir_.clear();
+    next_corr_.store(0);
     {
         std::lock_guard<std::mutex> lock(label_mutex_);
         thread_labels_.clear();
+        call_frames_.clear();
+        labels_.clear();
         next_thread_label_ = 0;
     }
 
@@ -312,7 +316,95 @@ void tracer::start(const resolved_config& config) {
         platform::remove_file(run_dir + "/trace.jsonl");
         log_error("tracer: runtime.json could not be exclusively written; trace run rejected");
     }
+    // The hot-path gate, set once the run's fate is settled: an EOS call checks this one atomic and
+    // does nothing more when tracing is off or the run failed to open.
+    enabled_.store(sink_.active());
     emit_diagnostics(config.diagnostics);
+}
+
+std::string tracer::next_corr() {
+    return "c#" + std::to_string(next_corr_.fetch_add(1));
+}
+
+std::string tracer::label(label_kind kind, const std::string& token) {
+    std::lock_guard<std::mutex> lock(label_mutex_);
+    return labels_.label(kind, token);
+}
+
+std::string tracer::begin_async_call(const std::string& fn, i32 api,
+                                     const std::vector<trace_field>& args) {
+    if (!enabled()) {
+        return std::string();
+    }
+    const std::string corr = next_corr();
+    {
+        std::lock_guard<std::mutex> lock(label_mutex_);
+        call_frame& frame = call_frames_[std::this_thread::get_id()];
+        frame.fn = fn;
+        frame.corr = corr;
+    }
+    record_call(fn, api, corr, args); // emitted with the lock released: the sink nests our lock
+    return corr;
+}
+
+void tracer::end_async_call(const std::string& fn, const std::string& corr) {
+    if (corr.empty()) {
+        return; // tracing was off when the call began; it stays off for the whole call
+    }
+    {
+        std::lock_guard<std::mutex> lock(label_mutex_);
+        call_frames_.erase(std::this_thread::get_id());
+    }
+    // An async EOS function hands its result to the callback, so the synchronous return carries the
+    // correlation and nothing else.
+    record_return(fn, corr, return_void());
+}
+
+std::string tracer::pending_fn() const {
+    std::lock_guard<std::mutex> lock(label_mutex_);
+    std::map<std::thread::id, call_frame>::const_iterator it =
+        call_frames_.find(std::this_thread::get_id());
+    return (it == call_frames_.end()) ? std::string() : it->second.fn;
+}
+
+std::string tracer::pending_corr() const {
+    std::lock_guard<std::mutex> lock(label_mutex_);
+    std::map<std::thread::id, call_frame>::const_iterator it =
+        call_frames_.find(std::this_thread::get_id());
+    return (it == call_frames_.end()) ? std::string() : it->second.corr;
+}
+
+void tracer::record_call(const std::string& fn, i32 api, const std::string& corr,
+                        const std::vector<trace_field>& args) {
+    if (!enabled()) {
+        return;
+    }
+    // An async call is half of a lifecycle pair; a plain call is only interesting at full.
+    const trace_level at = corr.empty() ? trace_level::full : trace_level::lifecycle;
+    sink_.write(at, serialize_call(next_envelope(), fn, api, corr, args));
+}
+
+void tracer::record_return(const std::string& fn, const std::string& corr,
+                          const trace_return& value) {
+    if (!enabled()) {
+        return;
+    }
+    trace_level at = corr.empty() ? trace_level::full : trace_level::lifecycle;
+    if (value.type == trace_return::r_result && value.result.code != 0) {
+        at = trace_level::errors; // a failure is worth recording at every level above off
+    }
+    sink_.write(at, serialize_return(next_envelope(), fn, corr, value));
+}
+
+void tracer::record_callback(const std::string& fn, const std::string& corr,
+                            const trace_result_code& result,
+                            const std::vector<trace_field>& payload) {
+    if (!enabled()) {
+        return;
+    }
+    const trace_level at =
+        (result.code != 0) ? trace_level::errors : trace_level::lifecycle;
+    sink_.write(at, serialize_callback(next_envelope(), fn, corr, result, payload));
 }
 
 void tracer::on_profile(const std::string& product_user_id) {

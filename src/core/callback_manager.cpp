@@ -1,5 +1,9 @@
 #include "core/callback_manager.h"
 
+#include "common/eos_names.h"
+#include "core/runtime.h"
+#include "core/tracer.h"
+
 namespace eosr {
 
 // The first valid notification id; 0 is EOS_INVALID_NOTIFICATIONID.
@@ -44,6 +48,12 @@ void callback_manager::unregister_callbacks(i_run_callback* owner) {
 }
 
 void callback_manager::add_callback(i_run_callback* owner, std::unique_ptr<frame_result> result) {
+    // Stamp the result with the exported call that queued it, so the callback firing ticks from now
+    // still knows which call it completes. The interface never has to carry a correlation id itself.
+    tracer& trace = global_tracer();
+    if (trace.enabled() && result->trace_corr().empty()) {
+        result->set_trace(trace.pending_fn(), trace.pending_corr());
+    }
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     callbacks_to_run_[owner].push_back(std::move(result));
 }
@@ -138,9 +148,24 @@ void callback_manager::tick() {
     // Fire outside the lock: the delegate may re-enter the SDK, and the payload it reads is
     // owned locally here. free_callback releases heap fields inside the payload only.
     for (std::size_t i = 0; i < ready.size(); i++) {
+        record_callback_for(*ready[i].result); // the completion, before the game sees it
         ready[i].result->fire();
         ready[i].owner->free_callback(*ready[i].result);
     }
+}
+
+void callback_manager::record_callback_for(const frame_result& result) {
+    tracer& trace = global_tracer();
+    if (!trace.enabled() || result.trace_fn().empty() || !result.has_payload()) {
+        return;
+    }
+    // Every EOS_*CallbackInfo begins with { EOS_EResult ResultCode; void* ClientData; }, so the
+    // outcome of any completion is readable here without knowing which one it is.
+    const callback_info_head* head = result.get_callback<callback_info_head>();
+    trace_result_code code;
+    code.code = static_cast<i32>(head->ResultCode);
+    code.name = result_name(head->ResultCode);
+    trace.record_callback(result.trace_fn(), result.trace_corr(), code, result.trace_payload());
 }
 
 void callback_manager::run_frames() {

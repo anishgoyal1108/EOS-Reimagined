@@ -45,6 +45,7 @@ add_library(eosr_core STATIC
     src/common/ids.cpp
     src/common/byte_buffer.cpp
     src/common/log.cpp
+    src/common/eos_names.cpp
     src/common/crypto.cpp
     src/core/frame_result.cpp
     src/core/callback_manager.cpp
@@ -52,6 +53,7 @@ add_library(eosr_core STATIC
     src/core/trace_event.cpp
     src/core/trace_sink.cpp
     src/core/peer_fp.cpp
+    src/core/label_registry.cpp
     src/core/tracer.cpp
     src/core/config.cpp
     src/core/config_file.cpp

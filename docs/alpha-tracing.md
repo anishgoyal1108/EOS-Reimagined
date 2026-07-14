@@ -506,7 +506,13 @@ Designed against this contract but built after it:
      (`shutdown` + close). Config diagnostics become structured `meta`/`config` records when tracing is
      on. `emulator_build` is the CMake-injected artifact id. A dedicated `integration_trace` CTest
      drives the whole lifetime through the real `.so`/`.dll` (also under Wine) and checks the run.
-   - **Still to do:** the async Connect `call`/`return`/`callback` records with a shared `corr` and the
-     handle/id label registry — the per-call instrumentation across the flat trampolines; and OS
-     version / Wine detection for `runtime.json`.
+   - **Also done:** the asynchronous `call`/`return`/`callback` triple with a shared `corr`, and the
+     bounded handle/id `label_registry`. `EOS_Connect_Login` is instrumented end-to-end and asserted by
+     the `integration_trace` CTest on Linux and under Wine. The correlation is carried by an **ambient
+     call context**: the flat trampoline mints the `corr` and holds it for the duration of the exported
+     call, `callback_manager` stamps it onto any result queued during that call, and emits the
+     `callback` record when the result fires a tick later. So an interface never carries a correlation
+     id itself, and instrumenting the next export is a change to its trampoline alone.
+   - **Still to do:** the remaining exports (the same trampoline pattern), `notify` and `net` records,
+     and OS version / Wine detection for `runtime.json`.
 6. The two-process C-ABI probe as the first full consumer.
