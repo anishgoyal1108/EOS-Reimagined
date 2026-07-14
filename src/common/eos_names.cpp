@@ -104,4 +104,26 @@ const char* packet_reliability_name(EOS_EPacketReliability reliability) {
     return 0;
 }
 
+const char* friends_status_name(EOS_EFriendsStatus status) {
+    switch (status) {
+        case EOS_EFriendsStatus::EOS_FS_NotFriends: return "EOS_FS_NotFriends";
+        case EOS_EFriendsStatus::EOS_FS_InviteSent: return "EOS_FS_InviteSent";
+        case EOS_EFriendsStatus::EOS_FS_InviteReceived: return "EOS_FS_InviteReceived";
+        case EOS_EFriendsStatus::EOS_FS_Friends: return "EOS_FS_Friends";
+    }
+    return "EOS_FS_NotFriends";
+}
+
+const char* online_platform_type_name(EOS_OnlinePlatformType type) {
+    switch (type) {
+        case EOS_OPT_Unknown: return "EOS_OPT_Unknown";
+        case EOS_OPT_Epic: return "EOS_OPT_Epic";
+        case EOS_OPT_PSN: return "EOS_OPT_PSN";
+        case EOS_OPT_Nintendo: return "EOS_OPT_Nintendo";
+        case EOS_OPT_XBL: return "EOS_OPT_XBL";
+        case EOS_OPT_Steam: return "EOS_OPT_Steam";
+    }
+    return "EOS_OPT_Unknown";
+}
+
 } // namespace eosr

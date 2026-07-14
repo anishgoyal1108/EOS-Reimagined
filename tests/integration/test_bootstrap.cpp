@@ -1064,6 +1064,8 @@ TEST_CASE("the built SDK library takes an integrated-platform container and outl
     CHECK(fn_finalize(integrated, &finalize) == EOS_EResult::EOS_InvalidUser);
 
     fn_release(platform);
+    login.PlatformType = EOS_IPT_Steam;
+    CHECK(fn_set_login(integrated, &login) == EOS_EResult::EOS_InvalidParameters);
 
     // The handle arrived in EOS_Platform_Options at version 12 -- a version-11 struct ends at
     // RTCOptions. So an older game's struct stops before the field, and reading it would read the

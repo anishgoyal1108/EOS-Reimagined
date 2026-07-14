@@ -2,6 +2,7 @@
 #define EOSR_COMMON_EOS_NAMES_H
 
 #include "eos_common.h"
+#include "eos_friends_types.h"
 #include "eos_p2p_types.h"
 #include "eos_types.h"
 
@@ -23,6 +24,8 @@ const char* application_status_name(EOS_EApplicationStatus status);
 const char* network_status_name(EOS_ENetworkStatus status);
 const char* login_status_name(EOS_ELoginStatus status);
 const char* packet_reliability_name(EOS_EPacketReliability reliability);
+const char* friends_status_name(EOS_EFriendsStatus status);
+const char* online_platform_type_name(EOS_OnlinePlatformType type);
 
 } // namespace eosr
 

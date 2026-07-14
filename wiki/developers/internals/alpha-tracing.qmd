@@ -4,8 +4,8 @@ title: "Operational alpha: config, run files, and trace schema"
 
 This is the contract the alpha tooling agrees on. Five things read or write it — the in-library
 **config loader** and **trace sink**, and the out-of-library **C-ABI probe**, **`inspect_game`**, and
-**alpha runner** — so it is defined once here and referenced everywhere else. Nothing here is
-implemented yet; it is the design to build against.
+**alpha runner** — so it is defined once here and referenced everywhere else. The in-library
+pipeline and import census are implemented; the remaining status is tracked in §11.
 
 Settled decisions:
 
@@ -523,14 +523,14 @@ Designed against this contract but built after it:
    - **Also done:** all 282 generated compatibility exports use the same scope, including the five
      non-void async storage calls. Their loaded-library tests cover exact API versions, result and
      null-handle returns, callback correlation, and notification-label continuity.
-   - **Also done:** 150 handwritten bootstrap, common, logging, Platform, Connect, Auth, P2P, and
-     Presence exports.
+   - **Also done:** 186 handwritten bootstrap, common, logging, Platform, Connect, Auth, P2P,
+     Presence, IntegratedPlatform, Friends, and UserInfo exports.
      The loaded-library test covers real and rejected calls, typed returns, async correlation, and a
      notification id shared with its register/fire/remove records. P2P packet calls expose only
      labelled endpoints, socket, channel, reliability, and length; payload bytes never enter the
      tracer.
      The dormant `JoinGameAccepted` companion hook is observable as a real registration without a
      fabricated delivery.
-   - **Still to do:** the remaining 206 handwritten interface exports using the same trampoline
+   - **Still to do:** the remaining 170 handwritten interface exports using the same trampoline
      pattern.
 6. The two-process C-ABI probe as the first full consumer.
