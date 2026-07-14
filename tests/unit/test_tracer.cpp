@@ -149,6 +149,35 @@ TEST_CASE("runner mode opens the given directory") {
     t.stop();
 }
 
+TEST_CASE("a trailing separator does not erase the runner run id") {
+    tracer_fixture fx("runner-trailing-separator");
+    const std::string run = fx.make_run("run-trailing");
+
+    tracer t;
+    t.start(make_config(trace_level::lifecycle, fx.sub("traces"), run + "/"));
+    REQUIRE(t.active());
+    CHECK(t.run_id() == "run-trailing");
+    t.stop();
+}
+
+TEST_CASE("a runtime file collision rejects the run instead of pairing stale metadata with it") {
+    tracer_fixture fx("runtime-collision");
+    const std::string run = fx.make_run("run-collision");
+    const std::string sentinel = "{\"owner\":\"someone-else\"}";
+    REQUIRE(platform::write_private_file(run + "/runtime.json", sentinel));
+
+    begin_capture(capture_log);
+    tracer t;
+    t.start(make_config(trace_level::lifecycle, fx.sub("traces"), run));
+    end_capture();
+
+    CHECK_FALSE(t.active());
+    CHECK(slurp(run + "/runtime.json") == sentinel);
+    REQUIRE(tracer_logs.size() == 1);
+    CHECK(tracer_logs[0].find("runtime.json") != std::string::npos);
+    t.stop();
+}
+
 TEST_CASE("runner mode degrades to off when the directory is missing") {
     tracer_fixture fx("runner-missing");
     const std::string missing = fx.sub("no-such-run");
@@ -219,6 +248,27 @@ TEST_CASE("config diagnostics are delivered without deadlocking a re-entrant log
 
     REQUIRE(tracer_logs.size() >= 1);
     CHECK(tracer_logs[0].find("trace_level") != std::string::npos);
+    t.stop();
+}
+
+TEST_CASE("an enabled trace retains config diagnostics without needing a log callback") {
+    tracer_fixture fx("config-record");
+    const std::string run = fx.make_run("run-config");
+    resolved_config cfg = make_config(trace_level::lifecycle, fx.sub("traces"), run);
+    config_diagnostic d;
+    d.field = "trace_max_bytes";
+    d.source = "environment";
+    d.reason = "below minimum";
+    d.action = "clamped";
+    cfg.diagnostics.push_back(d);
+
+    tracer t;
+    t.start(cfg); // no logger callback is installed, so the trace is the durable record
+    t.flush();
+    const std::string trace = slurp(run + "/trace.jsonl");
+    CHECK(trace.find("\"event\":\"config\"") != std::string::npos);
+    CHECK(trace.find("trace_max_bytes") != std::string::npos);
+    CHECK(trace.find("clamped") != std::string::npos);
     t.stop();
 }
 

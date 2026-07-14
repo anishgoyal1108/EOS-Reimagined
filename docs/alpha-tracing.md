@@ -124,11 +124,11 @@ case where `off` is itself the fallback from an unparseable level — **no run d
 created**, and the diagnostic goes to the logger or nowhere. The sink can never be asked to record that
 it could not be opened.
 
-> **Implementation status (lifecycle slice).** Config diagnostics are currently routed to the logger
-> in every case, not yet to a `meta`/`config` trace record. The typed record schema (§4) has no field
-> for *which* config field a diagnostic is about, nor for its *action* (ignored/clamped/truncated), so a
-> faithful `meta`/`config` record awaits two new schema field ids. Until then the diagnostic is a
-> best-effort logger line so nothing is dropped and no lossy record is written.
+> **Implementation status (lifecycle slice).** When the sink is enabled, each config diagnostic is
+> written as a structured `meta`/`config` record carrying stable `field` / `source` / `reason` /
+> `action` enum codes — so the trace is self-contained even before the game installs its log callback.
+> The free-form parser `message` stays logger-only. When tracing is `off` (or the run failed to open),
+> the diagnostic is a best-effort logger line, which is the only place it can go.
 
 ---
 
@@ -331,16 +331,22 @@ always emits `run_start` / `rotate` / `shutdown`, so it cannot run without one) 
 to). A missing run directory, a missing source, or a pre-existing trace file leaves the sink inactive
 and produces the same single best-effort diagnostic. `off` is not a failure and says nothing.
 
-**Per-run state resets on every `EOS_Initialize`.** The `run_id`, the `seq` counter, the `corr`
-counter, the logical thread-label map, the handle/id label registries, and the resolved config are all
-per-run and start fresh each time:
+**One run per loaded SDK lifetime.** The EOS header specifies that `EOS_Initialize` is called once and
+that calls after `EOS_Shutdown` are undefined; the production client models exactly one lifetime
+(`EOS_Shutdown` is terminal, and a later `EOS_Initialize` returns `AlreadyConfigured`). So a run's
+`run_id`, `seq`/`corr` counters, thread-label map, handle/id registries, and resolved config are set
+once at `EOS_Initialize` and never re-derived within the loaded library:
 
-- **Failed `EOS_Initialize`** closes any sink it opened cleanly, leaving no half-open run.
-- **A second `EOS_Initialize` without shutdown** is `AlreadyConfigured` at the EOS layer; the tracer
-  keeps the existing run and does not open a second.
-- **`EOS_Shutdown`** flushes, writes a `meta`/`shutdown` record, and closes the sink. A later
-  `EOS_Initialize` opens a wholly new run with fresh identity and counters — a trace never spans two
-  init/shutdown cycles.
+- **Failed `EOS_Initialize`** opens no run — the tracer starts only after the client reports success —
+  so there is no half-open run to clean up.
+- **A second `EOS_Initialize` (with or without an intervening `EOS_Shutdown`)** does not reach the
+  tracer: it is `AlreadyConfigured` at the EOS layer, so the first run stands and no second run opens.
+- **`EOS_Shutdown`** flushes, writes a `meta`/`shutdown` record, and closes the sink. That ends the one
+  run; obtaining another means loading the library again (a second process, or a fresh `dlopen`).
+
+The `tracer` object is nonetheless independently restartable — `stop()` resets it so a fresh `start()`
+opens a clean run — because it is a reusable component with its own unit tests; that restart is a
+component guarantee, not an EOS-ABI one the library ever exercises.
 
 **Label registries are bounded.** A handle/id label is keyed by the opaque token behind it. The
 library's own sub-handles are process-unique monotonic tokens that are never reused (see
@@ -431,8 +437,11 @@ env are needed:
 - **Mid-run sink failure** — write, flush, rename, and remove failures remain non-fatal, disable or
   degrade the sink exactly once, deliver their diagnostic with the sink lock released so a re-entrant
   log callback cannot deadlock, and do not retry or log recursively on every later EOS call.
-- **Lifecycle reset** — failed/double initialize, shutdown, and initialize-after-shutdown close the old
-  sink and reset run identity, sequence/correlation counters, logical thread labels, and config state.
+- **One run per lifetime** — a second `EOS_Initialize` keeps the first run; the `tracer` component's
+  own `stop()`/`start()` restart (reset run identity, counters, thread labels, config state) is
+  exercised as an isolated unit test, not as an ABI path.
+- **Startup ownership** — a colliding or unwritable `runtime.json` rejects the run (sink closed, trace
+  file discarded, one diagnostic) rather than pairing a fresh trace with stale metadata.
 - **Label churn** — releasing and reusing handle addresses never aliases two live objects in the trace,
   and high-volume create/release cycles do not grow the label registry without bound.
 - **Bundle redaction** — the merged bundle contains no display name and no local absolute path.
@@ -461,10 +470,13 @@ Designed against this contract but built after it:
    Connect login and its callback — and validate correlation and output there before instrumenting the
    full export surface.
    - **Done so far:** the `tracer` (`src/core/tracer.{h,cpp}`) is wired into `EOS_Initialize`
-     (resolve config, open the run under the two ownership modes, `runtime.json`, `run_start`),
-     `EOS_Platform_Create` (`meta`/`profile` with the local `peer_fp`), `EOS_Platform_Tick` (flush), and
-     `EOS_Shutdown` (`shutdown` + close). The end-to-end run produces the run directory and records
-     through the real `.so`/`.dll`.
+     (resolve config, open the run under the two ownership modes, exclusively write `runtime.json` —
+     a collision or write failure rejects the run — and `run_start`), `EOS_Platform_Create`
+     (`meta`/`profile` with the local `peer_fp`), `EOS_Platform_Tick` (flush), and `EOS_Shutdown`
+     (`shutdown` + close). Config diagnostics become structured `meta`/`config` records when tracing is
+     on. `emulator_build` is the CMake-injected artifact id. A dedicated `integration_trace` CTest
+     drives the whole lifetime through the real `.so`/`.dll` (also under Wine) and checks the run.
    - **Still to do:** the async Connect `call`/`return`/`callback` records with a shared `corr` and the
-     handle/id label registry — the per-call instrumentation across the flat trampolines.
+     handle/id label registry — the per-call instrumentation across the flat trampolines; and OS
+     version / Wine detection for `runtime.json`.
 6. The two-process C-ABI probe as the first full consumer.

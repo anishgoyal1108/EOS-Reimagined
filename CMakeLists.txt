@@ -18,6 +18,27 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/compiler_warnings.cmake)
 # in its own target so project warnings do not apply to third-party source. See docs/adr/0001.
 add_subdirectory(third_party/monocypher)
 
+# A precise, artifact-specific build id for the trace and runtime.json metadata: a base version plus
+# the git revision (with a -dirty marker) when the tree is a working checkout, so two alpha traces can
+# be tied to the exact build that produced them. Injected as a compile definition read by tracer.cpp;
+# a build outside a git checkout still gets the version.
+set(EOSR_VERSION "0.1.0-alpha")
+find_package(Git QUIET)
+set(EOSR_GIT_REV "")
+if(GIT_FOUND)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} describe --always --dirty
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE EOSR_GIT_REV
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+endif()
+if(EOSR_GIT_REV STREQUAL "")
+    set(EOSR_BUILD_ID "eosr ${EOSR_VERSION}")
+else()
+    set(EOSR_BUILD_ID "eosr ${EOSR_VERSION} (${EOSR_GIT_REV})")
+endif()
+
 # Portable, OS-agnostic core. Platform-specific code will live under src/platform/ and be
 # added per-OS in a later commit; nothing here touches an OS API directly.
 add_library(eosr_core STATIC
@@ -62,6 +83,7 @@ target_include_directories(eosr_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/eos
 )
 target_compile_definitions(eosr_core PUBLIC EOS_BUILDING_SDK=1)
+target_compile_definitions(eosr_core PRIVATE "EOSR_BUILD_ID=\"${EOSR_BUILD_ID}\"")
 
 # The crypto wrapper (src/common/crypto.cpp) is the only place the Monocypher API is used; link it
 # privately so the vendor header does not leak to the core's own consumers.

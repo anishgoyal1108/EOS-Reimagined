@@ -113,6 +113,8 @@ bool field_info(field_id id, const char*& name, trace_value::kind& kind) {
         case field_id::dropped_bytes: name = "dropped_bytes"; kind = trace_value::v_uint; return true;
         case field_id::source: name = "source"; kind = trace_value::v_enum; return true;
         case field_id::level: name = "level"; kind = trace_value::v_enum; return true;
+        case field_id::config_field: name = "field"; kind = trace_value::v_enum; return true;
+        case field_id::action: name = "action"; kind = trace_value::v_enum; return true;
         case field_id::invalid:
         default:
             return false;
@@ -124,8 +126,10 @@ bool field_allowed(record_kind body, field_id id) {
     switch (body) {
         case rk_meta:
             // peer_fp rides the meta/profile record (the local pseudonymous fingerprint once the
-            // profile is loaded); the rest carry the config and rotate records.
-            return id == field_id::peer_fp || id == field_id::source || id == field_id::reason ||
+            // profile is loaded); field/source/reason/action carry the config record; and
+            // dropped_files/dropped_bytes carry the rotate record.
+            return id == field_id::peer_fp || id == field_id::config_field ||
+                   id == field_id::source || id == field_id::reason || id == field_id::action ||
                    id == field_id::level || id == field_id::dropped_files ||
                    id == field_id::dropped_bytes;
         case rk_net:

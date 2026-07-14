@@ -1,0 +1,160 @@
+#include "doctest.h"
+
+#include <cstdlib>
+#include <string>
+#include <vector>
+
+#include "eos_sdk.h"
+#include "eos_init.h"
+
+#include "platform/dynlib.h"
+#include "platform/paths.h"
+
+using namespace eosr::platform;
+
+// The path to the built .so/.dll under test, from the integration main.
+extern std::string g_library_path;
+
+namespace {
+
+#define RESOLVE(var, api_name) \
+    auto var = reinterpret_cast<decltype(&api_name)>(lib.symbol(#api_name)); \
+    REQUIRE((var != nullptr))
+
+void set_env(const char* name, const char* value) {
+#if defined(_WIN32)
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
+std::string slurp(const std::string& path) {
+    std::string out;
+    read_file_capped(path, 16 * 1024 * 1024, out);
+    return out;
+}
+
+std::vector<std::string> split_lines(const std::string& text) {
+    std::vector<std::string> lines;
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        const std::size_t nl = text.find('\n', start);
+        if (nl == std::string::npos) {
+            if (start < text.size()) {
+                lines.push_back(text.substr(start));
+            }
+            break;
+        }
+        lines.push_back(text.substr(start, nl - start));
+        start = nl + 1;
+    }
+    return lines;
+}
+
+// Pull the integer value of the "seq" envelope field out of one record line, or -1 if absent.
+long parse_seq(const std::string& line) {
+    const std::string key = "\"seq\":";
+    const std::size_t at = line.find(key);
+    if (at == std::string::npos) {
+        return -1;
+    }
+    std::size_t i = at + key.size();
+    long value = 0;
+    bool any = false;
+    while (i < line.size() && line[i] >= '0' && line[i] <= '9') {
+        value = value * 10 + (line[i] - '0');
+        any = true;
+        i++;
+    }
+    return any ? value : -1;
+}
+
+} // namespace
+
+// The real observability path: enable tracing through the loaded library and drive one whole EOS
+// lifetime, then check the run it produced. Runner mode gives us a known directory to read back.
+TEST_CASE("tracing through the loaded library produces a well-formed run") {
+    REQUIRE_FALSE(g_library_path.empty());
+
+    const std::string base = EOSR_PROBE_DIR;
+    const std::string data = base + "/data";
+    const std::string run = base + "/run-probe";
+    REQUIRE(make_directories(data));
+    REQUIRE(make_directories(run));
+    // A run directory the runner "already created": clear any owned files a previous run left, so the
+    // library exclusively creates a fresh trace.jsonl and runtime.json.
+    remove_file(run + "/trace.jsonl");
+    remove_file(run + "/runtime.json");
+
+    set_env("EOSR_DATA_DIR", data.c_str());
+    set_env("EOSR_RUN_DIR", run.c_str());
+    set_env("EOSR_TRACE", "lifecycle");
+    set_env("EOSR_INSTANCE_LABEL", "probe");
+
+    dynamic_library lib;
+    REQUIRE(lib.open(g_library_path.c_str()));
+    RESOLVE(fn_initialize, EOS_Initialize);
+    RESOLVE(fn_shutdown, EOS_Shutdown);
+    RESOLVE(fn_create, EOS_Platform_Create);
+    RESOLVE(fn_release, EOS_Platform_Release);
+    RESOLVE(fn_tick, EOS_Platform_Tick);
+
+    EOS_InitializeOptions iopts = {};
+    iopts.ApiVersion = EOS_INITIALIZE_API_LATEST;
+    iopts.ProductName = "TraceProbe";
+    iopts.ProductVersion = "1.0.0";
+    REQUIRE(fn_initialize(&iopts) == EOS_EResult::EOS_Success);
+
+    EOS_Platform_Options popts = {};
+    popts.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    popts.ProductId = "prod-abc";
+    popts.SandboxId = "sandbox-1";
+    popts.DeploymentId = "deploy-2";
+    popts.ClientCredentials.ClientId = "client";
+    popts.ClientCredentials.ClientSecret = "secret";
+    EOS_HPlatform platform = fn_create(&popts);
+    REQUIRE((platform != nullptr));
+
+    for (int i = 0; i < 4; i++) {
+        fn_tick(platform);
+    }
+    fn_release(platform);
+    REQUIRE(fn_shutdown() == EOS_EResult::EOS_Success);
+    lib.close();
+
+    // runtime.json is present, well-formed, and identifies this run and this build.
+    const std::string runtime = slurp(run + "/runtime.json");
+    REQUIRE_FALSE(runtime.empty());
+    CHECK(runtime[0] == '{');
+    CHECK(runtime[runtime.size() - 1] == '}');
+    CHECK(runtime.find("\"run_id\":\"run-probe\"") != std::string::npos);
+    CHECK(runtime.find("\"schema_version\":1") != std::string::npos);
+    CHECK(runtime.find("\"emulator_build\":\"eosr ") != std::string::npos);
+    CHECK(runtime.find("\"trace_level\":\"lifecycle\"") != std::string::npos);
+
+    // The trace is parseable JSONL, in run_start -> profile -> shutdown order, with a strictly
+    // increasing sequence from zero.
+    const std::string trace = slurp(run + "/trace.jsonl");
+    REQUIRE_FALSE(trace.empty());
+    const std::size_t at_start = trace.find("\"event\":\"run_start\"");
+    const std::size_t at_profile = trace.find("\"event\":\"profile\"");
+    const std::size_t at_shutdown = trace.find("\"event\":\"shutdown\"");
+    CHECK(at_start != std::string::npos);
+    CHECK(at_profile != std::string::npos);
+    CHECK(at_shutdown != std::string::npos);
+    CHECK(at_start < at_profile);
+    CHECK(at_profile < at_shutdown);
+
+    const std::vector<std::string> lines = split_lines(trace);
+    REQUIRE(lines.size() >= 3);
+    long expected = 0;
+    for (std::size_t i = 0; i < lines.size(); i++) {
+        CHECK(lines[i].size() >= 2);
+        CHECK(lines[i][0] == '{');
+        CHECK(lines[i][lines[i].size() - 1] == '}');
+        CHECK(lines[i].find("\"kind\":") != std::string::npos);
+        CHECK(parse_seq(lines[i]) == expected); // monotonic, contiguous, from zero
+        expected++;
+    }
+}

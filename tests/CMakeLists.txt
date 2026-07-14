@@ -93,6 +93,35 @@ set_target_properties(integration_tests PROPERTIES
 
 add_test(NAME integration_tests COMMAND integration_tests $<TARGET_FILE:eos_shared>)
 
+# A dedicated probe for the real tracing path: it enables tracing through the loaded library, drives
+# one whole EOS lifetime, and verifies the run it produced. Kept separate from the bootstrap suite
+# because it sets EOSR_* in its own process environment and asserts on the files the library writes.
+add_executable(integration_trace
+    integration/main.cpp
+    integration/test_trace_run.cpp
+)
+if(WIN32)
+    target_sources(integration_trace PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/platform/dynlib_win32.cpp
+        ${CMAKE_SOURCE_DIR}/src/platform/paths_win32.cpp)
+else()
+    target_sources(integration_trace PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/platform/dynlib_linux.cpp
+        ${CMAKE_SOURCE_DIR}/src/platform/paths_linux.cpp)
+    target_link_libraries(integration_trace PRIVATE ${CMAKE_DL_LIBS})
+endif()
+target_include_directories(integration_trace PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include/eos
+)
+target_link_libraries(integration_trace PRIVATE doctest)
+target_compile_definitions(integration_trace PRIVATE
+    "EOSR_PROBE_DIR=\"${CMAKE_BINARY_DIR}/trace-probe\"")
+add_dependencies(integration_trace eos_shared)
+set_target_properties(integration_trace PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME integration_trace COMMAND integration_trace $<TARGET_FILE:eos_shared>)
+
 if(UNIX AND CMAKE_NM)
     add_test(
         NAME export_surface

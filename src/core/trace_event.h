@@ -39,7 +39,8 @@ enum class field_id {
     peer, peer_fp, bytes, channel, reliability, port_first, port_last, reason,
     handle, local, target, puid, eaid, account, socket, lobby, session,
     cred_type, status, index, count, len,
-    dropped_files, dropped_bytes, source, level
+    dropped_files, dropped_bytes, source, level,
+    config_field, action
 };
 
 struct trace_field {

@@ -14,7 +14,14 @@ namespace eosr {
 
 namespace {
 
-const char* const emulator_build = "eosr 0.1.0-alpha";
+// The exact artifact identity, injected by CMake so two traces can be tied to the precise build.
+// The fallback keeps a non-CMake compile (an IDE indexer, say) building.
+#if defined(EOSR_BUILD_ID)
+const char* const emulator_build = EOSR_BUILD_ID;
+#else
+const char* const emulator_build = "eosr (unknown build)";
+#endif
+
 const int max_run_id_attempts = 16; // bump the suffix this many times before giving up on a collision
 
 #if defined(_WIN32)
@@ -69,9 +76,44 @@ std::string level_name(trace_level level) {
     return "off";
 }
 
+bool is_separator(char c) {
+    return c == '/' || c == '\\';
+}
+
+// Drop any trailing path separators so a runner directory given as ".../run-3/" is treated as
+// ".../run-3" -- otherwise both the derived run id and the joined file paths carry the stray slash.
+std::string trim_trailing_separators(const std::string& path) {
+    std::size_t end = path.size();
+    while (end > 0 && is_separator(path[end - 1])) {
+        end--;
+    }
+    return path.substr(0, end);
+}
+
 std::string base_name(const std::string& path) {
-    const std::size_t slash = path.find_last_of("/\\");
-    return (slash == std::string::npos) ? path : path.substr(slash + 1);
+    const std::string trimmed = trim_trailing_separators(path);
+    const std::size_t slash = trimmed.find_last_of("/\\");
+    return (slash == std::string::npos) ? trimmed : trimmed.substr(slash + 1);
+}
+
+// A stable code from a diagnostic string: lower-case, with every non-identifier byte folded to '_',
+// so a spaced reason like "below minimum" becomes the enum token "below_minimum". The value is
+// dropped by the serializer if it still is not a valid enum (e.g. it would start with a digit), so a
+// surprising input yields no field rather than a bad one.
+std::string to_code(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (std::size_t i = 0; i < text.size(); i++) {
+        const char c = text[i];
+        if (c >= 'A' && c <= 'Z') {
+            out += static_cast<char>(c - 'A' + 'a');
+        } else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
+            out += c;
+        } else {
+            out += '_';
+        }
+    }
+    return out;
 }
 
 } // namespace
@@ -127,7 +169,7 @@ std::string tracer::resolve_manual_run_dir(const std::string& trace_dir) {
     return trace_dir + "/" + run_id_;
 }
 
-void tracer::write_runtime_json(const std::string& run_dir, const resolved_config& config) const {
+bool tracer::write_runtime_json(const std::string& run_dir, const resolved_config& config) const {
     platform::utc_time now;
     const std::string created = platform::utc_now(now) ? iso_stamp(now) : std::string();
 
@@ -165,25 +207,37 @@ void tracer::write_runtime_json(const std::string& run_dir, const resolved_confi
     writer.end_object();
 
     if (!writer.ok()) {
-        return; // never persist a malformed document
+        return false; // never persist a malformed document
     }
     // Exclusively claim the file, then fill it: like trace.jsonl, the library owns runtime.json and
-    // must not clobber a colliding one.
+    // must not clobber a colliding one. An existing file means stale run metadata; the caller rejects
+    // the whole run rather than pair fresh trace records with it.
     const std::string path = run_dir + "/runtime.json";
-    if (platform::create_new_file(path)) {
-        if (!platform::append_file(path, writer.str())) {
-            log_warn("tracer: could not write runtime.json");
-        }
+    if (!platform::create_new_file(path)) {
+        return false;
     }
+    if (!platform::append_file(path, writer.str())) {
+        platform::remove_file(path); // do not leave a half-written runtime file behind
+        return false;
+    }
+    return true;
 }
 
-void tracer::route_diagnostics(const std::vector<config_diagnostic>& diagnostics) const {
-    // Config diagnostics carry free text (which field, human reason), which the typed trace schema
-    // deliberately cannot represent yet, so for now every diagnostic is a best-effort logger line
-    // rather than a lossy meta/config record. A faithful meta/config record awaits a schema field for
-    // the config field name and action.
+void tracer::emit_diagnostics(const std::vector<config_diagnostic>& diagnostics) {
     for (std::size_t i = 0; i < diagnostics.size(); i++) {
         const config_diagnostic& d = diagnostics[i];
+        if (sink_.active()) {
+            // Stable codes go into the trace so it is self-contained even before the game installs a
+            // log callback; the free-form message (parser detail) stays logger-only below.
+            std::vector<trace_field> fields;
+            fields.push_back(make_field(field_id::config_field, tv_enum(to_code(d.field))));
+            fields.push_back(make_field(field_id::source, tv_enum(to_code(d.source))));
+            fields.push_back(make_field(field_id::reason, tv_enum(to_code(d.reason))));
+            fields.push_back(make_field(field_id::action, tv_enum(to_code(d.action))));
+            sink_.write(trace_level::errors, serialize_meta(next_envelope(), "config", fields));
+        }
+        // Best-effort human line: the only record when the sink is off/failed, and the free-form
+        // detail otherwise. Dropped silently if the game has not installed a log callback yet.
         std::string line = "config: " + d.field + " (" + d.source + ") " + d.action + " -- " + d.reason;
         if (!d.message.empty()) {
             line += ": " + d.message;
@@ -213,16 +267,17 @@ void tracer::start(const resolved_config& config) {
     }
 
     if (config.level == trace_level::off) {
-        route_diagnostics(config.diagnostics); // nothing on disk; diagnostics go to the logger
+        emit_diagnostics(config.diagnostics); // nothing on disk; diagnostics go to the logger
         return;
     }
 
     std::string run_dir;
     trace_sink::dir_mode mode;
     if (!config.run_dir.empty()) {
-        // Runner mode: the launcher already created this directory; we only open it.
-        run_dir = config.run_dir;
-        run_id_ = base_name(config.run_dir);
+        // Runner mode: the launcher already created this directory; we only open it. Strip any
+        // trailing separator so both the run id and the joined file paths stay clean.
+        run_dir = trim_trailing_separators(config.run_dir);
+        run_id_ = base_name(run_dir);
         mode = trace_sink::dir_mode::must_exist;
     } else {
         run_dir = resolve_manual_run_dir(config.trace_dir);
@@ -232,10 +287,14 @@ void tracer::start(const resolved_config& config) {
     run_dir_ = run_dir;
     sink_.open(run_dir, config.level, config.trace_max_bytes, config.trace_max_rotated_files, this,
                mode);
-    if (sink_.active()) {
-        write_runtime_json(run_dir, config);
+    if (sink_.active() && !write_runtime_json(run_dir, config)) {
+        // A colliding or unwritable runtime.json would leave a fresh trace paired with stale run
+        // metadata, so reject the whole run: close the sink and discard its trace file.
+        sink_.close();
+        platform::remove_file(run_dir + "/trace.jsonl");
+        log_error("tracer: runtime.json could not be exclusively written; trace run rejected");
     }
-    route_diagnostics(config.diagnostics);
+    emit_diagnostics(config.diagnostics);
 }
 
 void tracer::on_profile(const std::string& product_user_id) {

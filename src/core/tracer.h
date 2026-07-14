@@ -67,8 +67,13 @@ private:
     std::string logical_thread_label();
     // Resolve a fresh, non-colliding <trace_dir>/<run_id> for manual mode.
     std::string resolve_manual_run_dir(const std::string& trace_dir);
-    void write_runtime_json(const std::string& run_dir, const resolved_config& config) const;
-    void route_diagnostics(const std::vector<config_diagnostic>& diagnostics) const;
+    // Exclusively create and fill runtime.json. False if it already exists or cannot be written --
+    // pairing a fresh trace with stale run metadata is a run failure, not something to ignore.
+    bool write_runtime_json(const std::string& run_dir, const resolved_config& config) const;
+    // Record each config diagnostic: a structured meta/config record when the sink is active (so the
+    // trace is self-contained even before the game installs a log callback), otherwise a best-effort
+    // logger line. The free-form message stays logger-only.
+    void emit_diagnostics(const std::vector<config_diagnostic>& diagnostics);
 
     trace_sink sink_;
     std::atomic<u64> seq_;                          // per-process monotonic record counter
