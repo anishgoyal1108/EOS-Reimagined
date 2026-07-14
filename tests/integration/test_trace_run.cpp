@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include <cstring>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -8,6 +9,7 @@
 #include "eos_init.h"
 #include "eos_connect.h"
 #include "eos_auth.h"
+#include "eos_p2p.h"
 #include "eos_ecom.h"
 #include "eos_achievements.h"
 #include "eos_playerdatastorage.h"
@@ -206,6 +208,8 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     RESOLVE(fn_get_auth, EOS_Platform_GetAuthInterface);
     RESOLVE(fn_auth_delete, EOS_Auth_DeletePersistentAuth);
     RESOLVE(fn_connect_status, EOS_Connect_GetLoginStatus);
+    RESOLVE(fn_get_p2p, EOS_Platform_GetP2PInterface);
+    RESOLVE(fn_p2p_send, EOS_P2P_SendPacket);
     EOS_HConnect connect = fn_get_connect(platform);
     REQUIRE((connect != nullptr));
 
@@ -239,6 +243,22 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     const std::string raw_user(raw_user_buffer);
     REQUIRE_FALSE(raw_user.empty());
     CHECK(fn_connect_status(connect, g_login_user) == EOS_ELoginStatus::EOS_LS_LoggedIn);
+
+    EOS_P2P_SocketId socket = {};
+    socket.ApiVersion = EOS_P2P_SOCKETID_API_LATEST;
+    std::memcpy(socket.SocketName, "trace", sizeof("trace"));
+    const char packet_payload[] = "p2p-private-payload";
+    EOS_P2P_SendPacketOptions send = {};
+    send.ApiVersion = EOS_P2P_SENDPACKET_API_LATEST;
+    send.LocalUserId = g_login_user;
+    send.RemoteUserId = g_login_user;
+    send.SocketId = &socket;
+    send.Channel = 7;
+    send.DataLengthBytes = static_cast<uint32_t>(sizeof(packet_payload) - 1);
+    send.Data = packet_payload;
+    send.Reliability = EOS_EPacketReliability::EOS_PR_ReliableOrdered;
+    send.bDisableAutoAcceptConnection = EOS_TRUE;
+    CHECK(fn_p2p_send(fn_get_p2p(platform), &send) == EOS_EResult::EOS_NoConnection);
 
     // A diagnostic trace must retain calls that fail before dispatch too. Bad/stale handles are one
     // of the first things an in-game alpha probe needs to explain, not a reason for the probe itself
@@ -355,6 +375,20 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     CHECK(connect_status_return.find(
               "\"value\":{\"type\":\"enum\",\"v\":\"EOS_LS_LoggedIn\"}") !=
           std::string::npos);
+    const std::string p2p_send_call = find_line(
+        lines, "\"kind\":\"call\",\"fn\":\"EOS_P2P_SendPacket\"");
+    const std::string p2p_send_return = find_line(
+        lines, "\"kind\":\"return\",\"fn\":\"EOS_P2P_SendPacket\"");
+    REQUIRE_FALSE(p2p_send_call.empty());
+    REQUIRE_FALSE(p2p_send_return.empty());
+    CHECK(p2p_send_call.find("\"local\":\"puid#") != std::string::npos);
+    CHECK(p2p_send_call.find("\"target\":\"puid#") != std::string::npos);
+    CHECK(p2p_send_call.find("\"socket\":\"socket#") != std::string::npos);
+    CHECK(p2p_send_call.find("\"channel\":7") != std::string::npos);
+    CHECK(p2p_send_call.find("\"reliability\":\"EOS_PR_ReliableOrdered\"") !=
+          std::string::npos);
+    CHECK(p2p_send_call.find("\"len\":19") != std::string::npos);
+    CHECK(p2p_send_return.find("\"name\":\"EOS_NoConnection\"") != std::string::npos);
 
     // The asynchronous login: its call, its synchronous return, and the callback that completed it a
     // tick later all carry one correlation id, so a reader can stitch the operation back together.
@@ -482,5 +516,6 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     CHECK(callback.find("\"name\":\"EOS_Success\"") != std::string::npos);
     CHECK(callback.find("\"puid\":\"puid#") != std::string::npos);
     CHECK(trace.find("\"unused\"") == std::string::npos); // the credential token never appears
+    CHECK(trace.find(packet_payload) == std::string::npos); // packet bytes never appear
     CHECK(trace.find(raw_user) == std::string::npos); // nor does the real id returned by the ABI
 }

@@ -92,4 +92,16 @@ const char* login_status_name(EOS_ELoginStatus status) {
     return "EOS_LS_NotLoggedIn";
 }
 
+const char* packet_reliability_name(EOS_EPacketReliability reliability) {
+    switch (reliability) {
+        case EOS_EPacketReliability::EOS_PR_UnreliableUnordered:
+            return "EOS_PR_UnreliableUnordered";
+        case EOS_EPacketReliability::EOS_PR_ReliableUnordered:
+            return "EOS_PR_ReliableUnordered";
+        case EOS_EPacketReliability::EOS_PR_ReliableOrdered:
+            return "EOS_PR_ReliableOrdered";
+    }
+    return 0;
+}
+
 } // namespace eosr

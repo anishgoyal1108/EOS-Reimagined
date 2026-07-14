@@ -523,9 +523,12 @@ Designed against this contract but built after it:
    - **Also done:** all 282 generated compatibility exports use the same scope, including the five
      non-void async storage calls. Their loaded-library tests cover exact API versions, result and
      null-handle returns, callback correlation, and notification-label continuity.
-   - **Also done:** 106 handwritten bootstrap, common, logging, Platform, Connect, and Auth exports.
+   - **Also done:** 131 handwritten bootstrap, common, logging, Platform, Connect, Auth, and P2P
+     exports.
      The loaded-library test covers real and rejected calls, typed returns, async correlation, and a
-     notification id shared with its register/fire/remove records.
-   - **Still to do:** the remaining 250 handwritten interface exports using the same trampoline
+     notification id shared with its register/fire/remove records. P2P packet calls expose only
+     labelled endpoints, socket, channel, reliability, and length; payload bytes never enter the
+     tracer.
+   - **Still to do:** the remaining 225 handwritten interface exports using the same trampoline
      pattern.
 6. The two-process C-ABI probe as the first full consumer.
