@@ -140,6 +140,15 @@ A game resolves every `EOS_*` symbol it imports when the library loads; one it c
   Sessions host/search/join, and negotiated P2P delivery. The coordinator cross-checks both traces by
   `peer_fp` and proves raw product ids and packet payloads are absent. It runs natively, under Wine,
   and with the sanitizer build.
+- **Alpha runner and support bundle:** `tools/alpha_runner.py` owns one operational game run end to
+  end: import census, unique run directory, recoverable hash-verified SDK staging, shell-free launch or
+  supervised manual/Steam instructions, stdout capture, exact restoration, immutable `launch.json`,
+  and an explicit sanitized bundle. The bundle excludes stdout/profile files, display names, command
+  arguments, and absolute paths, and drops only a torn final trace record. Failure tests cover nonzero
+  exit, start failure, post-replacement failure recovery, and refusal to overwrite an unrecognized DLL.
+  An acceptance run against the installed 3 GB Risk of Rain 2 tree scanned 161 modules / 613 P/Invokes,
+  found zero missing exports, staged the real game DLL, restored its exact pre-run SHA-256, and produced
+  a path-clean bundle without leaving backup or transaction files behind.
 - **IntegratedPlatform stale handles:** flat calls now validate the interface against the live
   platform slot. A released or foreign handle returns `EOS_InvalidParameters` instead of continuing
   into a deinitialized object (or dereferencing an arbitrary pointer).

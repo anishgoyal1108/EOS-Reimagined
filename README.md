@@ -66,6 +66,11 @@ The library is a drop-in, so running it is a matter of putting it where the game
 4. **Give each player their own identity.** On first run the library mints a key-derived profile and saves it; that key *is* the player. Several copies on one machine each take their own profile slot automatically, so couch co-op is several distinct players rather than one confused one. To keep a copy's profile and data somewhere specific (useful for running multiple isolated instances), point it at a directory with the `EOSR_DATA_DIR` environment variable.
 5. **Launch the game normally and use its own menus.** Host a game or open its server/lobby browser exactly as you would online; peers running EOS Reimagined on the same LAN discover each other, complete an authenticated handshake, and show up to be joined.
 
+For alpha testing, prefer `tools/alpha_runner.py` over copying by hand. It runs the compatibility
+census, makes a recoverable hash-verified backup, stages the artifact, captures a full structured
+trace, restores the exact original, and produces a sanitized support bundle. See
+[Tracing & diagnostics](https://anishgoyal1108.github.io/EOS-Reimagined/users/tracing.html#alpha_runnerpy-one-safe-diagnostic-game-run).
+
 A few practical notes: every player must be running the *same game* with EOS Reimagined dropped in — a different game (or Epic's real SDK against Epic's servers) will not mesh with you. Make sure the host firewall allows the discovery, control, and P2P traffic on the LAN. And this is LAN-only today; playing across the open Internet is deferred, not done.
 
 Building both artifacts from the source tree:

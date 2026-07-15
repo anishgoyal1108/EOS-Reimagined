@@ -126,3 +126,40 @@ It walks the game's binaries — native PE/ELF imports, delay-loads, .NET P/Invo
 Point `--reference-sdk` at Epic's original DLL to also cross-check against the real export
 surface. The write-up of running this against the reference SDK is the
 [export-surface census](../developers/internals/export-surface-census.qmd).
+
+## `alpha_runner.py`: one safe, diagnostic game run
+
+The runner automates the error-prone part of an alpha test: it finds the game's EOS SDK, runs the
+import census, makes and verifies a recovery backup, stages the matching emulator artifact, creates a
+run directory, launches the game without a shell, captures stdout/stderr, restores Epic's original
+bytes, and emits a shareable bundle.
+
+```sh
+python3 tools/alpha_runner.py run "/path/to/Game" \
+  --artifact build-win/EOSSDK-Win64-Shipping.dll \
+  -- "/path/to/Game/Game.exe"
+```
+
+The default profile and run area is `<game>/.eosr-alpha/`, which remains reachable when a launcher is
+sandboxed (including Flatpak Steam). Override it with `--data-dir` when desired. Alpha runs default to
+`full` tracing; use `--trace-level lifecycle` when measuring performance or reproducing a long session.
+
+Steam/Proton often owns the real process lifetime. Use supervised manual mode in that case:
+
+```sh
+python3 tools/alpha_runner.py run "/path/to/Game" \
+  --artifact build-win/EOSSDK-Win64-Shipping.dll --manual
+```
+
+It prints the exact Steam launch options and waits. Launch and fully exit the game, then press Enter;
+only then does it restore the original. If the runner or machine is killed while staged, recovery is
+explicit and hash-checked:
+
+```sh
+python3 tools/alpha_runner.py restore --sdk "/path/to/Game/.../EOSSDK-Win64-Shipping.dll"
+```
+
+The local run directory keeps `runtime.json`, `launch.json`, `inspection.json`, `stdout.log`, and the
+trace. Its sibling `*-bundle` directory is the one intended for sharing: it merges sanitized owned
+metadata into `summary.json`, copies only complete structured trace records, and excludes stdout,
+profile keys, display names, command arguments, and absolute paths.

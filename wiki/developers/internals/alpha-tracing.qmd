@@ -4,8 +4,8 @@ title: "Operational alpha: config, run files, and trace schema"
 
 This is the contract the alpha tooling agrees on. Five things read or write it — the in-library
 **config loader** and **trace sink**, and the out-of-library **C-ABI probe**, **`inspect_game`**, and
-**alpha runner** — so it is defined once here and referenced everywhere else. The in-library
-pipeline and import census are implemented; the remaining status is tracked in §11.
+**alpha runner** — so it is defined once here and referenced everywhere else. The complete pipeline
+is implemented; its acceptance coverage and next in-game step are tracked in §11.
 
 Settled decisions:
 
@@ -193,10 +193,15 @@ launched.
 {
   "schema_version": 1,
   "artifact": { "path": ".../EOSSDK-Win64-Shipping.dll", "sha256": "<ours>",
-                "replaced_original_sha256": "<the game's Epic DLL>" },
-  "launch": { "argv_redacted": ["<game>"], "cwd": "...", "exit_code": 0 }
+                "replaced_original_sha256": "<the game's Epic DLL>", "restored": true },
+  "launch": { "argv_redacted": ["<game>", "<arguments-redacted>"], "cwd": "...",
+              "exit_code": 0, "status": "exited" }
 }
 ```
+
+Arguments are never persisted: only the executable basename and the fact that arguments existed are
+recorded. A manual launcher has `argv_redacted: ["<manual>"]` and a null exit code. `restored` records
+whether the verified original was back in place when the runner finalized the file.
 
 ### `inspection.json` (`inspect_game`, written once)
 
@@ -348,6 +353,12 @@ merges the owned files into one summary with the display name dropped and absolu
 basenames, and copies the trace (already clean) alongside. Raw owned files never leave the machine
 unless the tester opts in.
 
+`stdout.log` is deliberately not copied: arbitrary game output has no structural redaction boundary.
+The summary carries only its byte count and SHA-256 so support can tell whether output existed and
+whether two local copies match. Trace files are copied record by record; a single non-newline-terminated
+tail is dropped, while an invalid complete record rejects the bundle rather than laundering an unknown
+format into something labelled shareable. Profile keys and every other unowned file are ignored.
+
 ---
 
 ## 6. Failure and lifecycle
@@ -480,6 +491,10 @@ env are needed:
 - **Label churn** — releasing and reusing handle addresses never aliases two live objects in the trace,
   and high-volume create/release cycles do not grow the label registry without bound.
 - **Bundle redaction** — the merged bundle contains no display name and no local absolute path.
+- **Runner restoration** — a normal exit, nonzero exit, failed process start, interrupt, and failure
+  after replacement all restore the hash-verified original; an unrecognized file is never overwritten.
+- **Bundle boundary** — stdout, profile keys, owned-file free text, command arguments, and a torn trace
+  tail do not enter the shareable directory.
 
 ---
 
@@ -493,9 +508,12 @@ Designed against this contract but built after it:
   files and trace a game run does.
 - **`inspect_game`** — reads a game's imports against the emulator's exports and writes
   `inspection.json` (inspect only; staging is a separate explicit action).
-- **Alpha runner** — sets `EOSR_RUN_DIR`, selects the artifact, backs up and verifies the original,
-  writes `launch.json`, launches or prints exact manual steps, builds the sanitized bundle from the
-  owned files and trace, and restores the original.
+- **Alpha runner (implemented)** — `tools/alpha_runner.py` selects the artifact, runs the import census,
+  creates `EOSR_RUN_DIR`, stages under a recoverable hash-verified transaction, launches without a
+  shell (or prints and supervises exact manual/Steam steps), captures stdout/stderr locally, restores
+  the original, writes `launch.json`, and builds the explicit sanitized bundle. `restore` recovers a
+  transaction left by a killed runner; it refuses to overwrite a file that is neither the recorded
+  original nor the staged artifact.
 
 ## 11. Build sequence
 
@@ -543,4 +561,8 @@ Designed against this contract but built after it:
 6. **Done:** the two-process C-ABI probe is the first full consumer. Its coordinator joins the two
    traces by peer fingerprint, rejects raw-id or payload leakage, and runs under Linux, Wine, and the
    sanitizer build.
-7. The alpha runner and sanitized support bundle.
+7. **Done:** the alpha runner and sanitized support bundle. Unit coverage exercises unique SDK
+   selection, exact staging/restoration, post-replacement failure recovery, nonzero and failed launches,
+   path/display-name/argument redaction, stdout/profile exclusion, and torn-tail handling. The next step
+   is a real two-machine Risk of Rain 2 LAN run, using the bundle to turn the first behavioral mismatch
+   into a reproducible regression.

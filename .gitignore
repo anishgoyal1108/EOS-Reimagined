@@ -35,6 +35,7 @@ Thumbs.db
 .clangd
 __pycache__/
 *.pyc
+.eosr-alpha/
 
 # AI coding assistants: their instruction files and caches are a local convenience and say
 # nothing about the library, so they stay out of the tree.

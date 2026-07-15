@@ -69,6 +69,14 @@ endif()
 
 add_test(NAME unit_tests COMMAND unit_tests)
 
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(
+        NAME alpha_runner_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_alpha_runner.py
+    )
+endif()
+
 # Integration tests load the real built library through the C ABI, exactly like a game would,
 # so they link neither eosr_core nor eos_shared and resolve every entry point at runtime. Only
 # the OS-specific loader shim (kept under src/platform/) is compiled in.

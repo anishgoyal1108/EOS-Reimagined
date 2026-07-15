@@ -76,6 +76,12 @@ Legend: [Live]{.status-live} implemented and networked where the SDK is ·
   matchmaking search records, OS/Wine identification in `runtime.json`, and instrumentation of
   every generated shell, so a stubbed call a game makes is visible in the trace rather than
   invisible *(2026-07-14)*.
+- **Operational alpha tooling** — every handwritten export is traced; a two-process C-ABI probe
+  proves authenticated discovery, Friends/UserInfo, Sessions search/join, and P2P payload delivery
+  through the real artifacts; and `tools/alpha_runner.py` performs the import census, recoverable
+  hash-verified staging, launch/stdout capture, restoration, and explicit support-bundle sanitization.
+  The original SDK is restored on nonzero and failed launches, and a crash leaves verification state
+  for the `restore` command rather than an ambiguous backup *(2026-07-14)*.
 
 ## Present but not functional
 
@@ -116,9 +122,10 @@ engineered to fail *safely*: nothing here pretends to work.
 
 ## What's next
 
-1. [Planned]{.status-planned} **Finish the operational alpha.** The two-process C-ABI probe, and
-   the alpha runner that stages the artifact, launches the game, and produces a sanitized
-   diagnostic bundle from the run's owned files.
+1. [Planned]{.status-planned} **Run the first in-game LAN alpha.** Risk of Rain 2 is the evidence-based
+   first target: its complete 613-entry P/Invoke surface resolves, and its core path uses the live
+   interfaces. Run two machines through the alpha runner, turn the first behavioral mismatch into a
+   red regression, and repeat until host/search/join/gameplay survives a representative session.
 2. [Planned]{.status-planned} **The external social companion.** A standalone local app (CLI
    first) that shows authenticated LAN peers and fires the game's own join-accepted callbacks
    over a loopback control channel — the designed replacement for the overlay's join surface,

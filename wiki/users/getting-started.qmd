@@ -38,6 +38,14 @@ wherever it runs:
 Both artifacts build from the same source tree — see [Building from source](building.qmd), or
 grab them from a CI run's artifacts if one is available.
 
+::: {.callout-tip}
+## Alpha testers: let the runner do the replacement
+
+[`tools/alpha_runner.py`](tracing.qmd#alpha_runnerpy-one-safe-diagnostic-game-run) backs up, verifies,
+stages, traces, restores, and makes a sanitized support bundle in one workflow. It is safer and far
+more useful for debugging than a manual copy. The steps below remain the plain installation path.
+:::
+
 ## 2. Back up the original
 
 Find the game's existing `EOSSDK-Win64-Shipping.dll` / `libEOSSDK-Linux-Shipping.so` (usually
