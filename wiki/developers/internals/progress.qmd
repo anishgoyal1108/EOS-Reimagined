@@ -135,6 +135,11 @@ A game resolves every `EOS_*` symbol it imports when the library loads; one it c
 - **Lobby ABI tracing and handle contracts:** all 79 exports are covered under the same rules.
   Deferred invite/RTC/overlay calls now reject a foreign parent instead of returning a plausible
   empty answer, while valid calls retain their honest `NotImplemented` or empty behavior.
+- **Two-process C-ABI probe:** two standalone workers load only the built `.so`/`.dll` and exercise
+  the actual alpha path: separate persistent profiles, authenticated discovery, Friends/UserInfo,
+  Sessions host/search/join, and negotiated P2P delivery. The coordinator cross-checks both traces by
+  `peer_fp` and proves raw product ids and packet payloads are absent. It runs natively, under Wine,
+  and with the sanitizer build.
 - **IntegratedPlatform stale handles:** flat calls now validate the interface against the live
   platform slot. A released or foreign handle returns `EOS_InvalidParameters` instead of continuing
   into a deinitialized object (or dereferencing an arbitrary pointer).

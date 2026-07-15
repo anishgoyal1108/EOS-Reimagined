@@ -487,8 +487,10 @@ env are needed:
 
 Designed against this contract but built after it:
 
-- **C-ABI probe** — two processes, distinct `data_dir`s, loading the real `.so`/`.dll` and calling only
-  exported EOS functions; produces the same owned files and trace a game run does.
+- **C-ABI probe (implemented)** — two processes, distinct `data_dir`s, loading the real `.so`/`.dll`
+  and calling only exported EOS functions. It proves authenticated discovery, Friends/UserInfo,
+  Sessions host/search/join, and P2P delivery natively and under Wine, and produces the same owned
+  files and trace a game run does.
 - **`inspect_game`** — reads a game's imports against the emulator's exports and writes
   `inspection.json` (inspect only; staging is a separate explicit action).
 - **Alpha runner** — sets `EOSR_RUN_DIR`, selects the artifact, backs up and verifies the original,
@@ -538,4 +540,7 @@ Designed against this contract but built after it:
      contract.
      UI key/button bitmasks use the numeric `flags` return type rather than being mislabeled as counts.
    - **The complete 638-export ABI surface is now observable.**
-6. The two-process C-ABI probe as the first full consumer.
+6. **Done:** the two-process C-ABI probe is the first full consumer. Its coordinator joins the two
+   traces by peer fingerprint, rejects raw-id or payload leakage, and runs under Linux, Wine, and the
+   sanitizer build.
+7. The alpha runner and sanitized support bundle.

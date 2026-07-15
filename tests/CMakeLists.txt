@@ -124,6 +124,33 @@ set_target_properties(integration_trace PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME integration_trace COMMAND integration_trace $<TARGET_FILE:eos_shared>)
 
+# Two independent processes load only the real C ABI, then discover, socialize, join a session, and
+# exchange a P2P packet. The CMake coordinator works natively and through the configured Wine
+# emulator without adding a process-spawn API to the shipping library.
+add_executable(abi_mesh_probe integration/abi_mesh_probe.cpp)
+if(WIN32)
+    target_sources(abi_mesh_probe PRIVATE ${CMAKE_SOURCE_DIR}/src/platform/dynlib_win32.cpp)
+else()
+    target_sources(abi_mesh_probe PRIVATE ${CMAKE_SOURCE_DIR}/src/platform/dynlib_linux.cpp)
+    target_link_libraries(abi_mesh_probe PRIVATE ${CMAKE_DL_LIBS})
+endif()
+target_include_directories(abi_mesh_probe PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include/eos
+)
+add_dependencies(abi_mesh_probe eos_shared)
+set_target_properties(abi_mesh_probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(
+    NAME integration_abi_mesh
+    COMMAND ${CMAKE_COMMAND}
+        "-DWORKER=$<TARGET_FILE:abi_mesh_probe>"
+        "-DLIBRARY=$<TARGET_FILE:eos_shared>"
+        "-DPROBE_ROOT=${CMAKE_BINARY_DIR}/abi-mesh-probe"
+        "-DEMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_abi_mesh_probe.cmake
+)
+set_tests_properties(integration_abi_mesh PROPERTIES TIMEOUT 60)
+
 if(UNIX AND CMAKE_NM)
     add_test(
         NAME export_surface
