@@ -147,6 +147,8 @@ TEST_CASE("Lobby flat ABI nulls handle outputs when the parent handle is invalid
     RESOLVE(fn_get_lobby, EOS_Platform_GetLobbyInterface);
     RESOLVE(fn_create_search, EOS_Lobby_CreateLobbySearch);
     RESOLVE(fn_copy_details, EOS_Lobby_CopyLobbyDetailsHandle);
+    RESOLVE(fn_copy_invite, EOS_Lobby_CopyLobbyDetailsHandleByInviteId);
+    RESOLVE(fn_rtc_connected, EOS_Lobby_IsRTCRoomConnected);
 
     EOS_InitializeOptions initialize = {};
     initialize.ApiVersion = EOS_INITIALIZE_API_LATEST;
@@ -182,6 +184,21 @@ TEST_CASE("Lobby flat ABI nulls handle outputs when the parent handle is invalid
     CHECK(fn_copy_details(bad_lobby, &copy_options, &details) ==
           EOS_EResult::EOS_InvalidParameters);
     CHECK((details == nullptr));
+
+    EOS_Lobby_CopyLobbyDetailsHandleByInviteIdOptions invite_options = {};
+    invite_options.ApiVersion = EOS_LOBBY_COPYLOBBYDETAILSHANDLEBYINVITEID_API_LATEST;
+    invite_options.InviteId = "missing";
+    details = reinterpret_cast<EOS_HLobbyDetails>(0x1);
+    CHECK(fn_copy_invite(bad_lobby, &invite_options, &details) ==
+          EOS_EResult::EOS_InvalidParameters);
+    CHECK((details == nullptr));
+
+    EOS_Lobby_IsRTCRoomConnectedOptions rtc_options = {};
+    rtc_options.ApiVersion = EOS_LOBBY_ISRTCROOMCONNECTED_API_LATEST;
+    EOS_Bool connected = EOS_TRUE;
+    CHECK(fn_rtc_connected(bad_lobby, &rtc_options, &connected) ==
+          EOS_EResult::EOS_InvalidParameters);
+    CHECK(connected == EOS_FALSE);
 
     fn_release(platform);
     CHECK(fn_shutdown() == EOS_EResult::EOS_Success);

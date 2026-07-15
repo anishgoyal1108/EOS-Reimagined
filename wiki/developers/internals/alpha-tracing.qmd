@@ -524,8 +524,8 @@ Designed against this contract but built after it:
    - **Also done:** all 282 generated compatibility exports use the same scope, including the five
      non-void async storage calls. Their loaded-library tests cover exact API versions, result and
      null-handle returns, callback correlation, and notification-label continuity.
-   - **Also done:** 277 handwritten bootstrap, common, logging, Platform, Connect, Auth, P2P,
-     Sessions, Presence, IntegratedPlatform, Friends, UserInfo, and UI exports.
+   - **Also done:** all 356 handwritten bootstrap, common, logging, Platform, Connect, Auth, P2P,
+     Sessions, Presence, Lobby, IntegratedPlatform, Friends, UserInfo, and UI exports.
      The loaded-library test covers real and rejected calls, typed returns, async correlation, and a
      notification id shared with its register/fire/remove records. P2P packet calls expose only
      labelled endpoints, socket, channel, reliability, and length; payload bytes never enter the
@@ -534,6 +534,8 @@ Designed against this contract but built after it:
      fabricated delivery.
      Sessions search/sub-handle returns carry opaque labels, and its dormant
      `JoinSessionAccepted` hook has the same notification-label continuity.
+     Lobby search/sub-handle returns and the dormant `JoinLobbyAccepted` hook follow the same
+     contract.
      UI key/button bitmasks use the numeric `flags` return type rather than being mislabeled as counts.
-   - **Still to do:** the remaining 79 handwritten Lobby exports using the same trampoline pattern.
+   - **The complete 638-export ABI surface is now observable.**
 6. The two-process C-ABI probe as the first full consumer.

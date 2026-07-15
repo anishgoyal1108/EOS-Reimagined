@@ -12,6 +12,7 @@
 #include "eos_p2p.h"
 #include "eos_presence.h"
 #include "eos_sessions.h"
+#include "eos_lobby.h"
 #include "eos_ecom.h"
 #include "eos_achievements.h"
 #include "eos_playerdatastorage.h"
@@ -65,6 +66,7 @@ void EOS_CALL on_auth_delete(const EOS_Auth_DeletePersistentAuthCallbackInfo* in
 }
 void EOS_CALL on_join_game_accepted(const EOS_Presence_JoinGameAcceptedCallbackInfo*) {}
 void EOS_CALL on_join_session_accepted(const EOS_Sessions_JoinSessionAcceptedCallbackInfo*) {}
+void EOS_CALL on_join_lobby_accepted(const EOS_Lobby_JoinLobbyAcceptedCallbackInfo*) {}
 
 void set_env(const char* name, const char* value) {
 #if defined(_WIN32)
@@ -222,6 +224,11 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     RESOLVE(fn_release_session_search, EOS_SessionSearch_Release);
     RESOLVE(fn_add_join_session, EOS_Sessions_AddNotifyJoinSessionAccepted);
     RESOLVE(fn_remove_join_session, EOS_Sessions_RemoveNotifyJoinSessionAccepted);
+    RESOLVE(fn_get_lobby, EOS_Platform_GetLobbyInterface);
+    RESOLVE(fn_create_lobby_search, EOS_Lobby_CreateLobbySearch);
+    RESOLVE(fn_release_lobby_search, EOS_LobbySearch_Release);
+    RESOLVE(fn_add_join_lobby, EOS_Lobby_AddNotifyJoinLobbyAccepted);
+    RESOLVE(fn_remove_join_lobby, EOS_Lobby_RemoveNotifyJoinLobbyAccepted);
     EOS_HConnect connect = fn_get_connect(platform);
     REQUIRE((connect != nullptr));
 
@@ -296,6 +303,24 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
         sessions, &join_session, nullptr, on_join_session_accepted);
     REQUIRE(join_session_id != EOS_INVALID_NOTIFICATIONID);
     fn_remove_join_session(sessions, join_session_id);
+
+    EOS_HLobby lobby = fn_get_lobby(platform);
+    REQUIRE((lobby != nullptr));
+    EOS_Lobby_CreateLobbySearchOptions lobby_search_options = {};
+    lobby_search_options.ApiVersion = EOS_LOBBY_CREATELOBBYSEARCH_API_LATEST;
+    lobby_search_options.MaxResults = 8;
+    EOS_HLobbySearch lobby_search = nullptr;
+    REQUIRE(fn_create_lobby_search(lobby, &lobby_search_options, &lobby_search) ==
+            EOS_EResult::EOS_Success);
+    REQUIRE((lobby_search != nullptr));
+    fn_release_lobby_search(lobby_search);
+
+    EOS_Lobby_AddNotifyJoinLobbyAcceptedOptions join_lobby = {};
+    join_lobby.ApiVersion = EOS_LOBBY_ADDNOTIFYJOINLOBBYACCEPTED_API_LATEST;
+    const EOS_NotificationId join_lobby_id = fn_add_join_lobby(
+        lobby, &join_lobby, nullptr, on_join_lobby_accepted);
+    REQUIRE(join_lobby_id != EOS_INVALID_NOTIFICATIONID);
+    fn_remove_join_lobby(lobby, join_lobby_id);
 
     // A diagnostic trace must retain calls that fail before dispatch too. Bad/stale handles are one
     // of the first things an in-game alpha probe needs to explain, not a reason for the probe itself
@@ -457,6 +482,24 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     REQUIRE_FALSE(join_session_remove.empty());
     CHECK(field_of(join_session_return, "v") == field_of(join_session_register, "id"));
     CHECK(field_of(join_session_register, "id") == field_of(join_session_remove, "id"));
+
+    const std::string lobby_search_return = find_line(
+        lines, "\"kind\":\"return\",\"fn\":\"EOS_Lobby_CreateLobbySearch\"");
+    REQUIRE_FALSE(lobby_search_return.empty());
+    CHECK(lobby_search_return.find("\"name\":\"EOS_Success\"") != std::string::npos);
+    CHECK(lobby_search_return.find("\"out\":{\"handle\":\"handle#") !=
+          std::string::npos);
+    const std::string join_lobby_return = find_line(
+        lines, "\"kind\":\"return\",\"fn\":\"EOS_Lobby_AddNotifyJoinLobbyAccepted\"");
+    const std::string join_lobby_register = find_line(
+        lines, "\"event\":\"JoinLobbyAccepted\",\"action\":\"register\"");
+    const std::string join_lobby_remove = find_line(
+        lines, "\"event\":\"JoinLobbyAccepted\",\"action\":\"remove\"");
+    REQUIRE_FALSE(join_lobby_return.empty());
+    REQUIRE_FALSE(join_lobby_register.empty());
+    REQUIRE_FALSE(join_lobby_remove.empty());
+    CHECK(field_of(join_lobby_return, "v") == field_of(join_lobby_register, "id"));
+    CHECK(field_of(join_lobby_register, "id") == field_of(join_lobby_remove, "id"));
 
     // The asynchronous login: its call, its synchronous return, and the callback that completed it a
     // tick later all carry one correlation id, so a reader can stitch the operation back together.
