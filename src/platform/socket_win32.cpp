@@ -145,7 +145,7 @@ bool socket::connect(const endpoint& addr) {
 }
 
 int socket::send(const u8* data, std::size_t len) {
-    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    if (len > static_cast<std::size_t>((std::numeric_limits<int>::max)())) {
         last_error_ = sock_error::other;
         return -1;
     }
@@ -159,7 +159,7 @@ int socket::send(const u8* data, std::size_t len) {
 }
 
 int socket::recv(u8* data, std::size_t len) {
-    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    if (len > static_cast<std::size_t>((std::numeric_limits<int>::max)())) {
         last_error_ = sock_error::other;
         return -1;
     }
@@ -173,7 +173,7 @@ int socket::recv(u8* data, std::size_t len) {
 }
 
 int socket::send_to(const u8* data, std::size_t len, const endpoint& to) {
-    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    if (len > static_cast<std::size_t>((std::numeric_limits<int>::max)())) {
         last_error_ = sock_error::other;
         return -1;
     }
@@ -190,7 +190,7 @@ int socket::send_to(const u8* data, std::size_t len, const endpoint& to) {
 }
 
 int socket::recv_from(u8* data, std::size_t len, endpoint& from) {
-    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    if (len > static_cast<std::size_t>((std::numeric_limits<int>::max)())) {
         last_error_ = sock_error::other;
         return -1;
     }
@@ -262,7 +262,7 @@ bool socket::local_endpoint(endpoint& out) {
 }
 
 int poll_readable(const native_socket* handles, std::size_t count, int timeout_ms, bool* readable_out) {
-    if (count > static_cast<std::size_t>(std::numeric_limits<ULONG>::max())) {
+    if (count > static_cast<std::size_t>((std::numeric_limits<ULONG>::max)())) {
         return -1;
     }
     std::vector<WSAPOLLFD> fds(count);
