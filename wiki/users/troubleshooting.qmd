@@ -141,8 +141,11 @@ overridable with `EOSR_DATA_DIR`. Nothing is written into the game folder except
 copied there yourself.
 
 **How do I report a bug well?**
-Reproduce with `EOSR_TRACE=lifecycle`, then attach the run's `trace.jsonl` (it contains labels
-and fingerprints, not real IDs or payloads — glance at `runtime.json` before sharing, since it
-echoes your display name). Add the game, OS, and — if the game won't load — the
-`inspect_game.py` output. Then
+The easy way: run the game through
+[`alpha_runner.py`](tracing.qmd#alpha_runnerpy-one-safe-diagnostic-game-run) and attach the
+`*-bundle` directory it produces — it already merges the census, run metadata, and trace, with
+display names, arguments, and absolute paths stripped. The manual way: reproduce with
+`EOSR_TRACE=lifecycle` and attach the run's `trace.jsonl` (it contains labels and fingerprints,
+not real IDs or payloads — glance at `runtime.json` before sharing, since it echoes your display
+name), plus the game, OS, and — if the game won't load — the `inspect_game.py` output. Then
 [open an issue](https://github.com/anishgoyal1108/EOS-Reimagined/issues/new).

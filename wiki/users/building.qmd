@@ -55,7 +55,7 @@ ctest --test-dir build --output-on-failure        # native Linux
 ctest --test-dir build-win --output-on-failure    # cross build, runs under Wine
 ```
 
-The suite has four tiers:
+The suite has five tiers:
 
 - **`unit_tests`** — hundreds of cases over the core: crypto known-answer tests, Noise XX against
   the published vectors, config resolution, identity slots, every interface's behavior.
@@ -63,6 +63,9 @@ The suite has four tiers:
   game would, including ABI out-parameter contracts.
 - **`integration_trace`** — drives a full SDK lifetime with tracing enabled and asserts on the
   files written.
+- **`abi_mesh_probe`** — two real processes, each loading the built artifact, meshing over
+  loopback: authenticated discovery, Friends/UserInfo, Sessions search/join, and P2P payload
+  delivery proven end to end.
 - **`export_surface`** — verifies the built library exports `EOS_*` symbols and *nothing else*
   (Unix; the Linux link also pins this with a version script).
 
