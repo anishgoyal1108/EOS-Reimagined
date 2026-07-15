@@ -8,7 +8,7 @@ website:
   site-url: https://anishgoyal1108.github.io/EOS-Reimagined/
   repo-url: https://github.com/anishgoyal1108/EOS-Reimagined
   repo-subdir: wiki
-  repo-branch: foundation
+  repo-branch: main
   repo-actions: [edit, issue]
   favicon: assets/logo.svg
   image: assets/logo.svg
