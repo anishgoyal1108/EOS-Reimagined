@@ -5,10 +5,18 @@ name: CI
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   linux:
     name: Linux (native)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Configure
@@ -27,15 +35,16 @@ jobs:
   windows-cross:
     name: Windows (MinGW-w64 cross + Wine)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       WINEDEBUG: -all
+      WINEPREFIX: ${{ github.workspace }}/build-win/.wineprefix
     steps:
       - uses: actions/checkout@v4
       - name: Install MinGW-w64 and Wine
         run: |
-          sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y mingw-w64 wine wine64
+          sudo apt-get install -y --no-install-recommends mingw-w64 wine wine64
       - name: Configure
         run: cmake -S . -B build-win -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release
       - name: Build
@@ -52,10 +61,11 @@ jobs:
   windows-msvc:
     name: Windows (native MSVC)
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -A x64
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
@@ -66,3 +76,24 @@ jobs:
           name: EOSSDK-Win64-Shipping-msvc
           path: build/**/EOSSDK-Win64-Shipping.dll
           if-no-files-found: error
+
+  sanitizers:
+    name: Linux (ASan + UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >-
+          cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build
+        run: cmake --build build-asan --parallel
+      - name: Test leak-clean tiers
+        run: ctest --test-dir build-asan -R 'unit_tests|alpha_runner_tests|release_package_tests' --output-on-failure
+      - name: Test loaded-library tiers
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: ctest --test-dir build-asan -R 'integration_tests|integration_trace|integration_abi_mesh|export_surface' --output-on-failure

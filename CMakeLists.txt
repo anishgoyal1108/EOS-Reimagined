@@ -22,10 +22,13 @@ add_subdirectory(third_party/monocypher)
 # the git revision (with a -dirty marker) when the tree is a working checkout, so two alpha traces can
 # be tied to the exact build that produced them. Injected as a compile definition read by tracer.cpp;
 # a build outside a git checkout still gets the version.
-set(EOSR_VERSION "0.1.0-alpha")
+set(EOSR_VERSION "0.1.0-alpha" CACHE STRING "Release version embedded in runtime metadata")
+set(EOSR_BUILD_REVISION "" CACHE STRING "Exact source revision embedded by release builds")
 find_package(Git QUIET)
 set(EOSR_GIT_REV "")
-if(GIT_FOUND)
+if(NOT EOSR_BUILD_REVISION STREQUAL "")
+    set(EOSR_GIT_REV "${EOSR_BUILD_REVISION}")
+elseif(GIT_FOUND)
     execute_process(
         COMMAND ${GIT_EXECUTABLE} describe --always --dirty
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

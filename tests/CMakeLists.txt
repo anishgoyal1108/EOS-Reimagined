@@ -75,6 +75,10 @@ if(Python3_Interpreter_FOUND)
         NAME alpha_runner_tests
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_alpha_runner.py
     )
+    add_test(
+        NAME release_package_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_release_package.py
+    )
 endif()
 
 # Integration tests load the real built library through the C ABI, exactly like a game would,
@@ -126,7 +130,8 @@ target_include_directories(integration_trace PRIVATE
 )
 target_link_libraries(integration_trace PRIVATE doctest)
 target_compile_definitions(integration_trace PRIVATE
-    "EOSR_PROBE_DIR=\"${CMAKE_BINARY_DIR}/trace-probe\"")
+    "EOSR_PROBE_DIR=\"${CMAKE_BINARY_DIR}/trace-probe\""
+    "EOSR_EXPECTED_BUILD_ID=\"${EOSR_BUILD_ID}\"")
 add_dependencies(integration_trace eos_shared)
 set_target_properties(integration_trace PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})

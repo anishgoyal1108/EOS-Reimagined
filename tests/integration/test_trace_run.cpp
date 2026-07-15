@@ -378,7 +378,7 @@ TEST_CASE("tracing through the loaded library produces a well-formed run") {
     CHECK(runtime[runtime.size() - 1] == '}');
     CHECK(runtime.find("\"run_id\":\"run-probe\"") != std::string::npos);
     CHECK(runtime.find("\"schema_version\":1") != std::string::npos);
-    CHECK(runtime.find("\"emulator_build\":\"eosr ") != std::string::npos);
+    CHECK(runtime.find("\"emulator_build\":\"" EOSR_EXPECTED_BUILD_ID "\"") != std::string::npos);
     CHECK(runtime.find("\"trace_level\":\"full\"") != std::string::npos);
     CHECK(runtime.find("\"version\":null") == std::string::npos);
     std::string expected_os;

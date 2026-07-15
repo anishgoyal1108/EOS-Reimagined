@@ -69,8 +69,10 @@ review; the [progress manifest](internals/progress.qmd) records what it has caug
 ## Practical bits
 
 - **CI** is a manual button (Actions → *CI* → Run workflow): it builds native Linux, MinGW cross
-  + Wine, and native MSVC, tests all three, and uploads both artifacts. This wiki deploys from
-  its own manual workflow the same way.
+  + Wine, native MSVC, and an ASan + UBSan gate, then uploads both artifacts. Before merging a
+  release branch, run it against that branch. Alpha publication is a separate main-only manual
+  workflow: rehearse with `publish` off, inspect the verified candidate, then rerun from the same
+  commit with `publish` on. This wiki deploys from its own manual workflow the same way.
 - **Bug reports**: a [trace](../users/tracing.qmd) plus an
   [import census](../users/troubleshooting.qmd#the-game-wont-launch) makes a report actionable
   in minutes.

@@ -1,0 +1,269 @@
+name: Release alpha
+run-name: Alpha ${{ inputs.version }} (${{ inputs.publish && 'publish' || 'validate' }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag, exactly vMAJOR.MINOR.PATCH-alpha.NUMBER"
+        required: true
+        default: "v0.1.0-alpha.1"
+        type: string
+      publish:
+        description: "Create the public GitHub prerelease after every gate passes"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-alpha
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.values.outputs.version }}
+      revision: ${{ steps.values.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require main and validate the tag
+        id: values
+        env:
+          TAG: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Release alpha must be dispatched from the main branch, not $GITHUB_REF" >&2
+            exit 1
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]; then
+            echo "Invalid alpha tag: $TAG" >&2
+            exit 1
+          fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "revision=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux release artifact
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_REVISION: ${{ needs.validate.outputs.revision }}
+        run: >-
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          "-DEOSR_VERSION=$RELEASE_VERSION"
+          "-DEOSR_BUILD_REVISION=$RELEASE_REVISION"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Verify runtime build identity
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_REVISION: ${{ needs.validate.outputs.revision }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          runtime = json.loads(Path("build/trace-probe/run-probe/runtime.json").read_text())
+          expected = "eosr %s (%s)" % (
+              os.environ["RELEASE_VERSION"], os.environ["RELEASE_REVISION"]
+          )
+          if runtime.get("emulator_build") != expected:
+              raise SystemExit("runtime build identity mismatch")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: build/libEOSSDK-Linux-Shipping.so
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-cross:
+    name: Windows release artifact (MinGW + Wine)
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      WINEDEBUG: -all
+      WINEPREFIX: ${{ github.workspace }}/build-win/.wineprefix
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install MinGW-w64 and Wine
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mingw-w64 wine wine64
+      - name: Configure
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_REVISION: ${{ needs.validate.outputs.revision }}
+        run: >-
+          cmake -S . -B build-win -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-mingw-w64.cmake
+          "-DEOSR_VERSION=$RELEASE_VERSION"
+          "-DEOSR_BUILD_REVISION=$RELEASE_REVISION"
+      - name: Build
+        run: cmake --build build-win --parallel
+      - name: Test under Wine
+        run: ctest --test-dir build-win --output-on-failure
+      - name: Verify runtime build identity
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_REVISION: ${{ needs.validate.outputs.revision }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          runtime = json.loads(Path("build-win/trace-probe/run-probe/runtime.json").read_text())
+          expected = "eosr %s (%s)" % (
+              os.environ["RELEASE_VERSION"], os.environ["RELEASE_REVISION"]
+          )
+          if runtime.get("emulator_build") != expected:
+              raise SystemExit("runtime build identity mismatch")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: build-win/EOSSDK-Win64-Shipping.dll
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-msvc:
+    name: Native MSVC gate
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_REVISION: ${{ needs.validate.outputs.revision }}
+        run: >-
+          cmake -S . -B build -A x64
+          "-DEOSR_VERSION=$env:RELEASE_VERSION"
+          "-DEOSR_BUILD_REVISION=$env:RELEASE_REVISION"
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  sanitizers:
+    name: ASan + UBSan gate
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >-
+          cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build
+        run: cmake --build build-asan --parallel
+      - name: Test leak-clean tiers
+        run: ctest --test-dir build-asan -R 'unit_tests|alpha_runner_tests|release_package_tests' --output-on-failure
+      - name: Test loaded-library tiers
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: ctest --test-dir build-asan -R 'integration_tests|integration_trace|integration_abi_mesh|export_surface' --output-on-failure
+
+  package:
+    name: Package release candidate
+    needs: [validate, linux, windows-cross, windows-msvc, sanitizers]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-linux
+          path: raw/linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-windows
+          path: raw/windows
+      - name: Build deterministic release archives
+        env:
+          TAG: ${{ inputs.version }}
+          REVISION: ${{ needs.validate.outputs.revision }}
+        run: >-
+          python3 tools/package_release.py build
+          --version "$TAG"
+          --revision "$REVISION"
+          --linux raw/linux/libEOSSDK-Linux-Shipping.so
+          --windows raw/windows/EOSSDK-Win64-Shipping.dll
+          --out dist
+      - name: Verify release archives
+        run: python3 tools/package_release.py verify dist
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: eos-reimagined-${{ inputs.version }}-release-candidate
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish GitHub prerelease
+    if: inputs.publish
+    needs: [validate, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: eos-reimagined-${{ inputs.version }}-release-candidate
+          path: dist
+      - name: Verify downloaded release candidate
+        run: python3 tools/package_release.py verify dist
+      - name: Refuse an existing tag or release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; choose a new alpha version." >&2
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; choose a new alpha version." >&2
+            exit 1
+          fi
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.version }}
+        run: >-
+          gh release create "$TAG" dist/*
+          --target "$GITHUB_SHA"
+          --title "EOS Reimagined $TAG"
+          --notes-file .github/release-alpha-notes.md
+          --generate-notes
+          --prerelease
+          --latest=false

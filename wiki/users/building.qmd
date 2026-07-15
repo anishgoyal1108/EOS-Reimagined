@@ -79,6 +79,18 @@ ASan + UBSan.
 
 The repository has a manual CI workflow (**Actions → CI → Run workflow**) that builds the matrix —
 native Linux, MinGW-w64 cross + Wine, and native MSVC — runs the full test suite on each, and
-uploads both shipping artifacts. It runs on demand rather than on every push, by design. The
-[wiki you are reading](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/wiki) deploys
-the same way, from its own manual workflow.
+uploads both shipping artifacts. A sanitizer job runs the leak-clean tests under ASan + UBSan and
+the loaded-library tiers with their documented process-lifetime globals excluded from leak checks.
+It runs on demand rather than on every push, by design.
+
+Alpha releases use a separate manual workflow (**Actions → Release alpha → Run workflow**), available
+after the workflow is on `main`. It accepts only `vMAJOR.MINOR.PATCH-alpha.NUMBER` tags and only runs
+from `main`. Every release rebuilds and retests Linux, MinGW/Wine, native MSVC, and the sanitizer
+gate; verifies the exact version and commit written to `runtime.json`; creates deterministic Linux
+and Windows archives with embedded hashes; then verifies those archives before anything can be
+published. Leave `publish` off for a release-candidate rehearsal. If that succeeds, rerun the same
+version from the same `main` commit with `publish` on to create the GitHub prerelease. An existing tag
+or release is refused rather than overwritten.
+
+The [wiki you are reading](https://github.com/anishgoyal1108/EOS-Reimagined/tree/main/wiki) deploys
+from its own manual workflow.

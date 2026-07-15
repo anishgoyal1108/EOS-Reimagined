@@ -82,6 +82,11 @@ Legend: [Live]{.status-live} implemented and networked where the SDK is ·
   hash-verified staging, launch/stdout capture, restoration, and explicit support-bundle sanitization.
   The original SDK is restored on nonzero and failed launches, and a crash leaves verification state
   for the `restore` command rather than an ambiguous backup *(2026-07-14)*.
+- **Release-alpha pipeline** — a manual, main-only workflow gates a prerelease on native Linux,
+  MinGW/Wine, native MSVC, and ASan + UBSan; verifies the exact build identity from a real SDK run;
+  builds deterministic self-describing archives for both artifacts; verifies hashes and archive
+  membership; and refuses to overwrite an existing tag or release. A non-publishing rehearsal uses
+  the same gates and retains the candidate for inspection *(2026-07-14)*.
 
 ## Present but not functional
 
