@@ -3,6 +3,10 @@
 /build-linux/
 /build-win/
 /build-asan/
+/build-manager-*/
+/dist-manager-*/
+/package-*-smoke/
+/package-smoke-extracted/
 /out/
 *.o
 *.obj

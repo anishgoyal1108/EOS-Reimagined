@@ -14,13 +14,19 @@ concurrency:
 
 jobs:
   linux:
-    name: Linux (native)
+    name: Linux + manager (native)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Install manager GUI build and smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1-dev libx11-dev libxcursor-dev libxext-dev libxfixes-dev \
+            libxft-dev libxinerama-dev libxrender-dev xvfb
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MANAGER=ON
       - name: Build
         run: cmake --build build --parallel
       - name: Test
@@ -31,9 +37,15 @@ jobs:
           name: libEOSSDK-Linux-Shipping
           path: build/libEOSSDK-Linux-Shipping.so
           if-no-files-found: error
+      - name: Upload Linux manager
+        uses: actions/upload-artifact@v4
+        with:
+          name: eosr-manager-linux
+          path: build/eos-reimagined-manager
+          if-no-files-found: error
 
   windows-cross:
-    name: Windows (MinGW-w64 cross + Wine)
+    name: Windows manager + SDK (MinGW-w64 + Wine)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -44,28 +56,37 @@ jobs:
       - name: Install MinGW-w64 and Wine
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mingw-w64 wine wine64
+          sudo apt-get install -y --no-install-recommends mingw-w64 wine wine64 xvfb
       - name: Configure
-        run: cmake -S . -B build-win -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release
+        run: >-
+          cmake -S . -B build-win
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-mingw-w64.cmake
+          -DCMAKE_BUILD_TYPE=Release -DBUILD_MANAGER=ON
       - name: Build
         run: cmake --build build-win --parallel
       - name: Test (under Wine)
-        run: ctest --test-dir build-win --output-on-failure
+        run: xvfb-run -a ctest --test-dir build-win --output-on-failure
       - name: Upload EOSSDK-Win64-Shipping.dll
         uses: actions/upload-artifact@v4
         with:
           name: EOSSDK-Win64-Shipping
           path: build-win/EOSSDK-Win64-Shipping.dll
           if-no-files-found: error
+      - name: Upload Windows manager
+        uses: actions/upload-artifact@v4
+        with:
+          name: eosr-manager-windows
+          path: build-win/EOSReimaginedManager.exe
+          if-no-files-found: error
 
   windows-msvc:
-    name: Windows (native MSVC)
+    name: Windows manager + SDK (native MSVC)
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build -A x64
+        run: cmake -S . -B build -A x64 -DBUILD_MANAGER=ON
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
@@ -76,6 +97,12 @@ jobs:
           name: EOSSDK-Win64-Shipping-msvc
           path: build/**/EOSSDK-Win64-Shipping.dll
           if-no-files-found: error
+      - name: Upload native MSVC manager
+        uses: actions/upload-artifact@v4
+        with:
+          name: eosr-manager-windows-msvc
+          path: build/**/EOSReimaginedManager.exe
+          if-no-files-found: error
 
   sanitizers:
     name: Linux (ASan + UBSan)
@@ -83,17 +110,85 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Install manager headless build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1-dev libx11-dev libxcursor-dev libxext-dev libxfixes-dev \
+            libxft-dev libxinerama-dev libxrender-dev
       - name: Configure
         run: >-
           cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_MANAGER=ON
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
           -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
       - name: Build
         run: cmake --build build-asan --parallel
       - name: Test leak-clean tiers
-        run: ctest --test-dir build-asan -R 'unit_tests|alpha_runner_tests|release_package_tests' --output-on-failure
+        run: >-
+          ctest --test-dir build-asan
+          -R 'unit_tests|alpha_runner_tests|release_package_tests|manager_package_tests|manager_tests|manager_platform_tests|manager_cli_workflow|manager_gui_smoke'
+          --output-on-failure
       - name: Test loaded-library tiers
         env:
           ASAN_OPTIONS: detect_leaks=0
-        run: ctest --test-dir build-asan -R 'integration_tests|integration_trace|integration_abi_mesh|export_surface' --output-on-failure
+        run: >-
+          ctest --test-dir build-asan
+          -R 'integration_tests|integration_trace|integration_abi_mesh|integration_bootstrap_descriptor|export_surface|manager_loaded_sdk_workflow'
+          --output-on-failure
+
+  manager-package:
+    name: Deterministic manager packages
+    needs: [linux, windows-cross, windows-msvc, sanitizers]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WINEDEBUG: -all
+      WINEPREFIX: ${{ github.workspace }}/.wine-manager-package
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: eosr-manager-linux
+          path: raw/linux-manager
+      - uses: actions/download-artifact@v4
+        with:
+          name: libEOSSDK-Linux-Shipping
+          path: raw/linux-sdk
+      - uses: actions/download-artifact@v4
+        with:
+          name: eosr-manager-windows
+          path: raw/windows-manager
+      - uses: actions/download-artifact@v4
+        with:
+          name: EOSSDK-Win64-Shipping
+          path: raw/windows-sdk
+      - name: Build and verify deterministic archives
+        run: >-
+          python3 tools/package_manager.py build
+          --version v0.1.0-alpha.1
+          --revision "$GITHUB_SHA"
+          --linux-manager raw/linux-manager/eos-reimagined-manager
+          --windows-manager raw/windows-manager/EOSReimaginedManager.exe
+          --linux-sdk raw/linux-sdk/libEOSSDK-Linux-Shipping.so
+          --windows-sdk raw/windows-sdk/EOSSDK-Win64-Shipping.dll
+          --output dist-manager
+      - name: Install packaged-binary smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1 libx11-6 libxcursor1 libxext6 libxfixes3 libxft2 libxinerama1 \
+            libxrender1 unzip wine wine64 xvfb
+      - name: Smoke packaged Linux and Windows managers
+        run: |
+          mkdir extracted
+          tar -xzf dist-manager/eos-reimagined-manager-v0.1.0-alpha.1-linux-x86_64.tar.gz -C extracted
+          unzip -q dist-manager/eos-reimagined-manager-v0.1.0-alpha.1-windows-x86_64.zip -d extracted
+          xvfb-run -a extracted/eos-reimagined-manager-v0.1.0-alpha.1-linux-x86_64/eos-reimagined-manager --smoke-test
+          xvfb-run -a wine extracted/eos-reimagined-manager-v0.1.0-alpha.1-windows-x86_64/EOSReimaginedManager.exe --smoke-test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eosr-manager-phase2-packages
+          path: dist-manager/
+          if-no-files-found: error
