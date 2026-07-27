@@ -1,0 +1,98 @@
+---
+title: "ADR 0002 — Steam-safe Bootstrap Descriptor"
+---
+
+Status: **accepted** (2026-07-15).
+
+## Context
+
+`EOSR_DATA_DIR` selects the directory that contains `eosr.json`, `profile.key`, and trace runs. A
+manager can set that variable for a directly launched child, but it cannot portably add an
+environment variable to a game launched by an already-running Steam client. Editing Steam's private
+`localconfig.vdf` or depending on undocumented Steam IPC is unsafe and outside the project boundary.
+
+Falling back to one platform-default directory would make the manager's named instances cosmetic:
+every normally launched game would read the same configuration and identity. The replacement SDK
+therefore needs one bounded, non-secret bootstrap seam that Steam naturally carries with the game
+files it loads.
+
+## Decision
+
+The SDK optionally reads `eosr-bootstrap.json` beside the **loaded SDK module** once during
+`EOS_Initialize`. It never searches the current working directory. The descriptor has exactly this
+schema:
+
+```json
+{
+  "version": 1,
+  "data_dir": "an absolute path in the loaded module's runtime syntax"
+}
+```
+
+Data-directory precedence is:
+
+1. a non-empty `EOSR_DATA_DIR`;
+2. a valid sibling bootstrap descriptor; then
+3. the existing platform default.
+
+`EOSR_CONFIG`, all other `EOSR_*` variables, and `eosr.json` retain their existing precedence after
+that directory is selected. The descriptor is not another configuration source.
+
+The read is capped at 4 KiB. The top level must be an object containing only the two fields above;
+the version must be the integer `1`; `data_dir` must be a NUL-free absolute path under the target
+runtime's rules. Duplicate or unknown keys, malformed JSON, wrong types, and unsupported versions
+reject the whole descriptor. Missing descriptors preserve the prior path and diagnostics behavior.
+An invalid present descriptor falls back safely and contributes one structured `bootstrap`
+configuration diagnostic when diagnostics are available.
+
+The module path comes from the loader: `dladdr` for the loaded Linux shared object and
+`GetModuleHandleEx` plus `GetModuleFileName` for the loaded Windows DLL, including under Wine. No
+process-working-directory fallback exists.
+
+## Proton path rule
+
+A Windows DLL under Proton receives a Windows path, not a copied POSIX path. The Linux manager may
+translate a manager-owned host directory through the selected prefix's `dosdevices` mappings only
+when it can canonicalize both sides and prove the resulting Windows path resolves back to that same
+host directory. It records both forms. Missing, changed, escaping, ambiguous, or non-directory
+mappings disable managed instance selection for that adapter and offer a manual fallback; the
+manager never guesses that `Z:` exists.
+
+Flatpak Steam adds a namespace hop before Proton. On the host, Steam's persistent app data is under
+`~/.var/app/com.valvesoftware.Steam`; inside the Steam sandbox that directory is exposed as the
+user's home. A host path such as
+`~/.var/app/com.valvesoftware.Steam/.local/share/eos-reimagined-manager/...` is therefore seen by the
+game as `~/.local/share/eos-reimagined-manager/...`. The manager must prove both component-bounded
+mappings in order: manager-owned host storage to the sandbox-visible path, then the selected
+`dosdevices` mapping to Windows syntax. Testing only the host namespace's `Z:` symlink is
+insufficient because the same visible spelling can name an unrelated native-host directory.
+
+For Flatpak Steam, the canonical manager registry, logs, targets, and artifact catalog remain in the
+normal host manager root. The one authoritative instance payload (`eosr.json`, `profile.key`, and
+traces) lives in the private Flatpak-visible manager root above; it is not copied or mirrored. Native
+Linux libraries launched by Flatpak Steam use the proved sandbox-visible POSIX path, while Windows
+libraries continue through the second Proton translation.
+
+Persistent instance data remains outside disposable Proton prefixes by default.
+
+## Transaction ownership
+
+The manager writes the descriptor inside the same journaled transaction as the SDK artifact and
+records its hash. Restore and cleanup change it only when its live hash still matches manager state.
+An unknown or externally changed descriptor is left untouched. The file contains no profile key or
+credential.
+
+One game installation has one active descriptor. Switching it while an overlapping launch may still
+be using it is forbidden. Concurrent instances require the later isolated-launch capability.
+
+## Consequences and gate
+
+- Normal Steam launch can select one manager-owned instance without private Steam mutation.
+- Native Linux and native Windows use their ordinary absolute paths, except that Flatpak Steam uses
+  its verified sandbox-visible POSIX path; Proton uses a verified Windows translation after any
+  Flatpak namespace hop.
+- A malformed sidecar cannot redirect the SDK to a relative or attacker-shaped location.
+- Loaded-library regressions must cover native Linux, native Windows, and the Windows DLL under
+  Wine/Proton, including a working mapping, missing or changed `Z:`-style mappings, and a Flatpak
+  host-home alias that must not be mistaken for the manager-owned app-data directory.
+- The SDK remains headless and gains no manager or GUI dependency.

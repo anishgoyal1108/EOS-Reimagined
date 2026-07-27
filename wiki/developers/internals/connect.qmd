@@ -23,12 +23,23 @@ Tier A (2020 source `eossdk_connect.*`). The **roster backbone**: owns the local
 ## 5. Synchronous accessors
 - `GetLoggedInUsersCount` (@`0x18009d3d0`), `GetLoggedInUserByIndex` (@`0x18009d520`), `GetLoginStatus` (@`0x18009d880`).
 - **External-account mapping** (query remote peers' platform accounts): `GetProductUserExternalAccountCount` (@`0x18009e190`), `CopyProductUserExternalAccountByIndex/ByAccountType/ByAccountId` (@`0x18009e5e0`/`0x18009ed50`/`0x18009f4b0`), `CopyProductUserInfo` (@`0x18009fbc0`), `GetExternalAccountMapping` (@`0x18009c700`), `GetProductUserIdMapping` (@`0x18009cca0`).
+- **Reimplementation identity model:** every authenticated roster entry exposes one stable
+  `EOS_EAT_EPIC` external-account alias. Its account id is the connection-proven ProductUserId,
+  and its display name is the roster's authenticated display name (the local name comes from the
+  resolved settings snapshot). This is an emulator-local alias, not an attestation of an Epic
+  account. The count, all three Copy variants, `CopyProductUserInfo`, and both forward/reverse
+  mapping accessors are coherent views of that same alias. Copy results are owned by holder maps
+  and must be released with `EOS_Connect_ExternalAccountInfo_Release`.
 - `CopyIdToken` (@`0x1800a01d0`, 9.9 KB — large; JWT id-token production/crypto).
 
 ## 6. Async operations
 - **`Login`** (@`0x1800979b0`, 5.7 KB) — establishes local ProductUserId from `Credentials` (device id / external-account seed), inserts `_users[myself]`, advertises. `k_iCallback = EOS_Connect_LoginCallbackInfo`. Immediate-complete (no peer round-trip needed for self).
 - `Logout` (@`0x180099760`), `CreateUser` (@`0x180099dc0`), `LinkAccount` (@`0x18009a3a0`), `UnlinkAccount` (@`0x18009a910`), `CreateDeviceId` (@`0x18009ae80`), `DeleteDeviceId` (@`0x18009b440`), `TransferDeviceIdAccount` (@`0x18009b6a0`).
 - **Mapping queries (networked)**: `QueryExternalAccountMappings` (@`0x18009bc10`), `QueryProductUserIdMappings` (@`0x18009c190`) — resolve remote peers, stash `res` in a pending map, reply on `Connect_Infos`.
+- A successful mapping query is a cache-readiness promise: a subsequent matching synchronous
+  accessor must not return `EOS_NotFound`. Risk of Rain 2 depends on this sequence when building a
+  lobby member `PlatformID`; violating it produces a null dictionary key and a per-frame avatar
+  retry loop.
 
 ## 7. Notifications
 `AddNotifyAuthExpiration`/`RemoveNotifyAuthExpiration` (@`0x18009db10`/`0x18009dd70`), `AddNotifyLoginStatusChanged`/`RemoveNotifyLoginStatusChanged` (@`0x18009de50`/`0x18009e0b0`). Callback-infos `EOS_Connect_AuthExpirationCallbackInfo`, `EOS_Connect_LoginStatusChangedCallbackInfo`.

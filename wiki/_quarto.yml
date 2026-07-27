@@ -150,6 +150,8 @@ website:
               href: developers/internals/misc-services.qmd
         - section: "Future work"
           contents:
+            - text: "EOS Reimagined Manager"
+              href: developers/internals/manager.qmd
             - text: "External social companion"
               href: developers/internals/companion-client.qmd
 

@@ -23,8 +23,8 @@ holds your [profile key](identity-and-profiles.qmd) and traces:
 
 | Platform | Data directory (first match wins) |
 |---|---|
-| Linux | `$EOSR_DATA_DIR` → `$XDG_DATA_HOME/eos-reimagined` → `~/.local/share/eos-reimagined` |
-| Windows | `%EOSR_DATA_DIR%` → `%LOCALAPPDATA%\eos-reimagined` → `%APPDATA%` → `%USERPROFILE%\AppData\Local\eos-reimagined` |
+| Linux | `$EOSR_DATA_DIR` → valid sibling `eosr-bootstrap.json` → `$XDG_DATA_HOME/eos-reimagined` → `~/.local/share/eos-reimagined` |
+| Windows | `%EOSR_DATA_DIR%` → valid sibling `eosr-bootstrap.json` → `%LOCALAPPDATA%\eos-reimagined` → `%APPDATA%` → `%USERPROFILE%\AppData\Local\eos-reimagined` |
 
 Two consequences worth knowing:
 
@@ -33,6 +33,12 @@ Two consequences worth knowing:
   silently.
 - **`EOSR_DATA_DIR` is special.** It decides where the config file is *looked for*, so it can
   only be an environment variable — there is deliberately no `data_dir` key inside the file.
+
+The optional bootstrap descriptor is a manager-owned launch seam, not another settings file. It
+contains only a schema version and an absolute data-directory path, is read beside the **loaded**
+DLL/SO (never from the working directory), and is ignored with a diagnostic if malformed. A Windows
+DLL under Proton needs a verified Windows path such as `Z:\\home\\…`; the manager never copies a
+POSIX path into it or assumes that `Z:` exists. See [ADR 0002](../developers/internals/adr/0002-bootstrap-descriptor.qmd).
 
 To point at a config file somewhere else entirely, set **`EOSR_CONFIG`** to its path. A relative
 `EOSR_CONFIG` resolves against the data directory (not the process working directory, which
@@ -54,6 +60,19 @@ through to the next — an invalid `EOSR_TRACE` doesn't win, but it doesn't forc
 either; it yields to the file's value first. An environment variable set to the **empty string
 counts as unset**.
 
+::: {.callout-note title="Names and identity are separate"}
+`display_name` is the cosmetic name EOS Reimagined returns through EOS UserInfo and announces to
+authenticated LAN peers. A game's own Steam/local nickname is controlled by the game and is not
+read from or written back to `eosr.json`. The manager also has a cosmetic instance label that can
+differ from both.
+
+None of these names determines identity: `profile.key` does. Changing a name keeps the same Epic and
+product-user IDs. After launch, `runtime.json` records the effective `display_name`; it is the
+authority when an environment override, a different data directory, or SDK normalization makes the
+saved file and the running value differ. Its `config.sources` object records whether every effective
+manager directive came from the environment, the file, or a built-in default.
+:::
+
 ## The keys
 
 | `eosr.json` key | Env override | Type | Default | What it does |
@@ -61,6 +80,7 @@ counts as unset**.
 | `display_name` (alias: `username`) | `EOSR_DISPLAY_NAME` | string | `"Player"` | Your player name as other players see it. |
 | `locale` (alias: `language`) | `EOSR_LOCALE` | string | `"en"` | Language tag reported through `EOS_UserInfo` (e.g. `en`, `pt-BR`). A locale the game itself sets via its platform options wins. |
 | `discovery_ports` | `EOSR_DISCOVERY_PORTS` | `[first, last]` (env form: `"first-last"`) | `[55789, 55798]` | The UDP port range used for peer discovery and P2P data. All players must use the same range. See [Networking](networking.qmd). |
+| `peer_seeds` | `EOSR_PEER_SEEDS` | array of IPv4 strings (env: comma-separated) | `[]` | Optional unicast bootstrap peers for routed networks such as Tailscale. Advertisements go to every seed on the configured `discovery_ports`; LAN broadcast remains enabled. |
 | `enable_lan` | `EOSR_ENABLE_LAN` | bool | `true` | `false` brings the platform up with **no peer network at all**: everything local keeps working and no peer can ever appear. |
 | `log_level` | `EOSR_LOG_LEVEL` | string | `"off"` | Threshold of the ordinary EOS logger (`off`/`fatal`/`err`/`warn`/`info`/`debug`/`trace`). Delivered only to the game's `EOS_Logging_SetCallback` — this is for developers; players usually want *tracing* instead. |
 | `trace_level` | `EOSR_TRACE` | string | `"off"` | The diagnostic trace sink: `off` / `errors` / `lifecycle` / `full`. See [Tracing](tracing.qmd). |
@@ -92,6 +112,10 @@ is recorded (see [where diagnostics go](#where-diagnostics-go)).
 - **`discovery_ports`** — both ends non-zero, ≤ 65535, `first ≤ last`, and the span at most
   **64 ports** (so a typo can't ask the library to probe thousands of sockets). The env form is
   `EOSR_DISCOVERY_PORTS="55789-55798"`.
+- **`peer_seeds`** — at most 16 unique unicast IPv4 literals. Hostnames, ports, unspecified,
+  multicast, and ambiguous leading-zero forms are rejected atomically. The env form is
+  `EOSR_PEER_SEEDS="100.80.37.76,100.91.2.3"`. Give every participant the complete address list;
+  including the local machine's address is harmless and lets everyone share one file.
 - **`instance_label`** — up to 32 characters from `[A-Za-z0-9._-]`, and never `.` or `..`. It may
   be echoed by tooling, so it is slug-checked even though it is never used to build a path.
 - **`trace_max_bytes` / `trace_max_rotated_files`** — out-of-range values are **clamped** into
@@ -103,7 +127,8 @@ is recorded (see [where diagnostics go](#where-diagnostics-go)).
 
 ### The file parser is strict, and strict on purpose
 
-`eosr.json` must be one flat JSON object of strings, integers, booleans, and integer arrays.
+`eosr.json` must be one flat JSON object of strings, integers, booleans, and uniform string or
+integer arrays.
 The parser is hand-written, bounded, and hostile-input-safe: input ≤ 64 KiB, any single token
 ≤ 4 KiB, ≤ 64 array elements, nesting ≤ 8 levels.
 
@@ -155,6 +180,7 @@ Everything at its default, spelled out (equivalent to no file at all):
   "display_name": "Player",
   "locale": "en",
   "discovery_ports": [55789, 55798],
+  "peer_seeds": [],
   "enable_lan": true,
   "log_level": "off",
   "trace_level": "off",

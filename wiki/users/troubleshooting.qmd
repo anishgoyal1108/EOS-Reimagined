@@ -43,9 +43,9 @@ to an issue. Real-game data is what prioritizes which family gets built next.
 
 Work down the list; each item catches real cases:
 
-1. **Same subnet?** Discovery is a UDP *broadcast*. Different subnets, guest Wi‑Fi isolation
-   ("AP/client isolation"), most VPN interfaces, and anything routed will not carry it. Put both
-   machines on the same Wi‑Fi/switch.
+1. **Same subnet or configured seeds?** Discovery defaults to UDP broadcast. Different subnets,
+   guest Wi‑Fi isolation, and most VPN interfaces will not carry it. Put both machines on the same
+   Wi‑Fi/switch, or configure every participant's IPv4 address in `peer_seeds` on every machine.
 2. **Firewall?** Allow **UDP 55789–55798** (in and out, including broadcast) and inbound **TCP
    from the LAN** for the game — see [Networking & firewalls](networking.qmd). On Windows, if
    you ever clicked "Cancel" on the firewall prompt, the block rule persists: check
@@ -55,7 +55,7 @@ Work down the list; each item catches real cases:
    wire version — a different game, a different game *version* with different IDs, or a player
    still on Epic's DLL simply cannot complete a handshake.
 4. **Same discovery range?** If anyone overrode [`discovery_ports`](configuration.qmd), everyone
-   must use the identical range.
+   must use the identical range. Peer seeds use this range too; there is no separate seed port.
 5. **`enable_lan` still true?** `enable_lan: false` (or `EOSR_ENABLE_LAN=0`) runs the platform
    with no peer network at all — deliberately invisible.
 6. **Port range full?** Ten instances per machine per range; the eleventh finds no free
@@ -63,7 +63,7 @@ Work down the list; each item catches real cases:
 
 Still stuck? `EOSR_TRACE=lifecycle` on both machines and compare: machine A should show
 `discover` for B, then `handshake`, then `adopt`. Where the sequence stops is what's broken —
-no `discover` means broadcasts aren't arriving (network/firewall); `discover` without `adopt`
+no `discover` means broadcasts/seeds aren't arriving (network/firewall/config); `discover` without `adopt`
 means the TCP dial-back or handshake is failing (firewall on the *other* box, or mismatched
 game/version).
 
@@ -120,9 +120,10 @@ letting unauthenticated copies onto Epic's live services is explicitly a non-goa
 [Scope & non-goals](scope.qmd).
 
 **Does this work over the Internet?**
-Not yet. Discovery is a LAN broadcast; there is no traversal or relay. Internet play is deferred,
-not rejected. (A VPN that genuinely bridges broadcast traffic into one L2 segment can work, but
-most don't out of the box, and it's unsupported territory.)
+EOS Reimagined does not perform Internet discovery, NAT traversal, or relaying. It can bootstrap over
+an existing routed private network by configuring every participant's IPv4 address in `peer_seeds`;
+Tailscale or another VPN is then responsible for reachability. That is VPN-assisted play, not native
+Internet matchmaking.
 
 **Is this a crack? Will it bypass anti-cheat?**
 No and no. It does not remove ownership checks a game does elsewhere, it implements none of
@@ -138,7 +139,9 @@ yourself from source if trust is the concern — that's rather the point of FOSS
 Everything lives in one per-user data directory — profile keys, `eosr.json`, traces:
 `~/.local/share/eos-reimagined` on Linux, `%LOCALAPPDATA%\eos-reimagined` on Windows,
 overridable with `EOSR_DATA_DIR`. Nothing is written into the game folder except the library you
-copied there yourself.
+copied there yourself, or the manager-owned `eosr-bootstrap.json` beside it when a managed instance
+is active. That descriptor contains only the selected data-directory path; profile material remains
+outside the game.
 
 **How do I report a bug well?**
 The easy way: run the game through

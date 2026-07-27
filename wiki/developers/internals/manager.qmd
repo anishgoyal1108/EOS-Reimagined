@@ -1,0 +1,636 @@
+---
+title: "EOS Reimagined Manager"
+description: "Development plan for the Windows and Linux game, instance, configuration, installation, and diagnostic manager."
+---
+
+## Objective
+
+Build a novice-friendly desktop manager for Windows and Linux that turns the existing drop-in SDK,
+configuration system, alpha runner, import census, and trace sink into one safe workflow:
+
+1. find an installed game;
+2. identify the EOS library it actually loads;
+3. install or update the matching EOS Reimagined artifact without losing the original;
+4. select a named local instance and edit every supported configuration field;
+5. launch through the game's normal launcher;
+6. collect, inspect, and bundle that run's diagnostics; and
+7. restore the original SDK on demand.
+
+The first acceptance target is Risk of Rain 2 over LAN between Windows and Linux/Proton. The manager
+must generalize from that target rather than hard-code it. It is an operational front end for the
+alpha, not a replacement for the behavioral work real-game traces will uncover.
+
+## Place in the roadmap
+
+The manager is the user-facing half of the operational-alpha milestone. Its minimum viable slice is
+allowed to precede the first long in-game alpha because it removes installation and evidence-
+collection mistakes, but a feature-complete launcher must not delay that alpha.
+
+The planned [external social companion](companion-client.qmd) remains a separate control protocol and
+SDK milestone. Its eventual GUI can live in this application's shell and reuse its game/instance
+registry, but the manager must work without a running game and the companion must work without
+permission to modify game files.
+
+## Evidence behind the design
+
+Two existing tools are useful boundaries, not code dependencies:
+
+- [Deadlock Mod Manager](https://github.com/deadlock-mod-manager/deadlock-mod-manager) finds Steam
+  with `steamlocate`, includes native and Flatpak Steam roots, allows manual path correction, and
+  launches with `steam://run/<appid>//<arguments>`. It does **not** use a private Steam API to edit a
+  game's saved launch options.
+- [PartyDeck](https://github.com/partydeck/partydeck) creates real per-profile environments by
+  launching executables itself through Gamescope, bubblewrap, UMU/Proton, separate prefixes, and
+  directory overlays. That is powerful, Linux-specific orchestration with a much larger failure
+  surface than this manager's ordinary one-instance-per-machine use case.
+
+The resulting launch rule is important: a Steam URI can pass game arguments, but it cannot reliably
+inject a new process environment into a Steam client that is already running. Editing Steam's private
+`localconfig.vdf` while Steam is running is also unsupported and risks being overwritten. The basic
+manager therefore uses normal Steam launch plus the bounded bootstrap descriptor below. Direct
+launch and multi-instance orchestration are separate, capability-tested modes.
+
+The GUI toolkit baseline is
+[FLTK 1.4.5](https://github.com/fltk/fltk/releases/tag/release-1.4.5), pinned and
+checksum-recorded. It is small, CMake-native,
+supports Windows and Linux, can be statically packaged under its license exception, and builds in
+C++11 mode. It must remain linked only into the manager executable; the replacement SDK library
+gains no GUI dependency.
+
+## Non-negotiable boundaries
+
+- All project code remains strict C++11. The manager is not an exception.
+- The SDK shared library stays headless and does not start, install, or depend on the manager.
+- Portable manager behavior lives in a headless library. FLTK callbacks adapt UI state to that
+  library; they do not perform file transactions or parse Steam data themselves.
+- OS APIs remain under `src/platform/`, including the Windows registry, process enumeration, shell
+  opening, module paths, and Linux desktop/Flatpak launch adapters.
+- No undocumented Steam IPC, Steam credentials, Steam Web API key, or direct mutation of
+  `localconfig.vdf` is required for the supported path.
+- No game file is changed without an explicit action and a recoverable, hash-verified transaction.
+- An unknown or externally changed file is never overwritten by Restore, Repair, or cleanup.
+- The manager does not bypass anti-cheat, attest game ownership, contact Epic, or add Internet
+  traversal. LAN remains the network boundary.
+- The packaged application has no Python, Node, browser, or system-FLTK runtime requirement.
+
+## Product model
+
+The UI and state model must keep these concepts distinct:
+
+| Object | Identity | Owns |
+|---|---|---|
+| Steam installation | platform + canonical root | library discovery method and launch adapter |
+| Game installation | Steam app id + canonical install root, or a generated manual id | detected EOS targets and install state |
+| EOS target | canonical SDK path + binary kind | original backup, staged artifact hash, transaction state |
+| Managed instance | process-unique manager id and user slug | data directory, `profile.key`, `eosr.json`, trace runs |
+| Diagnostic run | run id from `runtime.json` | trace files, stdout/launch metadata, census, bundle status |
+| Configuration preset | manager id | reusable non-identity settings; applying it never copies a profile key |
+
+A profile key is a player's identity, not a cosmetic preset. Copying a preset must not clone it.
+Deleting an instance must warn that its profile identity will be lost and offer to export or retain
+the key. Two machines must never be provisioned from the same instance directory.
+
+## On-disk layout
+
+The manager's root follows the platform convention:
+
+- Windows: `%LOCALAPPDATA%\eos-reimagined-manager`
+- Linux: `$XDG_DATA_HOME/eos-reimagined-manager`, falling back to
+  `~/.local/share/eos-reimagined-manager`
+
+The portable logical layout is:
+
+```text
+manager-root/
+├── manager.json
+├── logs/
+├── artifacts/<release-id>/
+│   ├── manifest.json
+│   ├── EOSSDK-Win64-Shipping.dll
+│   └── libEOSSDK-Linux-Shipping.so
+└── games/<game-id>/
+    ├── game.json
+    └── instances/<instance-slug>/
+        └── data/
+            ├── eosr.json
+            ├── profile.key
+            └── traces/run-.../
+                ├── runtime.json
+                ├── trace.jsonl
+                └── trace.N.jsonl
+```
+
+For native Steam and native Windows, the instance payload is physically under that logical
+`instances/` path. Flatpak Steam cannot see the native host manager root: its persistent app data is
+mounted as the user's home inside the sandbox. For Flatpak games, registry state, logs, target
+records, and artifacts remain under the canonical manager root, while the one authoritative
+instance payload is stored privately at this host path:
+
+```text
+~/.var/app/com.valvesoftware.Steam/.local/share/eos-reimagined-manager/
+└── games/<game-id>/instances/<instance-slug>/data/
+```
+
+Inside the Flatpak runtime that payload appears at
+`~/.local/share/eos-reimagined-manager/games/<game-id>/instances/<instance-slug>/data/`. It is not a
+copy or mirror, so there remains exactly one `profile.key` per managed instance. Manager state stores
+the actual host path and the target-runtime path separately.
+
+Manager metadata uses process-unique ids; display names and slugs are not database keys. Paths in
+metadata are absolute, UTF-8 at the portable boundary, and converted to/from UTF-16 only in the
+Win32 platform implementation. Writes use a temporary sibling, flush, and replace. A manager-owned
+file carries a schema version and is bounded before parsing.
+
+Manager logs must contain operations and error codes, not profile-key bytes, credentials, raw EOS
+ids, or packet payloads. Support bundles reuse the current sanitizer and never include
+`profile.key`, original SDK backups, or manager registry state.
+
+## Bootstrap descriptor: the Steam-safe configuration seam
+
+### Why it is required
+
+`EOSR_DATA_DIR` is deliberately not an `eosr.json` key because it locates that file. A GUI launched
+through an already-running Steam client cannot portably inject it into the game process. Falling back
+to the platform default would make every managed game share one config and would make a selected
+instance mostly cosmetic.
+
+### Contract to implement before the GUI
+
+An optional `eosr-bootstrap.json` sits beside the replaced EOS library and contains only:
+
+```json
+{
+  "version": 1,
+  "data_dir": "an absolute manager-owned path in the target runtime's path syntax"
+}
+```
+
+Resolution order for the data directory becomes:
+
+1. non-empty `EOSR_DATA_DIR`;
+2. a valid sibling bootstrap descriptor; then
+3. the existing platform default.
+
+`EOSR_CONFIG`, environment field overrides, and the contents of `eosr.json` keep their existing
+precedence after the data directory is selected. The descriptor is not a second configuration file.
+
+The descriptor is read once during `EOS_Initialize`, capped at 4 KiB, required to be a top-level
+object with an exact supported version and an absolute, NUL-free path **as seen by that library**.
+Duplicate keys or malformed JSON reject the whole descriptor. An invalid descriptor falls back safely
+and becomes a structured configuration diagnostic once tracing/logging is available. A missing
+descriptor preserves today's behavior byte-for-byte.
+
+The manager stores both the host path and the target-runtime path. They are identical for
+non-sandboxed native Linux and native Windows. For a Windows DLL under Proton, the descriptor needs
+a Windows path such as
+`Z:\\home\\...`, not a blindly copied POSIX path. The Linux platform adapter must inspect the selected
+prefix's `dosdevices` mappings and prove that the translated path resolves back to the manager-owned
+host directory. If no safe mapping exists, managed instance selection is disabled for that launch
+adapter with a manual fallback; it never guesses. Persistent identities stay outside a disposable
+Proton prefix by default.
+
+Flatpak Steam adds a host-to-sandbox mapping before either native Linux or Proton path syntax is
+chosen. The manager derives the app-data root only from a canonical discovered Flatpak Steam root,
+requires the instance to remain under its private manager-owned subtree, and proves that the
+sandbox-visible path maps back to that exact host directory. A Windows target then passes that
+runtime path through the selected prefix's `dosdevices` mapping. A host path with the same visible
+spelling but outside the Flatpak app-data root is an alias, not proof, and is refused.
+
+The library locates its own module through a platform shim: the loaded DLL path on Windows (including
+under Wine/Proton) and the loaded shared-object path on Linux. No current-working-directory lookup is
+allowed.
+
+The manager writes the descriptor as part of the installation transaction and records its hash.
+Restore removes or restores it only when its current hash still matches manager state. It contains no
+private key and points outside the game directory; profile material remains in the managed data
+directory.
+
+One game installation has one active bootstrap descriptor. This handles the normal case of one local
+player per machine. Concurrent instances with different data directories need a real per-process
+launcher or isolated game views and are explicitly deferred to the advanced launcher phase; changing
+the descriptor between overlapping launches is forbidden.
+
+## Steam and game discovery
+
+### Steam roots
+
+The discovery adapter checks, then allows the user to correct, these sources:
+
+- Windows: `HKCU\Software\Valve\Steam` (`SteamPath`/`SteamExe`), standard install fallbacks, then
+  every library in `steamapps\libraryfolders.vdf`.
+- Native Linux: `~/.steam/steam`, `~/.steam/root`, and `~/.local/share/Steam`, then every VDF library.
+- Flatpak Steam: `~/.var/app/com.valvesoftware.Steam/.local/share/Steam`,
+  `~/.var/app/com.valvesoftware.Steam/data/Steam`, and compatible legacy roots, then every VDF
+  library.
+
+The VDF reader is bounded and supports old and current `libraryfolders.vdf` shapes, escaped strings,
+Windows paths, arbitrary mounted libraries, malformed entries, and duplicate app references. An
+`appmanifest_<appid>.acf` is evidence, but the resolved install directory and its files must exist.
+Games are keyed by app id plus canonical install path so two libraries and moved installations are
+not conflated.
+
+A user can add a non-Steam or missed game by choosing its root. Manual entries go through the same
+EOS scan and safety checks; they do not need a fabricated Steam app id.
+
+### EOS target discovery
+
+The manager searches boundedly for the canonical Windows and Linux SDK names and classifies the
+actual file as PE or ELF rather than assuming the host OS. A Windows game under Proton therefore gets
+the Windows DLL. Multiple candidates are presented; none is changed until the user selects or an
+inspection report proves which one is used.
+
+`inspect_game` becomes library behavior, not a required external Python process. Its report is stored
+with the game and can still be exported in the existing `inspection.json` schema. The Python tool
+remains available for automation and both implementations share conformance fixtures.
+
+## Installation and restoration state machine
+
+The manager recognizes these visible states:
+
+- **Original** — a non-EOS-Reimagined SDK is present and no manager transaction owns it.
+- **Installed (current)** — the file hash matches the selected bundled artifact and a verified
+  original backup exists.
+- **Installed (other build)** — it is recognizably EOS Reimagined but not the selected artifact.
+- **Externally changed** — manager state exists but the live file no longer matches the staged hash.
+- **Recovery required** — a transaction was interrupted and its journal/backup is intact.
+- **Original unknown** — an EOS Reimagined file was installed outside the manager and no verified
+  backup exists.
+- **Missing**, **ambiguous**, or **unwritable** — no safe automatic action is available.
+
+Install/Update performs the proven alpha-runner sequence with a versioned journal:
+
+1. canonicalize and reject a symlinked target;
+2. refuse while the game or target library is in use;
+3. hash the live target and selected release artifact;
+4. create an exclusive original backup and verify its hash;
+5. write and flush the recovery journal;
+6. replace through a temporary sibling;
+7. verify the staged hash;
+8. write/verify the bootstrap descriptor; and
+9. record the completed state centrally without deleting recovery evidence.
+
+Restore verifies the journal, current staged hash, and backup hash before replacing anything. If
+Steam or another process changed the live file, the manager leaves both files untouched and offers
+Open Location and Steam's Verify Installed Files workflow. No operation silently adopts an existing
+backup, follows a target symlink, or overwrites an unrecognized `.original` file.
+
+Repair means “re-stage the selected known artifact after all ownership checks”; it never means
+“discard whatever is there.” Uninstall means restore the verified original and remove only
+manager-owned sidecars whose hashes match. A Steam update replacing the SDK becomes Externally
+changed, not an excuse to restore stale bytes over the update.
+
+## Launch modes
+
+### Standard Steam launch — required for the first release
+
+The manager selects the active instance, commits its `eosr.json`, commits the bootstrap descriptor,
+then launches the app with Steam's URI/command mechanism. Windows uses the discovered Steam
+executable or registered URI handler. Linux chooses the detected native or Flatpak adapter and has a
+portal/`xdg-open` fallback. No environment injection is claimed in this mode.
+
+The manager records a launch attempt and watches the selected instance's trace directory for a new
+`runtime.json`. Seeing it changes the UI to Running and proves the replacement loaded. Failure to see
+it within a bounded interval becomes an actionable warning, not a permanent spinner. The user can
+still mark the launch as finished and open the game/log directories.
+
+### Direct/custom launch — optional per-game capability
+
+A manual executable and argument list may be configured for non-Steam titles or titles proven to
+work when started directly. Arguments are stored as an array, never concatenated into a shell
+command. The child receives `EOSR_DATA_DIR`, `EOSR_RUN_DIR`, and other selected overrides directly.
+This mode must not be auto-selected merely because an executable was found.
+
+### Advanced multi-instance launch — later milestone
+
+PartyDeck-style direct Proton/UMU launching, separate prefixes, overlay game directories, and several
+simultaneous local identities are handler-driven capabilities, not generic assumptions. They require
+their own acceptance matrix and disk-space/error UI. The first manager release can create and switch
+named instances but launches only one active instance for a given game installation at a time.
+
+The manager never edits Steam's saved launch-options VDF. A Copy Launch Recipe action may generate
+documented user instructions as a fallback, but it must label them as manual and reversible.
+
+## Configuration experience
+
+The form is generated from one shared field description table so the GUI, defaults, validation,
+writer, and tests cannot drift. It exposes every field in the
+[configuration contract](../../users/configuration.qmd):
+
+- Identity: display name and instance label.
+- Language: locale.
+- Network: enable/disable, discovery-port first/last, and bounded IPv4 peer seeds, with a reminder
+  that every participant must share the port range and seed list.
+- Diagnostics: trace level, trace directory, file cap, rotation count, and ordinary EOS log level.
+- Compatibility: `enable_overlay` and `unlock_dlcs`, visibly marked unavailable rather than shown as
+  working toggles.
+- Advanced: active instance data/config locations, with Open Location rather than editable identity
+  paths in the basic view.
+
+The editor validates before Save using the exact SDK rules and shows truncation/clamping before it
+happens. Save is atomic. A user-owned existing `eosr.json` is imported with a backup; unknown valid
+keys are preserved, and a malformed file is never overwritten without explicit Replace confirmation.
+Reset affects the form, not the profile key.
+
+Environment variables still outrank the GUI file. After a run, the manager reads `runtime.json` and
+shows configured versus effective values and each effective source (`environment`, `file`, or
+`default`). Older runtime files without provenance remain readable and are labeled source
+unavailable. Before a run it warns that inherited `EOSR_*` variables may override the form but does
+not modify the user's global environment.
+
+The GUI labels the four name roles explicitly: manager label, EOS Reimagined `display_name`, the
+effective runtime name, and the game/Steam-owned nickname. Renaming the manager label is cosmetic and
+does not rewrite `eosr.json`; the game nickname is never claimed to be synchronized. `runtime.json`
+is authoritative for the name EOS Reimagined actually announced, while `profile.key` alone determines
+the persistent identity.
+
+## User interface
+
+The first release has four primary views:
+
+1. **Games** — discovered/manual games, install health, EOS targets, artifact version, and actions:
+   Configure, Install/Update, Repair, Restore, Launch, Open Game Folder.
+2. **Instances** — create, select, rename, export identity backup, open data folder, and delete with
+   identity-loss confirmation.
+3. **Runs** — active/completed/incomplete runs with build, OS/Wine, trace level, timestamps, key
+   lifecycle milestones, Open Folder, Build Support Bundle, and Delete.
+4. **Settings/Health** — Steam installations and libraries, artifact verification, manager log,
+   release identity, and a copyable system report.
+
+The first-run wizard performs discovery, asks the user to choose a game, explains the original-file
+backup, creates one instance with a display name, defaults tracing to `lifecycle` for alpha builds,
+and stops at a final review before modifying the game.
+
+Errors name the object and next action: “Steam library is read-only — open folder,” “game is still
+running — close it before Restore,” “Steam replaced this DLL — verify files or inspect manually,” not
+raw errno/Win32 text alone. Technical details remain expandable and copyable.
+
+Open Location uses `explorer.exe /select,`/Shell APIs on Windows and the desktop opener or portal on
+Linux. The platform layer reports failure; it never assumes a spawned opener succeeded.
+
+## Diagnostic runs and bundles
+
+The manager indexes run directories from `runtime.json`, tolerates a torn final JSONL line, and does
+not load an unbounded trace into memory. Summaries are streamed and cached by file size/mtime/hash.
+At minimum a run summary shows:
+
+- whether the SDK initialized and which exact build loaded;
+- discovery listen port;
+- discover, handshake, adopt, and drop counts/reasons;
+- Sessions/Lobby search and join outcomes;
+- P2P open/close and byte counts; and
+- stubbed EOS functions invoked by the game.
+
+Bundle creation uses the existing deny-by-default sanitizer and writes a new sibling directory or
+archive. It reports exactly which files were included or excluded. The GUI never labels an unsanitized
+run directory “shareable.” User-selected instance labels are identity-bearing metadata just like
+display names: the bundle rewrites the runtime label and every trace-record `inst` field to the stable
+bundle-local pseudonym `instance#0`. The `config.sources.instance_label` provenance remains intact
+because it describes where the value came from, not the value itself.
+
+## Architecture and source layout
+
+Planned targets:
+
+```text
+eosr_manager_core       # portable C++11 domain logic; no GUI or OS headers
+eosr_manager            # FLTK executable; thin presentation/adaptation layer
+manager_tests           # core, fixture, and state-machine tests
+manager_platform_tests  # native platform integration tests
+```
+
+Planned source ownership:
+
+```text
+src/manager/            # models, services, parsers, transactions, run index
+src/manager/ui/         # FLTK widgets and view models only
+src/platform/           # Windows/Linux Steam, process, shell, registry, module-path adapters
+tests/manager/           # portable fixtures and platform integration tests
+third_party/fltk/       # one pinned, checksum-recorded upstream release
+```
+
+The manager core returns typed results with stable error codes and optional details. It does not
+throw errors across the UI boundary. Long scans and hashes run on bounded worker jobs; the FLTK event
+thread only applies completed snapshots. Cancellation leaves transactions untouched once mutation
+has begun; critical transactions run to a recoverable terminal state.
+
+`BUILD_MANAGER` is a CMake option. Normal SDK targets do not link FLTK. CI and release packaging
+enable it explicitly. A small headless `eosr-manager-cli` may expose scan/status/install/restore/
+bundle through the same core for automation and fault-injection tests; it is not a second
+implementation.
+
+## Test strategy
+
+### Portable unit tests
+
+- VDF: old/new library formats, escapes, Unicode, Windows drive/UNC strings, duplicate libraries,
+  missing braces, oversized tokens/files, and hostile nesting.
+- Game discovery: native Linux, Windows, Proton, multiple libraries, duplicate app ids, stale
+  manifests, missing install roots, manual games, multiple EOS candidates, PE/ELF classification.
+- Configuration: every field/default/alias, validation boundary, unknown-key preservation,
+  malformed-file refusal, atomic-write recovery, environment precedence, and GUI schema parity with
+  `resolve_config`.
+- Instances: slug collisions, rename, stable ids, profile separation, preset copying without key
+  copying, active-instance switching, deletion safeguards.
+- Install state: every visible state and transition, current/old/unknown artifacts, missing or
+  changed backup, existing sidecars, symlinks, interrupted operations, and idempotent recovery.
+- Runs: live/incomplete/rotated/torn traces, bounded streaming, summary extraction, cache
+  invalidation, display-name and instance-label sanitization, private-file exclusion, and exactly one
+  JSONL delimiter after each rewritten support-trace record.
+- Launch requests: argument arrays, quoting edge cases, spaces/Unicode, native/Flatpak Steam adapter
+  selection, timeouts, and no shell interpolation.
+
+### Fault-injection tests
+
+Every mutating file step is injectable and tested with failure before and after it: create, write,
+flush, close, rename, hash, permission change, and cleanup. Restarting from each persisted journal
+must either finish safely or explain why user action is required. Disk-full, read-only library,
+locked DLL, antivirus quarantine, and external modification are explicit cases.
+
+### Platform integration
+
+- Native Windows/MSVC: registry discovery, UTF-16/non-ASCII/long paths, alternate drives, UNC paths,
+  file sharing violations, process detection, Explorer actions, and Steam URI construction.
+- Linux: XDG paths, native and Flatpak Steam layouts, arbitrary mounted libraries, permissions,
+  symlinks, `xdg-open`/portal failure, and case-sensitive SDK names.
+- Proton/Wine: the Windows DLL and sibling bootstrap descriptor are read through Win32 inside Wine;
+  host-to-Windows path translation is verified against `dosdevices`, including a missing/changed
+  `Z:` mapping; Flatpak Steam fixtures additionally prove the host-to-sandbox namespace hop and
+  reject the unrelated host-home alias; and a Linux manager correctly classifies/stages that DLL.
+- Fake Steam roots are temporary fixtures; tests never modify a developer's real Steam metadata.
+
+### ABI and end-to-end
+
+- A real loaded `.so` and `.dll` resolve the bootstrap descriptor and emit the selected instance path
+  in `runtime.json`; missing/invalid descriptors preserve fallback behavior.
+- The manager installs into a fake game, launches the existing ABI probe, observes its run, bundles
+  it, restores the original, and proves every final hash.
+- Two managed probe instances with distinct data directories mesh and retain distinct profiles.
+- Opt-in manual acceptance covers Windows Steam, native Linux Steam, Flatpak Steam + Proton, and the
+  real Risk of Rain 2 install. These tests are never run against a real library automatically.
+
+### GUI and packaging
+
+- View-model tests cover enabled/disabled actions and exact error-to-action mapping.
+- A headless smoke test creates every primary view and processes one event loop iteration.
+- Windows and Linux packaged binaries start on clean runners without Python or an installed FLTK.
+- Package verification checks executable/artifact hashes, licenses, manifest membership, build id,
+  and that the Linux package contains both SDK artifacts for native games and Proton.
+
+## CI and release gates
+
+Add manager jobs without weakening the existing alpha release gates:
+
+- Linux release build and manager-core/platform tests.
+- Native MSVC x64 release build and manager-core/platform tests.
+- MinGW/Wine build for the SDK and bootstrap ABI tests.
+- Linux ASan + UBSan for all headless manager code and fault-injection tests.
+- GUI build/smoke and deterministic package verification on Windows and Linux.
+
+The release workflow remains manually dispatched. A manager release candidate is produced only
+after the SDK artifacts it embeds pass their current Linux, Wine, MSVC, sanitizer, ABI, export, and
+package gates. The manager and embedded artifacts share one release manifest and exact source
+revision.
+
+Initial packages:
+
+- Windows x64 ZIP (and later an installer) containing `EOSReimaginedManager.exe`, the Windows SDK
+  artifact, manifest, licenses, and user guide.
+- Linux x86_64 tar archive plus an AppImage candidate containing the manager and both SDK artifacts.
+  The tar archive remains the fallback when FUSE/AppImage integration is unavailable.
+
+The manager itself is initially a native host application, not a Flatpak. A sandboxed manager cannot
+reliably mutate arbitrary Steam libraries without a portal/permission design; Flatpak packaging is a
+later distribution milestone, while Flatpak **Steam discovery** is required from the first release.
+
+## Delivery phases and acceptance gates
+
+### Phase 0 — contracts and packaging spike
+
+- Record an ADR for the bootstrap descriptor and precedence.
+- Pin/build FLTK under strict C++11 on Linux and MSVC without touching the SDK link surface.
+- Prototype normal Steam URI launch for native Windows, native Linux, and Flatpak Steam.
+- Confirm the bootstrap descriptor from native Linux, Windows, and the Windows DLL under Wine.
+
+Gate: a tiny packaged manager window starts on both hosts, and loaded-library tests prove the selected
+data directory without any Steam VDF mutation.
+
+### Phase 1 — headless manager core
+
+- Models and versioned manager state.
+- Steam/VDF and manual-game discovery.
+- EOS target inspection and release-artifact verification.
+- Install/update/restore transaction and recovery CLI.
+- Instance/config creation and atomic writes.
+- Run index and bundle service.
+
+Gate: all workflows run headlessly against fixtures and the ABI probe, with red-before-green failure
+tests at every transaction boundary.
+
+### Phase 2 — first usable GUI
+
+- First-run wizard, Games, Instances, Runs, and Health views.
+- Install/Update/Restore, full configuration form, standard Steam launch, run detection, Open
+  Location, and sanitized bundle creation.
+- Risk of Rain 2 recognition without a game-specific install script.
+
+Gate: a Windows novice and a Linux/Flatpak-Steam novice can each install, choose a name, enable
+`lifecycle` tracing, launch through Steam, find the new run, make a support bundle, and restore the
+original SDK without a terminal.
+
+This gate is sufficient to resume the real two-machine LAN alpha. Later manager features do not block
+behavioral fixes found by that test.
+
+### Phase 3 — alpha operations and hardening
+
+- Run summaries and cross-machine fingerprint comparison.
+- Artifact update/repair UX and Steam-update detection.
+- Crash recovery on application start.
+- Installer/AppImage polish, accessibility pass, localization-ready strings, and signed-build plan.
+- Several-game generalization using census/run evidence.
+
+Gate: interrupted installs recover deterministically, support bundles stay sanitized, and three
+different EOS games complete the manager workflow even if their gameplay support differs.
+
+### Phase 4 — advanced launch handlers
+
+- Capability-tested direct launch profiles.
+- Optional UMU/Proton handlers, separate prefixes, and isolated concurrent instances on Linux.
+- A Windows multi-instance design only after a non-invasive launch method is proven.
+- Import/export handler files with explicit compatibility metadata.
+
+Gate: two concurrent local instances use distinct manager data directories without racing the shared
+bootstrap descriptor or modifying Steam's saved launch options.
+
+### Phase 5 — social companion in the same shell
+
+- Implement the control-plane stages in the companion design.
+- Add a Party view that discovers running SDK instances and lists authenticated join candidates.
+- Keep manager file permissions separate from the loopback companion capability.
+
+Gate: the same application can configure a game while it is stopped and deliver a documented
+join-accepted event while it is running, with neither mode required for the other.
+
+## First implementation sequence
+
+The next development goal should take these in order and stop at a clean gate rather than opening all
+phases at once:
+
+1. bootstrap-descriptor ADR, implementation, and native/Wine loaded-library regression tests;
+2. FLTK C++11 packaging spike and `eosr_manager_core`/UI target separation;
+3. bounded VDF parser and Steam-root/library discovery fixtures;
+4. manager state, game/EOS-target classification, and artifact manifest verification;
+5. hash-verified install/restore state machine ported from the alpha runner with fault injection;
+6. managed instance layout and shared configuration-field schema;
+7. minimal Games/Configure/Install/Restore GUI;
+8. standard Steam launch, run detection, Runs view, and support bundle action; then
+9. the real Windows ↔ Linux/Proton Risk of Rain 2 alpha.
+
+## Explicitly deferred
+
+- Internet discovery, NAT traversal, and relay services.
+- Anti-cheat support or bypass.
+- Editing Steam's private per-user launch-options database.
+- Automatic elevation or writing protected libraries as administrator/root.
+- Downloading arbitrary SDK builds or self-updating before signed/checksummed update policy exists.
+- Cloud synchronization of profile keys.
+- Generic simultaneous multi-instance support in the first release.
+- Rendering an in-game overlay; join actions belong to the external companion.
+
+## Completion definition for the manager alpha
+
+The manager alpha is complete when, on both Windows and Linux:
+
+- Steam libraries (including Flatpak Steam on Linux) and a manual game can be discovered;
+- the actual EOS target and required DLL/SO are correctly classified;
+- install, update, interrupted recovery, and restore are hash-safe;
+- every current EOS Reimagined configuration directive is editable or honestly marked unsupported;
+- a named managed instance gets a stable isolated profile/config/trace directory;
+- a normal Steam launch proves the selected SDK and instance through `runtime.json`;
+- diagnostic runs can be opened and sanitized without a terminal;
+- the package runs without development runtimes; and
+- the Risk of Rain 2 Windows ↔ Linux/Proton LAN trial produces complete evidence for the next
+  behavioral iteration.
+
+## Integration status and remaining acceptance evidence
+
+As of 2026-07-27, the Phase 0 through Phase 2 implementation is present in the integration branch.
+The Linux, MinGW/Wine, sanitizer, deterministic-package, packaged-binary smoke, and Quarto gates pass
+locally. The Flatpak-Steam Risk of Rain 2 workflow has also proved discovery, a hash-verified
+installation, normal Steam launch, and that Proton loaded the exact managed Windows DLL.
+
+The following acceptance evidence remains required before the manager alpha can be declared complete:
+
+1. Run the native Windows/MSVC CI gate on the pushed revision and retain its artifacts. This gate is
+   configured but was not executed on the Linux development host.
+2. Complete the packaged GUI novice workflow on a native Windows machine: discover, install,
+   configure a named instance, launch, inspect a run, create a sanitized support bundle, and restore.
+3. Complete the equivalent packaged GUI novice workflow for Linux with Flatpak Steam, including the
+   final restore step.
+4. Capture a post-fix Risk of Rain 2 private-lobby diagnostic run and verify Connect copy success,
+   bounded mapping/update calls, and no null-key avatar lookup failures.
+5. Run the real Windows-to-Linux/Proton LAN alpha with the Windows peer, preserve sanitized evidence,
+   and add red-before-green regressions for every behavioral failure it exposes.
+6. Restore the original game DLL after the LAN alpha and verify the final hash. The current managed
+   replacement must not be mistaken for completion of the restore gate.
+
+Phase 3 and later work remains intentionally deferred until this evidence closes the Phase 2 gate.

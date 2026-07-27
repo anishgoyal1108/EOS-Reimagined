@@ -18,6 +18,7 @@ If you are here to *use* EOS Reimagined rather than hack on it, start with the [
 
 - [**Alpha tracing & config contract**](alpha-tracing.qmd) — the `eosr.json` / `EOSR_*` config resolution rules and the versioned JSON-Lines trace schema the diagnostics tooling agrees on.
 - [**Export-surface census**](export-surface-census.qmd) — our exported EOS surface measured against the real Epic SDK.
+- [**EOS Reimagined Manager**](manager.qmd) — the Windows/Linux plan for Steam discovery, safe SDK installation/restoration, managed instances, configuration, launching, and diagnostic runs.
 - [**External social companion**](companion-client.qmd) — the planned out-of-process replacement for the social overlay's join surface.
 
 ## Interfaces

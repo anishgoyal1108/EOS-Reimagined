@@ -12,11 +12,14 @@ what your firewall needs to allow. The byte-level contract lives in the
 
 ## The three kinds of traffic
 
-**1. Discovery — UDP broadcast on ports 55789–55798.**
+**1. Discovery — UDP broadcast or configured unicast on ports 55789–55798.**
 Every running copy binds the first free port in the discovery range (default `55789–55798`,
 configurable via [`discovery_ports`](configuration.qmd)) and broadcasts a small advertisement
 every 2 seconds to every port in the range, on every broadcast-capable interface. The
-advertisement says only *where to dial* — *nothing in it is believed* until proven.
+same advertisement is also sent to every [`peer_seeds`](configuration.qmd) address on every port in
+that resolved range. This lets a routed private network such as Tailscale provide the path without
+turning the address into an identity. The advertisement says only *where to dial* — *nothing in it
+is believed* until proven.
 
 **2. Control — an authenticated TCP mesh on a dynamic port.**
 A peer that hears an advertisement dials back over TCP and runs a **Noise XX handshake** before
@@ -44,8 +47,8 @@ On every machine that plays:
 
 | Direction | Protocol / ports | Why |
 |---|---|---|
-| Inbound + outbound | **UDP 55789–55798** (or your configured range), including broadcast | Peer discovery and P2P game data |
-| Inbound from the LAN | **TCP, ephemeral ports** for the game's process | The authenticated control mesh |
+| Inbound + outbound | **UDP 55789–55798** (or your configured range), including broadcast or seed unicast | Peer discovery and P2P game data |
+| Inbound from the LAN/tailnet | **TCP, ephemeral ports** for the game's process | The authenticated control mesh |
 
 Because the TCP port is dynamic, the clean way to do this is a **per-application rule**: allow
 the game's executable to accept connections from the local subnet (Windows Firewall asks exactly
@@ -66,19 +69,19 @@ UDP surface, and the mesh port is ephemeral.
 
 ## The rules of the mesh
 
-- **Same LAN.** Discovery is a broadcast: if two machines can't exchange UDP broadcasts (same
-  Wi‑Fi network or wired subnet), they won't find each other. Routed networks, guest-isolated
-  Wi‑Fi, most VPNs, and the open Internet don't carry broadcasts. Internet play is deferred, not
-  done — see the [roadmap](roadmap.qmd).
+- **Same LAN, or explicit routed seeds.** Broadcast discovery requires one Wi‑Fi/wired subnet.
+  Routed networks and most VPNs do not carry it, but `peer_seeds` can send the bootstrap advertisement
+  directly over an existing IPv4 route such as a Tailscale tailnet. EOS Reimagined still provides no
+  NAT traversal or relay of its own — see the [roadmap](roadmap.qmd).
 - **Same game, same library.** Every player runs the same title with EOS Reimagined dropped in.
   The handshake's transcript binds the game's identity, so a different game — or Epic's real SDK
   against Epic's backend — cannot mesh with you.
 - **Ten instances per machine** (per data directory): one discovery port each, matching the ten
   [profile slots](identity-and-profiles.qmd). Ports are bound exclusively — two instances never
   share one.
-- **Changing `discovery_ports` forks the mesh.** Everyone must use the same range; a peer
-  broadcasting on a range you don't listen to may as well be on another network. Keep the span
-  identical on every machine (it's capped at 64 ports).
+- **Changing `discovery_ports` forks the mesh.** Everyone must use the same range; both broadcast
+  and seed advertisements use it. A peer advertising on a range you don't listen to may as well be
+  on another network. Keep the span identical on every machine (it's capped at 64 ports).
 - **`enable_lan: false` unplugs everything.** The platform comes up, local play works, and no
   peer can ever appear — useful for single-player testing or keeping an instance deliberately
   offline.

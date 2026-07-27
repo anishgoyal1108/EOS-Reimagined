@@ -75,20 +75,22 @@ file value, then the default). An environment variable set to the empty string c
 
 The config file is `$EOSR_CONFIG` if set, else `<data_dir>/eosr.json`. A relative `EOSR_CONFIG`
 resolves against `data_dir`, not the process cwd (which varies between launchers), so one setting
-means one file everywhere. `data_dir` is resolved from
-`EOSR_DATA_DIR` or the platform default *before* the file is read, so locating the file never depends
-on the file; `data_dir` is the one field the file cannot set.
+means one file everywhere. `data_dir` is resolved from `EOSR_DATA_DIR`, a valid
+[sibling bootstrap descriptor](adr/0002-bootstrap-descriptor.qmd), or the platform default *before*
+the file is read, so locating the file never depends on the file; `data_dir` is the one field the
+file cannot set.
 
 | Field | `eosr.json` key | Env override | Default | Notes |
 |---|---|---|---|---|
 | Display name | `display_name` | `EOSR_DISPLAY_NAME` | `"Player"` | Valid UTF-8, ≤ 16 characters **and** ≤ 64 bytes (both EOS caps); over-long is truncated to the tighter bound on a codepoint boundary. |
-| Data directory | *(n/a)* | `EOSR_DATA_DIR` | platform default | Profile/key storage. Env or default only. |
+| Data directory | *(n/a)* | `EOSR_DATA_DIR` | bootstrap descriptor, then platform default | Profile/key storage. The descriptor is manager-owned and never overrides a non-empty environment value. |
 | Run directory | *(n/a)* | `EOSR_RUN_DIR` | `<trace_dir>/<run_id>` | Runner override. Created exclusively. |
 | Trace directory | `trace_dir` | `EOSR_TRACE_DIR` | `<data_dir>/traces` | A relative path resolves against `data_dir`, not the cwd. No `~`/variable expansion — the value is a literal path. |
 | Trace level | `trace_level` | `EOSR_TRACE` | `"off"` | `off` / `errors` / `lifecycle` / `full`. |
 | Max file bytes | `trace_max_bytes` | `EOSR_TRACE_MAX_BYTES` | `67108864` (64 MiB) | Per-file cap before rotation. Minimum `65536` (64 KiB) so one full record plus the rotate record always fits; a smaller value is clamped up with a diagnostic. Maximum `1073741824` (1 GiB). |
 | Max rotated files | `trace_max_rotated_files` | `EOSR_TRACE_MAX_ROTATED` | `8` | Rotated `trace.N.jsonl` files kept, **not** counting the live `trace.jsonl`; total on disk is this + 1. Range 0–64; `0` keeps only the live file (rotation discards the previous one). |
 | Discovery ports | `discovery_ports` | `EOSR_DISCOVERY_PORTS` | existing default range | `[first, last]` in JSON; `"first-last"` in env. |
+| Peer seeds | `peer_seeds` | `EOSR_PEER_SEEDS` | `[]` | Up to 16 unicast IPv4 literals; JSON string array or comma-separated env. Uses the resolved discovery-port range. |
 | Instance label | `instance_label` | `EOSR_INSTANCE_LABEL` | `""` (unset) | Optional human label, metadata only; a bounded path-safe slug (see below). Never required to open the trace. |
 | Locale | `locale` (alias `language`) | `EOSR_LOCALE` | `"en"` | ISO-639 tag, optionally with a region (`en`, `pt-BR`). Reported through `EOS_UserInfo`. A locale the game sets itself via `EOS_Platform_Options` wins. |
 | Log level | `log_level` | `EOSR_LOG_LEVEL` | `"off"` | `off`/`fatal`/`err`/`warn`/`info`/`debug`/`trace` — the ordinary EOS logger's threshold. Distinct from `trace_level`, which drives the trace sink. |
@@ -104,6 +106,7 @@ The display name is also accepted under the key **`username`**, and the locale u
   "trace_dir": "traces",
   "trace_level": "lifecycle",
   "discovery_ports": [45700, 45703],
+  "peer_seeds": ["100.80.37.76", "100.91.2.3"],
   "instance_label": "alice"
 }
 ```
@@ -121,8 +124,10 @@ The display name is also accepted under the key **`username`**, and the locale u
   bites first, on a codepoint boundary. (16 codepoints is at most 64 bytes, so the character cap is the
   binding one for well-formed text, but both are enforced so a 17–64-character ASCII name cannot slip
   through.)
-- **Discovery ports** — `first` and `last` nonzero, `first <= last`, and the span bounded (≤ 64 ports)
+- **Discovery ports** — `first` and `last` nonzero, `first <= last`, and the span bounded (≤ 64 ports),
   so a typo cannot open thousands of sockets.
+- **Peer seeds** — at most 16 unique unicast IPv4 literals. Resolution is atomic per layer and
+  rejects hostnames, embedded ports, multicast/unspecified addresses, and leading-zero forms.
 
 ### Ecosystem parity, and the one option we cannot honour
 
@@ -176,13 +181,47 @@ it could not be opened.
   "run_id": "run-20260713T004500Z-48213-a1",
   "instance_label": "alice",
   "os": { "name": "linux", "version": "6.x", "wine": null },
-  "config": { "display_name": "Marlowe", "trace_level": "lifecycle", "discovery_ports": [45700, 45703] }
+  "config": {
+    "display_name": "Marlowe",
+    "locale": "en",
+    "trace_level": "lifecycle",
+    "log_level": "info",
+    "trace_dir": "/home/alice/.local/share/eos-reimagined/traces",
+    "trace_max_bytes": 67108864,
+    "trace_max_rotated_files": 8,
+    "enable_lan": true,
+    "enable_overlay": false,
+    "unlock_dlcs": false,
+    "discovery_ports": [45700, 45703],
+    "peer_seed_count": 2,
+    "sources": {
+      "display_name": "file",
+      "locale": "default",
+      "trace_level": "file",
+      "log_level": "environment",
+      "trace_dir": "default",
+      "trace_max_bytes": "default",
+      "trace_max_rotated_files": "default",
+      "discovery_ports": "file",
+      "peer_seeds": "file",
+      "instance_label": "file",
+      "enable_lan": "default",
+      "enable_overlay": "default",
+      "unlock_dlcs": "default"
+    }
+  }
 }
 ```
 
 The profile is not loaded yet at startup, so the local identity's pseudonymous fingerprint (§4) is not
 here — it is emitted as a `meta`/`profile` trace record once `EOS_Platform_Create` acquires the
-profile. Fields the writer cannot determine are `null`, never omitted, so the shape is stable.
+profile. Seed addresses never enter runtime or trace output; only their count is recorded. Fields the
+writer cannot determine are `null`, never omitted, so the shape is stable.
+
+Every manager-editable directive has a source of `environment`, `file`, or `default`, recorded only
+after invalid higher-priority values have fallen through. This is authoritative evidence for why the
+running value differs from `eosr.json`. Older schema-1 files that predate `sources` remain readable;
+the manager labels their provenance unavailable instead of guessing.
 
 ### `launch.json` (runner, written once)
 
