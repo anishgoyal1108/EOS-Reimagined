@@ -11,6 +11,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 option(BUILD_TESTING "Build the test suite" ON)
+option(BUILD_MANAGER "Build the EOS Reimagined desktop manager" OFF)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/compiler_warnings.cmake)
 
@@ -60,6 +61,7 @@ add_library(eosr_core STATIC
     src/core/tracer.cpp
     src/core/config.cpp
     src/core/config_file.cpp
+    src/core/bootstrap_descriptor.cpp
     src/core/system_config_source.cpp
     src/core/identity.cpp
     src/core/settings.cpp
@@ -114,6 +116,7 @@ else()
         src/platform/rng_linux.cpp
         src/platform/paths_linux.cpp
     )
+    target_link_libraries(eosr_core PUBLIC ${CMAKE_DL_LIBS})
 endif()
 
 eosr_apply_warnings(eosr_core)
@@ -170,6 +173,115 @@ else()
     endif()
 endif()
 eosr_apply_warnings(eos_shared)
+
+if(BUILD_MANAGER)
+    # The manager vendors one pinned static GUI toolkit. Disable everything outside the desktop
+    # shell's needs before adding FLTK so no tools, shared GUI runtime, GL, or docs reach a package.
+    set(FLTK_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_FORMS OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_FLUID OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_FLTK_OPTIONS OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_TEST OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_HTML_DOCS OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_PDF_DOCS OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_GL OFF CACHE BOOL "" FORCE)
+    set(FLTK_OPTION_PRINT_SUPPORT OFF CACHE BOOL "" FORCE)
+    set(FLTK_OPTION_SVG OFF CACHE BOOL "" FORCE)
+    set(FLTK_BACKEND_WAYLAND OFF CACHE BOOL "" FORCE)
+    set(FLTK_USE_DBUS OFF CACHE BOOL "" FORCE)
+    set(FLTK_USE_SYSTEM_LIBJPEG OFF CACHE BOOL "" FORCE)
+    set(FLTK_USE_SYSTEM_LIBPNG OFF CACHE BOOL "" FORCE)
+    set(FLTK_USE_SYSTEM_ZLIB OFF CACHE BOOL "" FORCE)
+    set(FLTK_MSVC_RUNTIME_DLL OFF CACHE BOOL "" FORCE)
+    add_subdirectory(third_party/fltk EXCLUDE_FROM_ALL)
+
+    add_library(eosr_manager_core STATIC
+        src/manager/manager_info.cpp
+        src/manager/steam_launch.cpp
+        src/manager/vdf.cpp
+        src/manager/steam_discovery.cpp
+        src/manager/sha256.cpp
+        src/manager/target_inspection.cpp
+        src/manager/release_catalog.cpp
+        src/manager/json.cpp
+        src/manager/manager_state.cpp
+        src/manager/state_store.cpp
+        src/manager/install_transaction.cpp
+        src/manager/configuration_model.cpp
+        src/manager/instance_service.cpp
+        src/manager/operation_log.cpp
+        src/manager/run_service.cpp
+        src/manager/ui_policy.cpp
+    )
+    target_include_directories(eosr_manager_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(eosr_manager_core PRIVATE
+        "EOSR_MANAGER_BUILD_ID=\"${EOSR_BUILD_ID}\"")
+    eosr_apply_warnings(eosr_manager_core)
+
+    add_library(eosr_manager_platform STATIC)
+    if(WIN32)
+        target_sources(eosr_manager_platform PRIVATE
+            src/platform/proton_paths_win32.cpp
+            src/platform/manager_discovery_win32.cpp
+            src/platform/manager_transactions_win32.cpp
+            src/platform/manager_runs_win32.cpp
+            src/platform/manager_application_win32.cpp)
+        target_link_libraries(eosr_manager_platform PUBLIC advapi32 bcrypt shell32 ole32)
+    else()
+        target_sources(eosr_manager_platform PRIVATE
+            src/platform/proton_paths_linux.cpp
+            src/platform/manager_discovery_linux.cpp
+            src/platform/manager_transactions_linux.cpp
+            src/platform/manager_runs_linux.cpp
+            src/platform/manager_application_linux.cpp)
+    endif()
+    target_include_directories(eosr_manager_platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    eosr_apply_warnings(eosr_manager_platform)
+
+    if(WIN32)
+        add_executable(eosr_manager WIN32
+            src/manager/ui/main.cpp
+            src/manager/ui/application.cpp)
+        set_target_properties(eosr_manager PROPERTIES OUTPUT_NAME "EOSReimaginedManager")
+    else()
+        add_executable(eosr_manager
+            src/manager/ui/main.cpp
+            src/manager/ui/application.cpp)
+        set_target_properties(eosr_manager PROPERTIES OUTPUT_NAME "eos-reimagined-manager")
+    endif()
+    target_link_libraries(eosr_manager PRIVATE
+        eosr_manager_core
+        eosr_manager_platform
+        fltk::fltk
+    )
+    set_target_properties(eosr_manager PROPERTIES SKIP_BUILD_RPATH ON INSTALL_RPATH "")
+    eosr_apply_warnings(eosr_manager)
+
+    add_executable(eosr_manager_cli src/manager/cli/main.cpp)
+    if(WIN32)
+        set_target_properties(eosr_manager_cli PROPERTIES OUTPUT_NAME "EOSReimaginedManagerCLI")
+    else()
+        set_target_properties(eosr_manager_cli PROPERTIES OUTPUT_NAME "eosr-manager-cli")
+    endif()
+    target_link_libraries(eosr_manager_cli PRIVATE eosr_manager_core eosr_manager_platform)
+    eosr_apply_warnings(eosr_manager_cli)
+
+    if(MSVC)
+        set_property(TARGET eosr_manager_core eosr_manager_platform eosr_manager eosr_manager_cli
+                     PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    elseif(MINGW)
+        target_link_options(eosr_manager PRIVATE -static -static-libgcc -static-libstdc++)
+        target_link_options(eosr_manager_cli PRIVATE -static -static-libgcc -static-libstdc++)
+    endif()
+
+    # A GUI dependency in either SDK target is an architectural failure, not a packaging detail.
+    get_target_property(eosr_core_links eosr_core LINK_LIBRARIES)
+    get_target_property(eos_shared_links eos_shared LINK_LIBRARIES)
+    if("${eosr_core_links};${eos_shared_links}" MATCHES "(^|;)fltk(::|;|$)")
+        message(FATAL_ERROR "FLTK must not link into the replacement SDK")
+    endif()
+endif()
 
 if(BUILD_TESTING)
     enable_testing()
