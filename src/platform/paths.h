@@ -29,6 +29,15 @@ file_read read_file_capped(const std::string& path, std::size_t max_bytes, std::
 // with a separator after the colon (C:\ or C:/). Pure string analysis, no I/O.
 bool path_is_absolute(const std::string& path);
 
+// Whether a bootstrap path is independent of process drive/current-directory state. POSIX uses the
+// same leading-slash rule as path_is_absolute. Windows requires a drive-absolute or UNC path; a
+// single leading slash/backslash is only rooted on the current drive and is not sufficient.
+bool path_is_fully_qualified(const std::string& path);
+
+// The file that contains this implementation as reported by the OS loader. In the shipped SDK this
+// is the loaded .so/.dll; there is deliberately no current-working-directory fallback.
+bool loaded_module_path(std::string& out);
+
 // Append `data` to `path`, creating it if absent. The whole write is one call; returns false on any
 // failure. Used by the trace sink to flush buffered lines.
 bool append_file(const std::string& path, const std::string& data);
@@ -76,6 +85,10 @@ bool remove_file(const std::string& path);
 // to agree on anything. Otherwise it is the user's per-application data directory. Empty when the OS
 // gives us nowhere to write. The directory is not created here.
 std::string user_data_directory();
+
+// The same platform location without consulting EOSR_DATA_DIR. Bootstrap resolution handles that
+// variable before consulting the sibling descriptor and calls this only for the final fallback.
+std::string default_user_data_directory();
 
 // Create `path` and every missing parent. True when the directory exists afterwards.
 bool make_directories(const std::string& path);

@@ -94,6 +94,15 @@ std::string log_level_name(log_level level) {
     return "off";
 }
 
+void write_origin(json_writer& writer, const char* field, config_origin origin) {
+    const char* name = config_origin_name(origin);
+    if (name == 0) {
+        writer.field_null(field);
+    } else {
+        writer.field_string(field, name);
+    }
+}
+
 bool is_separator(char c) {
     return c == '/' || c == '\\';
 }
@@ -230,6 +239,9 @@ bool tracer::write_runtime_json(const std::string& run_dir, const resolved_confi
     writer.field_string("locale", config.locale);
     writer.field_string("trace_level", level_name(config.level));
     writer.field_string("log_level", log_level_name(config.logging));
+    writer.field_string("trace_dir", config.trace_dir);
+    writer.field_uint("trace_max_bytes", config.trace_max_bytes);
+    writer.field_uint("trace_max_rotated_files", config.trace_max_rotated_files);
     writer.field_bool("enable_lan", config.enable_lan);
     writer.field_bool("enable_overlay", config.enable_overlay);
     writer.field_bool("unlock_dlcs", config.unlock_dlcs);
@@ -238,6 +250,23 @@ bool tracer::write_runtime_json(const std::string& run_dir, const resolved_confi
     writer.value_uint(config.discovery_ports.first);
     writer.value_uint(config.discovery_ports.last);
     writer.end_array();
+    writer.field_uint("peer_seed_count", config.peer_seeds.size());
+    writer.key("sources");
+    writer.begin_object();
+    write_origin(writer, "display_name", config.sources.display_name);
+    write_origin(writer, "locale", config.sources.locale);
+    write_origin(writer, "trace_level", config.sources.trace_level);
+    write_origin(writer, "log_level", config.sources.log_level);
+    write_origin(writer, "trace_dir", config.sources.trace_dir);
+    write_origin(writer, "trace_max_bytes", config.sources.trace_max_bytes);
+    write_origin(writer, "trace_max_rotated_files", config.sources.trace_max_rotated_files);
+    write_origin(writer, "discovery_ports", config.sources.discovery_ports);
+    write_origin(writer, "peer_seeds", config.sources.peer_seeds);
+    write_origin(writer, "instance_label", config.sources.instance_label);
+    write_origin(writer, "enable_lan", config.sources.enable_lan);
+    write_origin(writer, "enable_overlay", config.sources.enable_overlay);
+    write_origin(writer, "unlock_dlcs", config.sources.unlock_dlcs);
+    writer.end_object();
     writer.end_object();
     writer.end_object();
 

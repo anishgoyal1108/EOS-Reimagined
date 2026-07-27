@@ -202,7 +202,7 @@ void sdk_auth::login(const EOS_Auth_LoginOptions* options, void* client_data,
     }
 
     // The emulator does not authenticate against a backend: any supported credential type
-    // resolves to the one stable local Epic account derived from the configured user.
+    // resolves to the one stable local Epic account derived from the persistent profile key.
     EOS_EpicAccountId self =
         id_registry::instance().get_epic_account_id(settings_.epic_account_id());
     accounts_.push_back(self);

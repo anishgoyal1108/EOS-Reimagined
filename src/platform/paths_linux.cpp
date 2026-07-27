@@ -5,7 +5,9 @@
 #include <ctime>
 #include <limits>
 
+#include <dlfcn.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <pwd.h>
 #include <sys/file.h>
 #include <sys/stat.h>
@@ -21,6 +23,7 @@ namespace {
 const char* const app_directory_name = "eos-reimagined";
 const mode_t owner_only_directory = 0700;
 const mode_t owner_only_file = 0600;
+const char module_anchor = 0;
 
 std::string from_env(const char* name) {
     const char* value = std::getenv(name);
@@ -57,6 +60,10 @@ std::string user_data_directory() {
     if (!override_directory.empty()) {
         return override_directory;
     }
+    return default_user_data_directory();
+}
+
+std::string default_user_data_directory() {
     const std::string xdg = from_env("XDG_DATA_HOME");
     if (!xdg.empty()) {
         return xdg + "/" + app_directory_name;
@@ -151,6 +158,28 @@ file_read read_file_capped(const std::string& path, std::size_t max_bytes, std::
 bool path_is_absolute(const std::string& path) {
     // On POSIX only a leading slash is absolute; backslash and drive letters are ordinary bytes.
     return !path.empty() && path[0] == '/';
+}
+
+bool path_is_fully_qualified(const std::string& path) {
+    return path_is_absolute(path);
+}
+
+bool loaded_module_path(std::string& out) {
+    out.clear();
+    Dl_info info;
+    if (dladdr(&module_anchor, &info) == 0 || info.dli_fname == 0) {
+        return false;
+    }
+    char resolved[PATH_MAX];
+    if (realpath(info.dli_fname, resolved) != 0) {
+        out = resolved;
+        return true;
+    }
+    if (!path_is_fully_qualified(info.dli_fname)) {
+        return false;
+    }
+    out = info.dli_fname;
+    return true;
 }
 
 bool append_file(const std::string& path, const std::string& data) {

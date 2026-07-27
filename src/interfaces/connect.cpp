@@ -3,7 +3,10 @@
 #include "core/runtime.h"
 #include "core/tracer.h"
 
+#include <cstring>
+#include <map>
 #include <memory>
+#include <mutex>
 
 #include "common/ids.h"
 #include "common/log.h"
@@ -26,6 +29,35 @@ const callback_type_id cb_query_mappings = 3;
 const callback_type_id cb_login_status_changed = 4;
 const callback_type_id cb_auth_expiration = 5;
 const callback_type_id cb_stub = 6;
+
+struct external_account_info_holder {
+    EOS_Connect_ExternalAccountInfo info;
+    std::string display_name;
+    std::string account_id;
+};
+
+std::mutex g_external_account_mutex;
+std::map<void*, std::unique_ptr<external_account_info_holder> > g_external_account_infos;
+
+EOS_Connect_ExternalAccountInfo* build_external_account_info(
+    EOS_ProductUserId product_user_id, const std::string& display_name,
+    const std::string& account_id) {
+    std::unique_ptr<external_account_info_holder> holder(new external_account_info_holder());
+    holder->display_name = display_name;
+    holder->account_id = account_id;
+    holder->info.ApiVersion = EOS_CONNECT_EXTERNALACCOUNTINFO_API_LATEST;
+    holder->info.ProductUserId = product_user_id;
+    holder->info.DisplayName = holder->display_name.c_str();
+    holder->info.AccountId = holder->account_id.c_str();
+    holder->info.AccountIdType = EOS_EExternalAccountType::EOS_EAT_EPIC;
+    holder->info.LastLoginTime = EOS_CONNECT_TIME_UNDEFINED;
+    EOS_Connect_ExternalAccountInfo* info = &holder->info;
+    {
+        std::lock_guard<std::mutex> lock(g_external_account_mutex);
+        g_external_account_infos[info] = std::move(holder);
+    }
+    return info;
+}
 
 // Every EOS async completion info begins with this common initial sequence, so we can fill the
 // two universal fields of any of them through this view.
@@ -60,7 +92,19 @@ bool login_options_are_valid(const EOS_Connect_LoginOptions* options) {
     return true;
 }
 
+bool version_ok(i32 version, i32 latest) {
+    return version > 0 && version <= latest;
+}
+
 } // namespace
+
+void release_connect_external_account_info(EOS_Connect_ExternalAccountInfo* info) {
+    if (info == 0) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_external_account_mutex);
+    g_external_account_infos.erase(info);
+}
 
 sdk_connect::sdk_connect(sdk_settings& settings, callback_manager& callbacks, message_router& network)
     : settings_(settings), callbacks_(callbacks), network_(network), registered_(false) {
@@ -139,7 +183,7 @@ void sdk_connect::login(const EOS_Connect_LoginOptions* options, void* client_da
     }
 
     // The emulator does not authenticate the credential token: any supported type maps to the
-    // one stable local ProductUserId derived from the configured user.
+    // one stable local ProductUserId derived from the profile key and this game's identifiers.
     EOS_ProductUserId self =
         id_registry::instance().get_product_user_id(settings_.product_user_id());
     const bool was_logged_in = is_logged_in();
@@ -233,14 +277,163 @@ void sdk_connect::query_product_user_id_mappings(
 EOS_EResult sdk_connect::get_product_user_id_mapping(
     const EOS_Connect_GetProductUserIdMappingOptions* options, char* out_buffer,
     i32* in_out_buffer_length) const {
-    if (options == 0 || options->TargetProductUserId == 0 || out_buffer == 0 ||
-        in_out_buffer_length == 0) {
+    if (options == 0 ||
+        !version_ok(options->ApiVersion, EOS_CONNECT_GETPRODUCTUSERIDMAPPING_API_LATEST) ||
+        options->LocalUserId == 0 || options->LocalUserId != local_user() ||
+        options->TargetProductUserId == 0 || out_buffer == 0 || in_out_buffer_length == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    // This returns a peer's external account id for the requested account type. We do not yet
-    // learn peers' external accounts (that arrives with the identity handshake), so no mapping
-    // is cached and the correct answer is NotFound rather than a stand-in like the display name.
-    return EOS_EResult::EOS_NotFound;
+    std::string display_name;
+    std::string account_id;
+    if (options->AccountIdType != EOS_EExternalAccountType::EOS_EAT_EPIC ||
+        !external_account_for(options->TargetProductUserId, display_name, account_id)) {
+        return EOS_EResult::EOS_NotFound;
+    }
+    const i32 needed = static_cast<i32>(account_id.size()) + 1;
+    if (*in_out_buffer_length < needed) {
+        *in_out_buffer_length = needed;
+        return EOS_EResult::EOS_LimitExceeded;
+    }
+    std::memcpy(out_buffer, account_id.c_str(), static_cast<std::size_t>(needed));
+    *in_out_buffer_length = needed;
+    return EOS_EResult::EOS_Success;
+}
+
+bool sdk_connect::external_account_for(EOS_ProductUserId target, std::string& display_name,
+                                       std::string& account_id) const {
+    display_name.clear();
+    account_id.clear();
+    if (target == 0 || !target->valid) {
+        return false;
+    }
+    if (is_logged_in() && target == local_user()) {
+        display_name = settings_.username();
+        account_id = target->id_str;
+        return true;
+    }
+    const std::map<std::string, std::string>::const_iterator peer = peers_.find(target->id_str);
+    if (peer == peers_.end()) {
+        return false;
+    }
+    display_name = peer->second;
+    account_id = target->id_str;
+    return true;
+}
+
+EOS_EResult sdk_connect::copy_external_account(
+    EOS_ProductUserId target, EOS_Connect_ExternalAccountInfo** out) const {
+    if (out == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    *out = 0;
+    std::string display_name;
+    std::string account_id;
+    if (!external_account_for(target, display_name, account_id)) {
+        return EOS_EResult::EOS_NotFound;
+    }
+    *out = build_external_account_info(target, display_name, account_id);
+    return EOS_EResult::EOS_Success;
+}
+
+EOS_ProductUserId sdk_connect::external_account_mapping(
+    const EOS_Connect_GetExternalAccountMappingsOptions* options) const {
+    if (options == 0 ||
+        !version_ok(options->ApiVersion, EOS_CONNECT_GETEXTERNALACCOUNTMAPPING_API_LATEST) ||
+        options->LocalUserId == 0 || options->LocalUserId != local_user() ||
+        options->AccountIdType != EOS_EExternalAccountType::EOS_EAT_EPIC ||
+        options->TargetExternalUserId == 0) {
+        return 0;
+    }
+    const std::string target = options->TargetExternalUserId;
+    if (is_logged_in() && local_user()->id_str == target) {
+        return local_user();
+    }
+    return peers_.find(target) != peers_.end() ?
+        id_registry::instance().get_product_user_id(target) : 0;
+}
+
+u32 sdk_connect::product_user_external_account_count(
+    const EOS_Connect_GetProductUserExternalAccountCountOptions* options) const {
+    if (options == 0 ||
+        !version_ok(options->ApiVersion,
+                    EOS_CONNECT_GETPRODUCTUSEREXTERNALACCOUNTCOUNT_API_LATEST)) {
+        return 0;
+    }
+    std::string display_name;
+    std::string account_id;
+    return external_account_for(options->TargetUserId, display_name, account_id) ? 1 : 0;
+}
+
+EOS_EResult sdk_connect::copy_product_user_external_account_by_index(
+    const EOS_Connect_CopyProductUserExternalAccountByIndexOptions* options,
+    EOS_Connect_ExternalAccountInfo** out) const {
+    if (out == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    *out = 0;
+    if (options == 0 ||
+        !version_ok(options->ApiVersion,
+                    EOS_CONNECT_COPYPRODUCTUSEREXTERNALACCOUNTBYINDEX_API_LATEST)) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (options->ExternalAccountInfoIndex != 0) {
+        return EOS_EResult::EOS_NotFound;
+    }
+    return copy_external_account(options->TargetUserId, out);
+}
+
+EOS_EResult sdk_connect::copy_product_user_external_account_by_type(
+    const EOS_Connect_CopyProductUserExternalAccountByAccountTypeOptions* options,
+    EOS_Connect_ExternalAccountInfo** out) const {
+    if (out == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    *out = 0;
+    if (options == 0 ||
+        !version_ok(options->ApiVersion,
+                    EOS_CONNECT_COPYPRODUCTUSEREXTERNALACCOUNTBYACCOUNTTYPE_API_LATEST)) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    if (options->AccountIdType != EOS_EExternalAccountType::EOS_EAT_EPIC) {
+        return EOS_EResult::EOS_NotFound;
+    }
+    return copy_external_account(options->TargetUserId, out);
+}
+
+EOS_EResult sdk_connect::copy_product_user_external_account_by_id(
+    const EOS_Connect_CopyProductUserExternalAccountByAccountIdOptions* options,
+    EOS_Connect_ExternalAccountInfo** out) const {
+    if (out == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    *out = 0;
+    if (options == 0 ||
+        !version_ok(options->ApiVersion,
+                    EOS_CONNECT_COPYPRODUCTUSEREXTERNALACCOUNTBYACCOUNTID_API_LATEST) ||
+        options->AccountId == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    std::string display_name;
+    std::string account_id;
+    if (!external_account_for(options->TargetUserId, display_name, account_id) ||
+        account_id != options->AccountId) {
+        return EOS_EResult::EOS_NotFound;
+    }
+    return copy_external_account(options->TargetUserId, out);
+}
+
+EOS_EResult sdk_connect::copy_product_user_info(
+    const EOS_Connect_CopyProductUserInfoOptions* options,
+    EOS_Connect_ExternalAccountInfo** out) const {
+    if (out == 0) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    *out = 0;
+    if (options == 0 ||
+        !version_ok(options->ApiVersion, EOS_CONNECT_COPYPRODUCTUSERINFO_API_LATEST)) {
+        return EOS_EResult::EOS_InvalidParameters;
+    }
+    return copy_external_account(options->TargetUserId, out);
 }
 
 std::size_t sdk_connect::known_peer_count() const {

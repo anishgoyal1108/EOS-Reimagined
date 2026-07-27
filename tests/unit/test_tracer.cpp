@@ -129,6 +129,8 @@ TEST_CASE("manual mode creates the run directory and its owned files") {
     CHECK(runtime.find("\"trace_level\":\"lifecycle\"") != std::string::npos);
     CHECK(runtime.find("\"instance_label\":\"alice\"") != std::string::npos);
     CHECK(runtime.find("\"discovery_ports\":[55789,55798]") != std::string::npos);
+    CHECK(runtime.find("\"peer_seed_count\":0") != std::string::npos);
+    CHECK(runtime.find("\"peer_seeds\":[") == std::string::npos);
     CHECK(runtime.find("\"version\":null") == std::string::npos);
     CHECK(runtime.find("\"wine\":") != std::string::npos);
 
@@ -145,6 +147,47 @@ TEST_CASE("the platform reports a runtime OS version") {
 #if !defined(_WIN32)
     CHECK(wine_version.empty());
 #endif
+}
+
+TEST_CASE("runtime metadata reports only the peer-seed count") {
+    tracer_fixture fx("seed-privacy");
+    const std::string trace_dir = fx.sub("traces");
+    platform::make_directories(trace_dir);
+    resolved_config config = make_config(trace_level::lifecycle, trace_dir, std::string());
+    config.peer_seeds.push_back(0x6450254cu);
+
+    tracer t;
+    t.start(config);
+    REQUIRE(t.active());
+    const std::string runtime = slurp(t.run_directory() + "/runtime.json");
+    CHECK(runtime.find("\"peer_seed_count\":1") != std::string::npos);
+    CHECK(runtime.find("100.80.37.76") == std::string::npos);
+    t.stop();
+}
+
+TEST_CASE("runtime metadata records effective manager values and their sources") {
+    tracer_fixture fx("config-sources");
+    const std::string trace_dir = fx.sub("traces");
+    platform::make_directories(trace_dir);
+    resolved_config config = make_config(trace_level::lifecycle, trace_dir, std::string());
+    config.sources.display_name = config_origin::environment;
+    config.sources.trace_level = config_origin::file;
+    config.sources.trace_dir = config_origin::default_value;
+    config.sources.trace_max_bytes = config_origin::file;
+    config.sources.trace_max_rotated_files = config_origin::file;
+
+    tracer t;
+    t.start(config);
+    REQUIRE(t.active());
+    const std::string runtime = slurp(t.run_directory() + "/runtime.json");
+    CHECK(runtime.find("\"trace_dir\":\"" + trace_dir + "\"") != std::string::npos);
+    CHECK(runtime.find("\"trace_max_bytes\":65536") != std::string::npos);
+    CHECK(runtime.find("\"trace_max_rotated_files\":8") != std::string::npos);
+    CHECK(runtime.find("\"sources\":{") != std::string::npos);
+    CHECK(runtime.find("\"display_name\":\"environment\"") != std::string::npos);
+    CHECK(runtime.find("\"trace_level\":\"file\"") != std::string::npos);
+    CHECK(runtime.find("\"trace_dir\":\"default\"") != std::string::npos);
+    t.stop();
 }
 
 TEST_CASE("runner mode opens the given directory") {

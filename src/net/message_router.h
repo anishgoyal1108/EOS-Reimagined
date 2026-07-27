@@ -26,6 +26,8 @@ struct net_config {
     u16 discovery_port_last;
     // Where advertisements are sent. Empty means "ask the platform for every broadcast address".
     std::vector<u32> broadcast_addresses;
+    // Optional unicast bootstrap addresses. They use the same discovery-port range as broadcasts.
+    std::vector<u32> peer_seed_addresses;
 
     net_config();
 };

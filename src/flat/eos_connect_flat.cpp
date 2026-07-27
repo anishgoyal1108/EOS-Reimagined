@@ -255,10 +255,10 @@ EOS_DECLARE_FUNC(EOS_ProductUserId) EOS_Connect_GetExternalAccountMapping(
                                  "EOS_Connect_GetExternalAccountMapping",
                                  Options != 0 ? Options->ApiVersion : 0,
                                  eosr::call_mode::sync);
-    (void)Handle;
-    (void)Options;
-    return eosr::traced_handle(eosr_trace, static_cast<EOS_ProductUserId>(0),
-                               eosr::label_kind::puid);
+    eosr::sdk_connect* connect = checked_connect(Handle);
+    const EOS_ProductUserId result =
+        connect != 0 ? connect->external_account_mapping(Options) : 0;
+    return eosr::traced_handle(eosr_trace, result, eosr::label_kind::puid);
 }
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Connect_GetProductUserExternalAccountCount(
@@ -267,9 +267,9 @@ EOS_DECLARE_FUNC(uint32_t) EOS_Connect_GetProductUserExternalAccountCount(
                                  "EOS_Connect_GetProductUserExternalAccountCount",
                                  Options != 0 ? Options->ApiVersion : 0,
                                  eosr::call_mode::sync);
-    (void)Handle;
-    (void)Options;
-    return eosr::traced_count(eosr_trace, static_cast<uint32_t>(0));
+    eosr::sdk_connect* connect = checked_connect(Handle);
+    return eosr::traced_count(
+        eosr_trace, connect != 0 ? connect->product_user_external_account_count(Options) : 0);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserExternalAccountByIndex(
@@ -279,12 +279,14 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserExternalAccountByIndex(
                                  "EOS_Connect_CopyProductUserExternalAccountByIndex",
                                  Options != 0 ? Options->ApiVersion : 0,
                                  eosr::call_mode::sync);
-    (void)Handle;
-    (void)Options;
-    if (OutExternalAccountInfo != 0) {
+    eosr::sdk_connect* connect = checked_connect(Handle);
+    if (connect == 0 && OutExternalAccountInfo != 0) {
         *OutExternalAccountInfo = 0;
     }
-    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
+    const EOS_EResult result = connect != 0 ?
+        connect->copy_product_user_external_account_by_index(Options, OutExternalAccountInfo) :
+        EOS_EResult::EOS_InvalidParameters;
+    return eosr::traced_result(eosr_trace, result);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserExternalAccountByAccountType(
@@ -293,12 +295,14 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserExternalAccountByAccoun
     eosr::trace_scope eosr_trace(
         eosr::global_tracer(), "EOS_Connect_CopyProductUserExternalAccountByAccountType",
         Options != 0 ? Options->ApiVersion : 0, eosr::call_mode::sync);
-    (void)Handle;
-    (void)Options;
-    if (OutExternalAccountInfo != 0) {
+    eosr::sdk_connect* connect = checked_connect(Handle);
+    if (connect == 0 && OutExternalAccountInfo != 0) {
         *OutExternalAccountInfo = 0;
     }
-    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
+    const EOS_EResult result = connect != 0 ?
+        connect->copy_product_user_external_account_by_type(Options, OutExternalAccountInfo) :
+        EOS_EResult::EOS_InvalidParameters;
+    return eosr::traced_result(eosr_trace, result);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserExternalAccountByAccountId(
@@ -307,12 +311,14 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserExternalAccountByAccoun
     eosr::trace_scope eosr_trace(
         eosr::global_tracer(), "EOS_Connect_CopyProductUserExternalAccountByAccountId",
         Options != 0 ? Options->ApiVersion : 0, eosr::call_mode::sync);
-    (void)Handle;
-    (void)Options;
-    if (OutExternalAccountInfo != 0) {
+    eosr::sdk_connect* connect = checked_connect(Handle);
+    if (connect == 0 && OutExternalAccountInfo != 0) {
         *OutExternalAccountInfo = 0;
     }
-    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
+    const EOS_EResult result = connect != 0 ?
+        connect->copy_product_user_external_account_by_id(Options, OutExternalAccountInfo) :
+        EOS_EResult::EOS_InvalidParameters;
+    return eosr::traced_result(eosr_trace, result);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserInfo(
@@ -321,12 +327,14 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyProductUserInfo(
     eosr::trace_scope eosr_trace(eosr::global_tracer(), "EOS_Connect_CopyProductUserInfo",
                                  Options != 0 ? Options->ApiVersion : 0,
                                  eosr::call_mode::sync);
-    (void)Handle;
-    (void)Options;
-    if (OutExternalAccountInfo != 0) {
+    eosr::sdk_connect* connect = checked_connect(Handle);
+    if (connect == 0 && OutExternalAccountInfo != 0) {
         *OutExternalAccountInfo = 0;
     }
-    return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
+    const EOS_EResult result = connect != 0 ?
+        connect->copy_product_user_info(Options, OutExternalAccountInfo) :
+        EOS_EResult::EOS_InvalidParameters;
+    return eosr::traced_result(eosr_trace, result);
 }
 
 EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyIdToken(
@@ -342,13 +350,13 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Connect_CopyIdToken(
     return eosr::traced_result(eosr_trace, EOS_EResult::EOS_NotFound);
 }
 
-// --- Release helpers: we never hand out these objects, so there is nothing to free ---
+// --- Release helpers ---
 
 EOS_DECLARE_FUNC(void) EOS_Connect_ExternalAccountInfo_Release(EOS_Connect_ExternalAccountInfo* ExternalAccountInfo) {
     eosr::trace_scope eosr_trace(eosr::global_tracer(),
                                  "EOS_Connect_ExternalAccountInfo_Release", 0,
                                  eosr::call_mode::sync);
-    (void)ExternalAccountInfo;
+    eosr::release_connect_external_account_info(ExternalAccountInfo);
 }
 
 EOS_DECLARE_FUNC(void) EOS_Connect_IdToken_Release(EOS_Connect_IdToken* IdToken) {

@@ -110,6 +110,15 @@ net_config discovery_config(u16 first) {
     return config;
 }
 
+net_config seeded_config(u16 first) {
+    net_config config;
+    config.discovery_port_first = first;
+    config.discovery_port_last = static_cast<u16>(first + 3);
+    config.broadcast_addresses.push_back(0xc0000201u); // TEST-NET-1, never a local broadcast
+    config.peer_seed_addresses.push_back(platform::ip_loopback);
+    return config;
+}
+
 // Bring a router up under a profile. It derives the id it answers to from that profile's key -- the
 // same derivation the peer on the other end applies to the key the handshake proves to it -- so a
 // caller does not pick an id, it brings a key.
@@ -175,6 +184,31 @@ TEST_CASE("two instances discover each other and mesh over loopback") {
     CHECK(alice_events.connected[0] == bob_id());
     REQUIRE(bob_events.connected.size() == 1);
     CHECK(bob_events.connected[0] == alice_id());
+
+    alice.stop();
+    bob.stop();
+    platform::net_shutdown();
+}
+
+TEST_CASE("two instances mesh through unicast seeds over the configured discovery range") {
+    REQUIRE(platform::net_init());
+    message_router alice;
+    message_router bob;
+    alice.set_identity(alice_profile(), test_game, "", "");
+    bob.set_identity(bob_profile(), test_game, "", "");
+    alice.set_config(seeded_config(45900));
+    bob.set_config(seeded_config(45900));
+    REQUIRE(alice.start());
+    REQUIRE(bob.start());
+
+    pump(alice, bob, [&]() {
+        return !alice.peer_ids().empty() && !bob.peer_ids().empty();
+    });
+
+    REQUIRE(alice.peer_ids().size() == 1);
+    REQUIRE(bob.peer_ids().size() == 1);
+    CHECK(alice.peer_ids()[0] == bob_id());
+    CHECK(bob.peer_ids()[0] == alice_id());
 
     alice.stop();
     bob.stop();

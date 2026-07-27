@@ -50,7 +50,9 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
     // Take the persistent profile before the options fold the title into it, so the identity we
     // advertise is the one whose key we can actually prove. Failing that, the ephemeral key the
     // settings started with stands: the mesh still works, the identity just does not outlive the run.
-    if (!settings_.load_identity(platform::user_data_directory())) {
+    const std::string profile_directory =
+        have_run_config_ ? run_config_.data_dir : platform::user_data_directory();
+    if (!settings_.load_identity(profile_directory)) {
         log_warn("platform: no profile directory available; this identity lasts only for this run");
     }
     settings_.apply_platform_options(options);
@@ -78,6 +80,7 @@ bool sdk_platform::create(const EOS_Platform_Options* options) {
         net_config net;
         net.discovery_port_first = run_config_.discovery_ports.first;
         net.discovery_port_last = run_config_.discovery_ports.last;
+        net.peer_seed_addresses = run_config_.peer_seeds;
         network_.set_config(net);
     }
     // enable_lan false is the one way to run with no peer network at all: everything local keeps

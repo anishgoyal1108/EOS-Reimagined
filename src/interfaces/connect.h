@@ -58,6 +58,22 @@ public:
                                         EOS_Connect_OnQueryProductUserIdMappingsCallback delegate);
     EOS_EResult get_product_user_id_mapping(const EOS_Connect_GetProductUserIdMappingOptions* options,
                                             char* out_buffer, i32* in_out_buffer_length) const;
+    EOS_ProductUserId external_account_mapping(
+        const EOS_Connect_GetExternalAccountMappingsOptions* options) const;
+    u32 product_user_external_account_count(
+        const EOS_Connect_GetProductUserExternalAccountCountOptions* options) const;
+    EOS_EResult copy_product_user_external_account_by_index(
+        const EOS_Connect_CopyProductUserExternalAccountByIndexOptions* options,
+        EOS_Connect_ExternalAccountInfo** out) const;
+    EOS_EResult copy_product_user_external_account_by_type(
+        const EOS_Connect_CopyProductUserExternalAccountByAccountTypeOptions* options,
+        EOS_Connect_ExternalAccountInfo** out) const;
+    EOS_EResult copy_product_user_external_account_by_id(
+        const EOS_Connect_CopyProductUserExternalAccountByAccountIdOptions* options,
+        EOS_Connect_ExternalAccountInfo** out) const;
+    EOS_EResult copy_product_user_info(
+        const EOS_Connect_CopyProductUserInfoOptions* options,
+        EOS_Connect_ExternalAccountInfo** out) const;
 
     // The number of remote peers currently in the roster. Peers are learned from inbound Connect
     // messages; this lets callers (and tests) observe the roster the network path builds.
@@ -108,6 +124,10 @@ private:
     // Tell one peer who we are, so its roster can name us.
     void announce_to(const std::string& peer_id);
     EOS_ProductUserId local_user() const;
+    bool external_account_for(EOS_ProductUserId target, std::string& display_name,
+                              std::string& account_id) const;
+    EOS_EResult copy_external_account(EOS_ProductUserId target,
+                                      EOS_Connect_ExternalAccountInfo** out) const;
     void deliver_login_result(EOS_EResult result_code, EOS_ProductUserId user, void* client_data,
                               EOS_Connect_OnLoginCallback delegate);
 
@@ -124,6 +144,8 @@ private:
     std::vector<status_transition> pending_status_changes_;
     bool registered_;
 };
+
+void release_connect_external_account_info(EOS_Connect_ExternalAccountInfo* info);
 
 } // namespace eosr
 

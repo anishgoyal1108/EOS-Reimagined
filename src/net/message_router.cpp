@@ -280,6 +280,7 @@ bool message_router::start() {
         fields.push_back(make_field(field_id::port, tv_uint(discovery_port_)));
         fields.push_back(make_field(field_id::port_first, tv_uint(config_.discovery_port_first)));
         fields.push_back(make_field(field_id::port_last, tv_uint(config_.discovery_port_last)));
+        fields.push_back(make_field(field_id::count, tv_uint(config_.peer_seed_addresses.size())));
         net_record("listen", fields);
     }
     return true;
@@ -511,6 +512,19 @@ void message_router::advertise() {
     std::vector<u32> targets = config_.broadcast_addresses;
     if (targets.empty()) {
         targets = broadcast_addresses();
+    }
+    for (std::size_t i = 0; i < config_.peer_seed_addresses.size(); i++) {
+        const u32 seed = config_.peer_seed_addresses[i];
+        bool duplicate = false;
+        for (std::size_t k = 0; k < targets.size(); k++) {
+            if (targets[k] == seed) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) {
+            targets.push_back(seed);
+        }
     }
     // Reach every slot on every attached network, since we do not know which one a peer holds.
     for (std::size_t i = 0; i < targets.size(); i++) {

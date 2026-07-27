@@ -27,6 +27,8 @@ public:
     lookup file_int(const std::string& key, i64& out) const;
     lookup file_int_pair(const std::string& key, i64& first, i64& second) const;
     lookup file_bool(const std::string& key, bool& out) const;
+    lookup file_string_array(const std::string& key,
+                             std::vector<std::string>& out) const;
 
     // Problems met while loading the config file. The caller folds these into resolution's own
     // diagnostics so the run's meta/config records carry both.

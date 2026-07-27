@@ -46,7 +46,7 @@ struct source_fixture {
         const char* names[] = {"EOSR_CONFIG",          "EOSR_DISPLAY_NAME", "EOSR_TRACE",
                                "EOSR_DISCOVERY_PORTS",  "EOSR_TRACE_MAX_BYTES",
                                "EOSR_TRACE_MAX_ROTATED", "EOSR_TRACE_DIR", "EOSR_INSTANCE_LABEL",
-                               "EOSR_RUN_DIR"};
+                               "EOSR_RUN_DIR", "EOSR_PEER_SEEDS"};
         for (std::size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
             unset_env(names[i]);
         }
@@ -184,6 +184,22 @@ TEST_CASE("the environment is snapshotted at construction") {
     std::string value;
     CHECK(source.env("EOSR_DISPLAY_NAME", value));
     CHECK(value == "Snapshot"); // the later change does not move the snapshot
+}
+
+TEST_CASE("peer seeds are read from the file and snapshotted from the environment") {
+    source_fixture fx("peer-seeds");
+    fx.write("eosr.json", "{ \"peer_seeds\": [\"100.70.1.2\"] }");
+    set_env("EOSR_PEER_SEEDS", "100.80.37.76");
+    system_config_source source(fx.dir);
+    set_env("EOSR_PEER_SEEDS", "100.91.2.3");
+
+    std::string value;
+    REQUIRE(source.env("EOSR_PEER_SEEDS", value));
+    CHECK(value == "100.80.37.76");
+    std::vector<std::string> seeds;
+    REQUIRE(source.file_string_array("peer_seeds", seeds) == lookup::ok);
+    REQUIRE(seeds.size() == 1);
+    CHECK(seeds[0] == "100.70.1.2");
 }
 
 TEST_CASE("a wrong-typed file value reaches the resolver as a diagnostic") {

@@ -42,6 +42,12 @@ foreach(role alice bob)
         message(FATAL_ERROR "${role} result: ${result}")
     endif()
     file(READ "${PROBE_ROOT}/${role}-run/trace.jsonl" ${role}_trace)
+    file(READ "${PROBE_ROOT}/${role}-run/runtime.json" ${role}_runtime)
+    string(FIND "${${role}_runtime}" "\"peer_seed_count\":1" seed_count)
+    string(FIND "${${role}_runtime}" "127.0.0.1" raw_seed)
+    if(seed_count EQUAL -1 OR NOT raw_seed EQUAL -1)
+        message(FATAL_ERROR "${role} runtime did not apply or redacted peer seeds incorrectly")
+    endif()
     foreach(required
         "\"event\":\"run_start\""
         "\"event\":\"profile\""

@@ -19,12 +19,14 @@ struct fake_source : config_source {
     std::map<std::string, i64> file_ints;
     std::map<std::string, std::pair<i64, i64> > file_pairs;
     std::map<std::string, bool> file_flags;
+    std::map<std::string, std::vector<std::string> > file_string_arrays;
 
     // A key lives in at most one of the typed maps, so "present in some other map" is exactly the
     // wrong-type case the real JSON source will report.
     bool present(const std::string& key) const {
         return file_strings.count(key) != 0 || file_ints.count(key) != 0 ||
-               file_pairs.count(key) != 0 || file_flags.count(key) != 0;
+               file_pairs.count(key) != 0 || file_flags.count(key) != 0 ||
+               file_string_arrays.count(key) != 0;
     }
 
     bool env(const std::string& name, std::string& out) const {
@@ -63,6 +65,15 @@ struct fake_source : config_source {
     lookup file_bool(const std::string& key, bool& out) const {
         std::map<std::string, bool>::const_iterator it = file_flags.find(key);
         if (it != file_flags.end()) {
+            out = it->second;
+            return lookup::ok;
+        }
+        return present(key) ? lookup::wrong_type : lookup::missing;
+    }
+    lookup file_string_array(const std::string& key, std::vector<std::string>& out) const {
+        std::map<std::string, std::vector<std::string> >::const_iterator it =
+            file_string_arrays.find(key);
+        if (it != file_string_arrays.end()) {
             out = it->second;
             return lookup::ok;
         }
@@ -116,6 +127,7 @@ TEST_CASE("defaults apply when nothing is configured") {
     CHECK(config.trace_max_rotated_files == 8u);
     CHECK(config.discovery_ports.first == 55789);
     CHECK(config.discovery_ports.last == 55798);
+    CHECK(config.peer_seeds.empty());
     CHECK(config.instance_label.empty());
     CHECK(config.diagnostics.empty());
 }
@@ -129,6 +141,43 @@ TEST_CASE("environment overrides the file overrides the default") {
     source.envs["EOSR_DISPLAY_NAME"] = "FromEnv";
     config = resolve_config(source, make_defaults());
     CHECK(config.display_name == "FromEnv"); // env beats file
+}
+
+TEST_CASE("resolved manager directives retain their effective source") {
+    fake_source source;
+    source.envs["EOSR_DISPLAY_NAME"] = "FromEnv";
+    source.file_strings["trace_level"] = "lifecycle";
+    source.envs["EOSR_TRACE_MAX_BYTES"] = "131072";
+    source.file_ints["trace_max_rotated_files"] = 4;
+    source.envs["EOSR_DISCOVERY_PORTS"] = "56000-56002";
+    source.file_string_arrays["peer_seeds"].push_back("192.0.2.10");
+    source.envs["EOSR_INSTANCE_LABEL"] = "david";
+    source.file_strings["trace_dir"] = "diagnostics";
+    source.envs["EOSR_LOCALE"] = "en-US";
+    source.file_strings["log_level"] = "info";
+    source.envs["EOSR_ENABLE_LAN"] = "false";
+    source.file_flags["enable_overlay"] = true;
+    source.envs["EOSR_UNLOCK_DLCS"] = "true";
+
+    const resolved_config config = resolve_config(source, make_defaults());
+    CHECK(config.sources.display_name == config_origin::environment);
+    CHECK(config.sources.trace_level == config_origin::file);
+    CHECK(config.sources.trace_max_bytes == config_origin::environment);
+    CHECK(config.sources.trace_max_rotated_files == config_origin::file);
+    CHECK(config.sources.discovery_ports == config_origin::environment);
+    CHECK(config.sources.peer_seeds == config_origin::file);
+    CHECK(config.sources.instance_label == config_origin::environment);
+    CHECK(config.sources.trace_dir == config_origin::file);
+    CHECK(config.sources.locale == config_origin::environment);
+    CHECK(config.sources.log_level == config_origin::file);
+    CHECK(config.sources.enable_lan == config_origin::environment);
+    CHECK(config.sources.enable_overlay == config_origin::file);
+    CHECK(config.sources.unlock_dlcs == config_origin::environment);
+
+    const resolved_config defaults = resolve_config(fake_source(), make_defaults());
+    CHECK(defaults.sources.display_name == config_origin::default_value);
+    CHECK(defaults.sources.peer_seeds == config_origin::default_value);
+    CHECK(defaults.sources.enable_lan == config_origin::default_value);
 }
 
 TEST_CASE("an empty environment variable is unset") {
@@ -146,6 +195,25 @@ TEST_CASE("an invalid environment override falls through to the file value") {
     const resolved_config config = resolve_config(source, make_defaults());
     CHECK(config.level == trace_level::lifecycle);
     CHECK(has_diagnostic(config, "trace"));
+}
+
+TEST_CASE("invalid text environment overrides fall through with file provenance") {
+    fake_source source;
+    source.envs["EOSR_TRACE_DIR"] = std::string("bad\0path", 8);
+    source.file_strings["trace_dir"] = "file-traces";
+    source.envs["EOSR_LOCALE"] = "not a locale";
+    source.file_strings["locale"] = "fr";
+    source.envs["EOSR_LOG_LEVEL"] = "chatty";
+    source.file_strings["log_level"] = "debug";
+
+    const resolved_config config = resolve_config(source, make_defaults());
+    CHECK(config.trace_dir == "/data/file-traces");
+    CHECK(config.locale == "fr");
+    CHECK(config.logging == log_level::debug);
+    CHECK(config.sources.trace_dir == config_origin::file);
+    CHECK(config.sources.locale == config_origin::file);
+    CHECK(config.sources.log_level == config_origin::file);
+    CHECK(config.diagnostics.size() == 3);
 }
 
 TEST_CASE("the display name is bounded to both EOS caps") {
@@ -278,6 +346,58 @@ TEST_CASE("discovery ports validate range and span") {
     CHECK(config.discovery_ports.first == 55789); // rejected -> default
 }
 
+TEST_CASE("peer seeds parse as bounded IPv4 literals with environment precedence") {
+    fake_source source;
+    source.file_string_arrays["peer_seeds"].push_back("100.70.1.2");
+    source.envs["EOSR_PEER_SEEDS"] = "100.80.37.76, 100.91.2.3,100.80.37.76";
+
+    const resolved_config config = resolve_config(source, make_defaults());
+    REQUIRE(config.peer_seeds.size() == 2);
+    CHECK(config.peer_seeds[0] == 0x6450254cu);
+    CHECK(config.peer_seeds[1] == 0x645b0203u);
+    CHECK(config.diagnostics.empty());
+}
+
+TEST_CASE("an invalid peer-seed environment value falls through to the file atomically") {
+    fake_source source;
+    source.envs["EOSR_PEER_SEEDS"] = "100.80.37.76,not-an-ip";
+    source.file_string_arrays["peer_seeds"].push_back("100.70.1.2");
+
+    const resolved_config config = resolve_config(source, make_defaults());
+    REQUIRE(config.peer_seeds.size() == 1);
+    CHECK(config.peer_seeds[0] == 0x64460102u);
+    CHECK(has_diagnostic(config, "peer_seeds environment invalid address ignored"));
+}
+
+TEST_CASE("peer seeds reject non-unicast addresses and wrong JSON shapes") {
+    const char* invalid[] = {"0.0.0.0", "0.1.2.3", "224.0.0.1", "255.255.255.255", "100.80.037.76",
+                             "100.80.37", "100.80.37.256", "100.80.37.76:55789"};
+    for (std::size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        fake_source source;
+        source.file_string_arrays["peer_seeds"].push_back(invalid[i]);
+        const resolved_config config = resolve_config(source, make_defaults());
+        CHECK(config.peer_seeds.empty());
+        CHECK(has_diagnostic(config, "peer_seeds file invalid address ignored"));
+    }
+
+    fake_source wrong_type;
+    wrong_type.file_strings["peer_seeds"] = "100.80.37.76";
+    const resolved_config config = resolve_config(wrong_type, make_defaults());
+    CHECK(config.peer_seeds.empty());
+    CHECK(has_diagnostic(config, "peer_seeds file wrong type ignored"));
+}
+
+TEST_CASE("peer seeds are capped by unique address count") {
+    fake_source source;
+    for (int i = 1; i <= 17; i++) {
+        source.file_string_arrays["peer_seeds"].push_back(
+            "100.80.37." + std::to_string(i));
+    }
+    const resolved_config config = resolve_config(source, make_defaults());
+    CHECK(config.peer_seeds.empty());
+    CHECK(has_diagnostic(config, "peer_seeds file too many addresses ignored"));
+}
+
 TEST_CASE("instance label accepts a slug and rejects unsafe values") {
     config_defaults defaults = make_defaults();
 
@@ -399,6 +519,19 @@ TEST_CASE("language is accepted as an alias for locale, and a bad tag falls thro
     REQUIRE(config.diagnostics.size() == 1);
     CHECK(config.diagnostics[0].field == "locale");
     CHECK(config.diagnostics[0].action == "ignored");
+}
+
+TEST_CASE("locale permits letters with at most one interior separator") {
+    const char* invalid[] = {"-en", "en-", "en--US", "en_US_more"};
+    for (std::size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        fake_source source;
+        source.file_strings["locale"] = invalid[i];
+        const resolved_config config = resolve_config(source, make_defaults());
+        CAPTURE(invalid[i]);
+        CHECK(config.locale == "en");
+        REQUIRE(config.diagnostics.size() == 1);
+        CHECK(config.diagnostics[0].field == "locale");
+    }
 }
 
 TEST_CASE("log_level accepts the ecosystem spellings") {

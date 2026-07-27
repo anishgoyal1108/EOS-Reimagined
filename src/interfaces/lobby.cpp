@@ -911,15 +911,15 @@ void sdk_lobby::join_lobby(const EOS_Lobby_JoinLobbyOptions* options, void* clie
     if (delegate == 0) {
         return;
     }
-    details_object* details =
-        (options != 0) ? details_.find(options->LobbyDetailsHandle) : 0;
+    const lobby_infos* details =
+        (options != 0) ? details_infos(options->LobbyDetailsHandle) : 0;
     if (details == 0 || options->LocalUserId == 0) {
         deliver_id(cb_join, sizeof(EOS_Lobby_JoinLobbyCallbackInfo),
                    reinterpret_cast<completion_delegate>(delegate), client_data,
                    EOS_EResult::EOS_InvalidParameters, std::string());
         return;
     }
-    const lobby_infos& target = details->infos;
+    const lobby_infos& target = *details;
     if (find_lobby(target.lobby_id) != 0) {
         deliver_id(cb_join, sizeof(EOS_Lobby_JoinLobbyCallbackInfo),
                    reinterpret_cast<completion_delegate>(delegate), client_data,
@@ -1237,6 +1237,7 @@ EOS_EResult sdk_lobby::copy_lobby_details_handle(
     }
     std::unique_ptr<details_object> copy(new details_object());
     copy->infos = entry->infos;
+    copy->live_lobby_id = entry->infos.lobby_id;
     *out = reinterpret_cast<EOS_HLobbyDetails>(details_.add(std::move(copy)));
     return EOS_EResult::EOS_Success;
 }
@@ -1450,17 +1451,31 @@ void sdk_lobby::modification_release(void* handle) {
 
 // --- LobbyDetails sub-handle ---
 
+const lobby_infos* sdk_lobby::details_infos(void* handle) const {
+    const details_object* object = details_.find(handle);
+    if (object == 0) {
+        return 0;
+    }
+    if (!object->live_lobby_id.empty()) {
+        const lobby* entry = find_lobby(object->live_lobby_id);
+        if (entry != 0) {
+            return &entry->infos;
+        }
+    }
+    return &object->infos;
+}
+
 EOS_EResult sdk_lobby::details_copy_info(void* handle, EOS_LobbyDetails_Info** out) {
     if (out == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
     *out = 0;
-    details_object* object = details_.find(handle);
-    if (object == 0) {
+    const lobby_infos* infos = details_infos(handle);
+    if (infos == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
     std::unique_ptr<details_info_holder> holder(new details_info_holder());
-    fill_details_info(*holder, object->infos);
+    fill_details_info(*holder, *infos);
     EOS_LobbyDetails_Info* info = &holder->info;
     {
         std::lock_guard<std::mutex> lock(g_info_mutex);
@@ -1472,16 +1487,16 @@ EOS_EResult sdk_lobby::details_copy_info(void* handle, EOS_LobbyDetails_Info** o
 
 EOS_ProductUserId sdk_lobby::details_get_lobby_owner(
     void* handle, const EOS_LobbyDetails_GetLobbyOwnerOptions*) {
-    const details_object* object = details_.find(handle);
-    if (object == 0 || object->infos.owner_id.empty()) {
+    const lobby_infos* infos = details_infos(handle);
+    if (infos == 0 || infos->owner_id.empty()) {
         return 0;
     }
-    return id_registry::instance().get_product_user_id(object->infos.owner_id);
+    return id_registry::instance().get_product_user_id(infos->owner_id);
 }
 
 u32 sdk_lobby::details_attribute_count(void* handle) const {
-    const details_object* object = details_.find(handle);
-    return (object != 0) ? static_cast<u32>(object->infos.attributes.size()) : 0;
+    const lobby_infos* infos = details_infos(handle);
+    return (infos != 0) ? static_cast<u32>(infos->attributes.size()) : 0;
 }
 
 EOS_EResult sdk_lobby::details_copy_attribute_by_index(
@@ -1491,14 +1506,14 @@ EOS_EResult sdk_lobby::details_copy_attribute_by_index(
         return EOS_EResult::EOS_InvalidParameters;
     }
     *out = 0;
-    details_object* object = details_.find(handle);
-    if (object == 0 || options == 0) {
+    const lobby_infos* infos = details_infos(handle);
+    if (infos == 0 || options == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    if (options->AttrIndex >= object->infos.attributes.size()) {
+    if (options->AttrIndex >= infos->attributes.size()) {
         return EOS_EResult::EOS_NotFound;
     }
-    return emit_attribute(object->infos.attributes[options->AttrIndex], out);
+    return emit_attribute(infos->attributes[options->AttrIndex], out);
 }
 
 EOS_EResult sdk_lobby::details_copy_attribute_by_key(
@@ -1508,11 +1523,11 @@ EOS_EResult sdk_lobby::details_copy_attribute_by_key(
         return EOS_EResult::EOS_InvalidParameters;
     }
     *out = 0;
-    details_object* object = details_.find(handle);
-    if (object == 0 || options == 0 || options->AttrKey == 0) {
+    const lobby_infos* infos = details_infos(handle);
+    if (infos == 0 || options == 0 || options->AttrKey == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
-    const session_attribute* attribute = find_attribute(object->infos.attributes, options->AttrKey);
+    const session_attribute* attribute = find_attribute(infos->attributes, options->AttrKey);
     if (attribute == 0) {
         return EOS_EResult::EOS_NotFound;
     }
@@ -1521,18 +1536,17 @@ EOS_EResult sdk_lobby::details_copy_attribute_by_key(
 
 u32 sdk_lobby::details_member_count(void* handle,
                                     const EOS_LobbyDetails_GetMemberCountOptions*) const {
-    const details_object* object = details_.find(handle);
-    return (object != 0) ? static_cast<u32>(object->infos.members.size()) : 0;
+    const lobby_infos* infos = details_infos(handle);
+    return (infos != 0) ? static_cast<u32>(infos->members.size()) : 0;
 }
 
 EOS_ProductUserId sdk_lobby::details_member_by_index(
     void* handle, const EOS_LobbyDetails_GetMemberByIndexOptions* options) const {
-    const details_object* object = details_.find(handle);
-    if (object == 0 || options == 0 || options->MemberIndex >= object->infos.members.size()) {
+    const lobby_infos* infos = details_infos(handle);
+    if (infos == 0 || options == 0 || options->MemberIndex >= infos->members.size()) {
         return 0;
     }
-    return id_registry::instance().get_product_user_id(
-        object->infos.members[options->MemberIndex].user_id);
+    return id_registry::instance().get_product_user_id(infos->members[options->MemberIndex].user_id);
 }
 
 EOS_EResult sdk_lobby::details_copy_member_info(
@@ -1542,19 +1556,19 @@ EOS_EResult sdk_lobby::details_copy_member_info(
         return EOS_EResult::EOS_InvalidParameters;
     }
     *out = 0;
-    details_object* object = details_.find(handle);
-    if (object == 0 || options == 0 || options->TargetUserId == 0) {
+    const lobby_infos* infos = details_infos(handle);
+    if (infos == 0 || options == 0 || options->TargetUserId == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
     const std::string target = options->TargetUserId->id_str;
-    for (std::size_t i = 0; i < object->infos.members.size(); i++) {
-        if (object->infos.members[i].user_id != target) {
+    for (std::size_t i = 0; i < infos->members.size(); i++) {
+        if (infos->members[i].user_id != target) {
             continue;
         }
         std::unique_ptr<member_info_holder> holder(new member_info_holder());
         holder->info.ApiVersion = EOS_LOBBYDETAILS_MEMBERINFO_API_LATEST;
         holder->info.UserId = id_registry::instance().get_product_user_id(target);
-        holder->info.Platform = static_cast<EOS_OnlinePlatformType>(object->infos.members[i].platform);
+        holder->info.Platform = static_cast<EOS_OnlinePlatformType>(infos->members[i].platform);
         holder->info.bAllowsCrossplay = EOS_TRUE;
         EOS_LobbyDetails_MemberInfo* info = &holder->info;
         {
@@ -1569,14 +1583,14 @@ EOS_EResult sdk_lobby::details_copy_member_info(
 
 u32 sdk_lobby::details_member_attribute_count(
     void* handle, const EOS_LobbyDetails_GetMemberAttributeCountOptions* options) const {
-    const details_object* object = details_.find(handle);
-    if (object == 0 || options == 0 || options->TargetUserId == 0) {
+    const lobby_infos* infos = details_infos(handle);
+    if (infos == 0 || options == 0 || options->TargetUserId == 0) {
         return 0;
     }
     const std::string target = options->TargetUserId->id_str;
-    for (std::size_t i = 0; i < object->infos.members.size(); i++) {
-        if (object->infos.members[i].user_id == target) {
-            return static_cast<u32>(object->infos.members[i].attributes.size());
+    for (std::size_t i = 0; i < infos->members.size(); i++) {
+        if (infos->members[i].user_id == target) {
+            return static_cast<u32>(infos->members[i].attributes.size());
         }
     }
     return 0;
@@ -1589,19 +1603,19 @@ EOS_EResult sdk_lobby::details_copy_member_attribute_by_index(
         return EOS_EResult::EOS_InvalidParameters;
     }
     *out = 0;
-    details_object* object = details_.find(handle);
-    if (object == 0 || options == 0 || options->TargetUserId == 0) {
+    const lobby_infos* infos = details_infos(handle);
+    if (infos == 0 || options == 0 || options->TargetUserId == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
     const std::string target = options->TargetUserId->id_str;
-    for (std::size_t i = 0; i < object->infos.members.size(); i++) {
-        if (object->infos.members[i].user_id != target) {
+    for (std::size_t i = 0; i < infos->members.size(); i++) {
+        if (infos->members[i].user_id != target) {
             continue;
         }
-        if (options->AttrIndex >= object->infos.members[i].attributes.size()) {
+        if (options->AttrIndex >= infos->members[i].attributes.size()) {
             return EOS_EResult::EOS_NotFound;
         }
-        return emit_attribute(object->infos.members[i].attributes[options->AttrIndex], out);
+        return emit_attribute(infos->members[i].attributes[options->AttrIndex], out);
     }
     return EOS_EResult::EOS_NotFound;
 }
@@ -1613,17 +1627,17 @@ EOS_EResult sdk_lobby::details_copy_member_attribute_by_key(
         return EOS_EResult::EOS_InvalidParameters;
     }
     *out = 0;
-    details_object* object = details_.find(handle);
-    if (object == 0 || options == 0 || options->TargetUserId == 0 || options->AttrKey == 0) {
+    const lobby_infos* infos = details_infos(handle);
+    if (infos == 0 || options == 0 || options->TargetUserId == 0 || options->AttrKey == 0) {
         return EOS_EResult::EOS_InvalidParameters;
     }
     const std::string target = options->TargetUserId->id_str;
-    for (std::size_t i = 0; i < object->infos.members.size(); i++) {
-        if (object->infos.members[i].user_id != target) {
+    for (std::size_t i = 0; i < infos->members.size(); i++) {
+        if (infos->members[i].user_id != target) {
             continue;
         }
         const session_attribute* attribute =
-            find_attribute(object->infos.members[i].attributes, options->AttrKey);
+            find_attribute(infos->members[i].attributes, options->AttrKey);
         if (attribute == 0) {
             return EOS_EResult::EOS_NotFound;
         }

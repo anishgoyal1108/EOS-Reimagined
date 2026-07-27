@@ -188,11 +188,15 @@ private:
 
     struct details_object {
         lobby_infos infos;
+        // Handles copied from a lobby we currently host or joined follow that lobby's
+        // authoritative state. Search-result handles leave this empty and remain snapshots.
+        std::string live_lobby_id;
     };
 
     lobby* find_lobby(const std::string& lobby_id);
     const lobby* find_lobby(const std::string& lobby_id) const;
     lobby_member* find_member(lobby_infos& infos, const std::string& user_id);
+    const lobby_infos* details_infos(void* handle) const;
 
     void send_to(const std::string& peer, message_type type, const byte_writer& payload);
     void broadcast_to_members(const lobby& entry, message_type type, const byte_writer& payload,

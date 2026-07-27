@@ -99,6 +99,23 @@ TEST_CASE("an int pair requires exactly two integers") {
     CHECK(file.get_int_pair("empty", a, b) == lookup::wrong_type);
 }
 
+TEST_CASE("a string array is distinct from integer and mixed arrays") {
+    const config_file file = parse_ok(
+        "{ \"seeds\": [\"100.80.37.76\", \"100.91.2.3\"], \"empty\": [],"
+        "  \"numbers\": [1, 2], \"mixed\": [\"100.80.37.76\", 2] }");
+    std::vector<std::string> values;
+    REQUIRE(file.get_string_array("seeds", values) == lookup::ok);
+    REQUIRE(values.size() == 2);
+    CHECK(values[0] == "100.80.37.76");
+    CHECK(values[1] == "100.91.2.3");
+
+    REQUIRE(file.get_string_array("empty", values) == lookup::ok);
+    CHECK(values.empty());
+    CHECK(file.get_string_array("numbers", values) == lookup::wrong_type);
+    CHECK(file.get_string_array("mixed", values) == lookup::wrong_type);
+    CHECK(file.get_string_array("absent", values) == lookup::missing);
+}
+
 TEST_CASE("unknown keys are ignored, not rejected") {
     const config_file file = parse_ok(
         "{ \"display_name\": \"Marlowe\", \"future_option\": true, \"nested\": {\"a\": [1, 2]} }");

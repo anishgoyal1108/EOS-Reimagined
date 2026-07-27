@@ -45,6 +45,32 @@ enum class lookup {
     wrong_type
 };
 
+enum class config_origin {
+    unknown,
+    default_value,
+    file,
+    environment
+};
+
+const char* config_origin_name(config_origin origin);
+
+struct resolved_config_sources {
+    resolved_config_sources();
+    config_origin display_name;
+    config_origin trace_level;
+    config_origin trace_max_bytes;
+    config_origin trace_max_rotated_files;
+    config_origin discovery_ports;
+    config_origin peer_seeds;
+    config_origin instance_label;
+    config_origin trace_dir;
+    config_origin locale;
+    config_origin log_level;
+    config_origin enable_lan;
+    config_origin enable_overlay;
+    config_origin unlock_dlcs;
+};
+
 // A structured note about a field resolution had to reject, clamp, or truncate. Stable fields so the
 // alpha tooling can compare runs across games by machine, not by matching prose; `message` is an
 // optional human sentence. These become meta/config trace records once the sink exists.
@@ -70,6 +96,7 @@ struct resolved_config {
     u64 trace_max_bytes = 0;               // per-file cap before rotation, clamped to its range
     u32 trace_max_rotated_files = 0;       // rotated files kept, not counting the live one
     discovery_range discovery_ports = discovery_range();
+    std::vector<u32> peer_seeds;           // validated unicast IPv4 addresses, in host byte order
     std::string instance_label;            // path-safe slug, or empty when unset
 
     // Emulator behaviour the game itself does not set. These drive the platform, not the trace.
@@ -78,6 +105,10 @@ struct resolved_config {
     bool enable_lan = true;                // false runs the platform with no peer network at all
     bool enable_overlay = false;           // accepted; we have no overlay to show (see docs)
     bool unlock_dlcs = false;              // accepted; we have no Ecom interface yet (see docs)
+
+    // Authority for every manager-editable directive after invalid higher-priority values fall
+    // through. Manually assembled configs retain unknown origins rather than inventing provenance.
+    resolved_config_sources sources;
 
     // One entry per field that was rejected, clamped, or truncated -- what resolution did and why.
     std::vector<config_diagnostic> diagnostics;
@@ -100,6 +131,8 @@ public:
     virtual lookup file_int(const std::string& key, i64& out) const = 0;
     virtual lookup file_int_pair(const std::string& key, i64& first, i64& second) const = 0;
     virtual lookup file_bool(const std::string& key, bool& out) const = 0;
+    virtual lookup file_string_array(const std::string& key,
+                                     std::vector<std::string>& out) const = 0;
 };
 
 // The non-config inputs resolution needs: the platform's already-resolved data directory (which is

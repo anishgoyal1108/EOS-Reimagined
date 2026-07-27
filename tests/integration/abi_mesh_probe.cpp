@@ -251,6 +251,7 @@ int main(int argc, char** argv) {
     set_env("EOSR_INSTANCE_LABEL", role);
     set_env("EOSR_DISPLAY_NAME", display_name);
     set_env("EOSR_DISCOVERY_PORTS", "45920-45929");
+    set_env("EOSR_PEER_SEEDS", "127.0.0.1");
 
     eosr::platform::dynamic_library library;
     if (!library.open(library_path.c_str())) {

@@ -121,6 +121,27 @@ bool packet_must_arrive(const EOS_P2P_SendPacketOptions* options) {
     return options->Reliability != EOS_EPacketReliability::EOS_PR_UnreliableUnordered;
 }
 
+// Packet bodies can contain credentials or arbitrary game data, so diagnostics record only the
+// bounded routing metadata needed to explain traffic. Peer and socket values go through the same
+// per-run pseudonymizer as every other network record.
+void trace_packet(const char* event, const std::string& peer, const std::string& socket,
+                  u8 channel, std::size_t bytes, bool include_reliability, bool reliable) {
+    tracer& trace = global_tracer();
+    if (!trace.enabled()) return;
+    std::vector<trace_field> fields;
+    fields.push_back(make_field(field_id::peer,
+                                tv_label(trace.label(label_kind::puid, peer))));
+    fields.push_back(make_field(field_id::socket,
+                                tv_label(trace.label(label_kind::socket, socket))));
+    fields.push_back(make_field(field_id::channel, tv_int(channel)));
+    fields.push_back(make_field(field_id::bytes, tv_uint(bytes)));
+    if (include_reliability) {
+        fields.push_back(make_field(field_id::reliability,
+                                    tv_enum(reliable ? "reliable" : "unreliable")));
+    }
+    trace.record_net(event, fields);
+}
+
 } // namespace
 
 sdk_p2p::sdk_p2p(sdk_settings& settings, callback_manager& callbacks, message_router& network)
@@ -313,10 +334,13 @@ EOS_EResult sdk_p2p::send_packet(const EOS_P2P_SendPacketOptions* options) {
         waiting.channel = options->Channel;
         waiting.reliable = reliable;
         it->second.delayed.push_back(waiting);
+        trace_packet("p2p_send", key.peer, key.socket, options->Channel, data.size(), true,
+                     reliable);
         return EOS_EResult::EOS_Success;
     }
 
     send_p2p(message_type::p2p_data, key.peer, key.socket, options->Channel, data, reliable);
+    trace_packet("p2p_send", key.peer, key.socket, options->Channel, data.size(), true, reliable);
     return EOS_EResult::EOS_Success;
 }
 
@@ -408,6 +432,7 @@ EOS_EResult sdk_p2p::receive_packet(const EOS_P2P_ReceivePacketOptions* options,
         *out_peer = id_registry::instance().get_product_user_id(it->peer);
         write_socket_id(out_socket, it->socket);
         *out_channel = it->channel;
+        trace_packet("p2p_receive", it->peer, it->socket, it->channel, copied, false, false);
         receive_queue_.erase(it);
         return EOS_EResult::EOS_Success;
     }

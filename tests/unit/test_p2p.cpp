@@ -10,10 +10,13 @@
 #include "common/ids.h"
 #include "core/callback_manager.h"
 #include "core/settings.h"
+#include "core/runtime.h"
+#include "core/tracer.h"
 #include "interfaces/p2p.h"
 #include "net/messages.h"
 #include "net/message_router.h"
 #include "net/wire.h"
+#include "platform/paths.h"
 
 using namespace eosr;
 
@@ -181,6 +184,71 @@ TEST_CASE("send packet validates its options") {
         options.LocalUserId = fx.remote();
         CHECK(fx.p2p.send_packet(&options) == EOS_EResult::EOS_InvalidUser);
     }
+}
+
+TEST_CASE("accepted P2P sends and delivered receives expose bounded byte diagnostics") {
+    const std::string run = std::string(EOSR_TEST_PROFILE_DIR) + "/p2p-byte-trace";
+    REQUIRE(platform::make_directories(run));
+    platform::remove_file(run + "/trace.jsonl");
+    platform::remove_file(run + "/runtime.json");
+    resolved_config config;
+    config.display_name = "Trace User";
+    config.data_dir = run;
+    config.trace_dir = run;
+    config.run_dir = run;
+    config.level = trace_level::lifecycle;
+    config.trace_max_bytes = 65536;
+    config.trace_max_rotated_files = 2;
+    config.discovery_ports.first = 55789;
+    config.discovery_ports.last = 55798;
+    config.instance_label = "trace-instance";
+    global_tracer().start(config);
+    REQUIRE(global_tracer().active());
+
+    p2p_fixture fx;
+    fx.open_connection("game");
+    EOS_P2P_SocketId socket = make_socket("game");
+    const std::string private_payload = "credential-like-payload";
+    EOS_P2P_SendPacketOptions send = {};
+    send.ApiVersion = EOS_P2P_SENDPACKET_API_LATEST;
+    send.LocalUserId = fx.local();
+    send.RemoteUserId = fx.remote();
+    send.SocketId = &socket;
+    send.Channel = 7;
+    send.DataLengthBytes = static_cast<u32>(private_payload.size());
+    send.Data = private_payload.data();
+    send.Reliability = EOS_EPacketReliability::EOS_PR_ReliableOrdered;
+    REQUIRE(fx.p2p.send_packet(&send) == EOS_EResult::EOS_Success);
+
+    const std::vector<u8> incoming(13, 0xa5);
+    REQUIRE(fx.p2p.on_network_message(
+        make_p2p_envelope(message_type::p2p_data, peer_id, "game", 9, incoming)));
+    EOS_P2P_ReceivePacketOptions receive = {};
+    receive.ApiVersion = EOS_P2P_RECEIVEPACKET_API_LATEST;
+    receive.LocalUserId = fx.local();
+    receive.MaxDataSizeBytes = 64;
+    EOS_ProductUserId from = 0;
+    EOS_P2P_SocketId received_socket = {};
+    u8 channel = 0;
+    u8 buffer[64] = {};
+    u32 written = 0;
+    REQUIRE(fx.p2p.receive_packet(&receive, &from, &received_socket, &channel, buffer, &written) ==
+            EOS_EResult::EOS_Success);
+    CHECK(written == incoming.size());
+    global_tracer().flush();
+    std::string trace;
+    REQUIRE(platform::read_file_capped(run + "/trace.jsonl", 1024 * 1024, trace) ==
+            platform::file_read::ok);
+    CHECK(trace.find("\"event\":\"p2p_send\"") != std::string::npos);
+    CHECK(trace.find("\"bytes\":" + std::to_string(private_payload.size())) !=
+          std::string::npos);
+    CHECK(trace.find("\"channel\":7") != std::string::npos);
+    CHECK(trace.find("\"reliability\":\"reliable\"") != std::string::npos);
+    CHECK(trace.find("\"event\":\"p2p_receive\"") != std::string::npos);
+    CHECK(trace.find("\"bytes\":13") != std::string::npos);
+    CHECK(trace.find("\"channel\":9") != std::string::npos);
+    CHECK(trace.find(private_payload) == std::string::npos);
+    global_tracer().stop();
 }
 
 TEST_CASE("packet accessors validate versions and local users before touching the queue") {

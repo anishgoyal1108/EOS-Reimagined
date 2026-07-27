@@ -234,6 +234,55 @@ TEST_CASE("modifying a lobby keeps what it was not asked to change") {
     fx.lobby.details_release(details);
 }
 
+// Risk of Rain 2 keeps the LobbyDetails handle it copied when entering its local lobby. It stages a
+// member attribute through UpdateLobby and immediately reads that attribute back through the same
+// handle. A frozen copy returns EOS_NotFound forever, so the game reissues UpdateLobby every frame
+// and eventually passes a PlatformID with a null key to its avatar cache.
+TEST_CASE("an owned lobby details handle reflects committed local member attributes") {
+    lobby_fixture fx;
+    const std::string id =
+        fx.host("Region:Coop", 4, EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED);
+    EOS_HLobbyDetails details = fx.details_for(id);
+
+    EOS_Lobby_UpdateLobbyModificationOptions open = {};
+    open.ApiVersion = EOS_LOBBY_UPDATELOBBYMODIFICATION_API_LATEST;
+    open.LobbyId = id.c_str();
+    open.LocalUserId = fx.me();
+    EOS_HLobbyModification modification = 0;
+    REQUIRE(fx.lobby.update_lobby_modification(&open, &modification) ==
+            EOS_EResult::EOS_Success);
+
+    EOS_Lobby_AttributeData platform = string_attr("platform-id", "local-player");
+    EOS_LobbyModification_AddMemberAttributeOptions add = {};
+    add.ApiVersion = EOS_LOBBYMODIFICATION_ADDMEMBERATTRIBUTE_API_LATEST;
+    add.Attribute = &platform;
+    add.Visibility = EOS_ELobbyAttributeVisibility::EOS_LAT_PUBLIC;
+    REQUIRE(fx.lobby.modification_add_member_attribute(modification, &add) ==
+            EOS_EResult::EOS_Success);
+
+    EOS_Lobby_UpdateLobbyOptions update = {};
+    update.ApiVersion = EOS_LOBBY_UPDATELOBBY_API_LATEST;
+    update.LobbyModificationHandle = modification;
+    fx.lobby.update_lobby(&update, 0,
+                          reinterpret_cast<EOS_Lobby_OnUpdateLobbyCallback>(on_simple));
+    fx.callbacks.tick();
+    REQUIRE(g_simple_result == EOS_EResult::EOS_Success);
+
+    EOS_LobbyDetails_CopyMemberAttributeByKeyOptions copy = {};
+    copy.ApiVersion = EOS_LOBBYDETAILS_COPYMEMBERATTRIBUTEBYKEY_API_LATEST;
+    copy.TargetUserId = fx.me();
+    copy.AttrKey = "platform-id";
+    EOS_Lobby_Attribute* copied = 0;
+    REQUIRE(fx.lobby.details_copy_member_attribute_by_key(details, &copy, &copied) ==
+            EOS_EResult::EOS_Success);
+    REQUIRE(copied != 0);
+    CHECK(std::string(copied->Data->Value.AsUtf8) == "local-player");
+
+    release_lobby_attribute(copied);
+    fx.lobby.modification_release(modification);
+    fx.lobby.details_release(details);
+}
+
 TEST_CASE("a search finds a hosted lobby by its bucket and attribute") {
     lobby_fixture fx;
     const std::string id = fx.host("Coop", 4, EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED);

@@ -9,6 +9,7 @@
 #include "common/log.h"
 #include "common/eos_names.h"
 #include "core/client.h"
+#include "core/bootstrap_descriptor.h"
 #include "core/config.h"
 #include "core/runtime.h"
 #include "core/system_config_source.h"
@@ -47,8 +48,11 @@ EOS_DECLARE_FUNC(EOS_EResult) EOS_Initialize(const EOS_InitializeOptions* Option
         const eosr::net_config defaults;
         const eosr::discovery_range default_ports = {defaults.discovery_port_first,
                                                      defaults.discovery_port_last};
-        const eosr::resolved_config config =
-            eosr::load_resolved_config(eosr::platform::user_data_directory(), default_ports);
+        const eosr::data_directory_selection data_directory = eosr::select_data_directory();
+        eosr::resolved_config config =
+            eosr::load_resolved_config(data_directory.path, default_ports);
+        config.diagnostics.insert(config.diagnostics.end(), data_directory.diagnostics.begin(),
+                                  data_directory.diagnostics.end());
 
         // The logger's threshold is the player's to set: a game that never calls EOS_Logging_SetLogLevel
         // otherwise leaves it at Warning, and our own diagnostics with it.

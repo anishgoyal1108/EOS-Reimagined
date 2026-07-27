@@ -56,6 +56,19 @@ lookup config_file::get_bool(const std::string& key, bool& out) const {
     return lookup::ok;
 }
 
+lookup config_file::get_string_array(const std::string& key,
+                                     std::vector<std::string>& out) const {
+    std::map<std::string, node>::const_iterator it = nodes_.find(key);
+    if (it == nodes_.end()) {
+        return lookup::missing;
+    }
+    if (it->second.type != node::k_string_array) {
+        return lookup::wrong_type;
+    }
+    out = it->second.strings;
+    return lookup::ok;
+}
+
 void config_file::set_string(const std::string& key, const std::string& value) {
     node& n = nodes_[key];
     n.type = node::k_string;
@@ -78,6 +91,13 @@ void config_file::set_int_array(const std::string& key, const std::vector<i64>& 
     node& n = nodes_[key];
     n.type = node::k_int_array;
     n.ints = values;
+}
+
+void config_file::set_string_array(const std::string& key,
+                                   const std::vector<std::string>& values) {
+    node& n = nodes_[key];
+    n.type = node::k_string_array;
+    n.strings = values;
 }
 
 void config_file::set_other(const std::string& key) {
@@ -539,15 +559,24 @@ void store(config_file& out, const std::string& key, const value_node& value) {
         out.set_bool(key, value.integer != 0);
     } else if (value.type == value_node::v_array) {
         std::vector<i64> ints;
+        std::vector<std::string> strings;
         bool all_int = true;
+        bool all_string = true;
         for (std::size_t i = 0; i < value.elements.size(); i++) {
             if (value.elements[i].type != value_node::v_int) {
                 all_int = false;
-                break;
+            } else {
+                ints.push_back(value.elements[i].integer);
             }
-            ints.push_back(value.elements[i].integer);
+            if (value.elements[i].type != value_node::v_string) {
+                all_string = false;
+            } else {
+                strings.push_back(value.elements[i].str);
+            }
         }
-        if (all_int) {
+        if (all_string) {
+            out.set_string_array(key, strings);
+        } else if (all_int) {
             out.set_int_array(key, ints);
         } else {
             out.set_other(key);

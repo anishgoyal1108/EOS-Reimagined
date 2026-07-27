@@ -263,6 +263,46 @@ TEST_CASE("query product user id mappings completes with success") {
     CHECK(g_query_result == EOS_EResult::EOS_Success);
 }
 
+// Risk of Rain 2 queries the local lobby member's ProductUserId mapping and immediately copies
+// external-account index zero to build its PlatformID. Reporting a successful query followed by
+// EOS_NotFound leaves that PlatformID key null and makes the lobby UI throw every frame.
+TEST_CASE("a successful self mapping query exposes a stable external account") {
+    connect_fixture fx;
+    fx.settings.set_username("Anish");
+    fx.do_login(0);
+    fx.callbacks.tick();
+
+    EOS_ProductUserId self = fx.connect.logged_in_user_by_index(0);
+    EOS_ProductUserId targets[] = {self};
+    EOS_Connect_QueryProductUserIdMappingsOptions query = {};
+    query.ApiVersion = EOS_CONNECT_QUERYPRODUCTUSERIDMAPPINGS_API_LATEST;
+    query.LocalUserId = self;
+    query.ProductUserIds = targets;
+    query.ProductUserIdCount = 1;
+    fx.connect.query_product_user_id_mappings(&query, 0, on_query);
+    fx.callbacks.tick();
+    REQUIRE(g_query_result == EOS_EResult::EOS_Success);
+
+    EOS_Connect_GetProductUserExternalAccountCountOptions count = {};
+    count.ApiVersion = EOS_CONNECT_GETPRODUCTUSEREXTERNALACCOUNTCOUNT_API_LATEST;
+    count.TargetUserId = self;
+    REQUIRE(fx.connect.product_user_external_account_count(&count) == 1);
+
+    EOS_Connect_CopyProductUserExternalAccountByIndexOptions copy = {};
+    copy.ApiVersion = EOS_CONNECT_COPYPRODUCTUSEREXTERNALACCOUNTBYINDEX_API_LATEST;
+    copy.TargetUserId = self;
+    copy.ExternalAccountInfoIndex = 0;
+    EOS_Connect_ExternalAccountInfo* info = 0;
+    REQUIRE(fx.connect.copy_product_user_external_account_by_index(&copy, &info) ==
+            EOS_EResult::EOS_Success);
+    REQUIRE(info != 0);
+    CHECK(info->ProductUserId == self);
+    CHECK(info->AccountIdType == EOS_EExternalAccountType::EOS_EAT_EPIC);
+    CHECK(std::string(info->AccountId) == self->id_str);
+    CHECK(std::string(info->DisplayName) == "Anish");
+    release_connect_external_account_info(info);
+}
+
 TEST_CASE("a peer announcement adds the peer to the roster") {
     connect_fixture fx;
     fx.do_login(0);
@@ -282,8 +322,8 @@ TEST_CASE("a peer announcement adds the peer to the roster") {
     CHECK(fx.connect.on_network_message(envelope));
     CHECK(fx.connect.known_peer_count() == 1);
 
-    // We do not yet learn peers' external accounts, so the mapping is reported as not found
-    // rather than standing in the display name.
+    // The authenticated ProductUserId is also the stable account alias on our emulated EPIC
+    // provider. This gives games a non-null cross-peer PlatformID without trusting a payload id.
     EOS_ProductUserId peer_id = id_registry::instance().get_product_user_id(peer.product_user_id);
     EOS_Connect_GetProductUserIdMappingOptions options = {};
     options.ApiVersion = EOS_CONNECT_GETPRODUCTUSERIDMAPPING_API_LATEST;
@@ -293,7 +333,9 @@ TEST_CASE("a peer announcement adds the peer to the roster") {
 
     char buffer[64];
     int32_t length = static_cast<int32_t>(sizeof(buffer));
-    CHECK(fx.connect.get_product_user_id_mapping(&options, buffer, &length) == EOS_EResult::EOS_NotFound);
+    REQUIRE(fx.connect.get_product_user_id_mapping(&options, buffer, &length) ==
+            EOS_EResult::EOS_Success);
+    CHECK(std::string(buffer) == peer.product_user_id);
 }
 
 TEST_CASE("the roster ignores our own looped-back announcement") {

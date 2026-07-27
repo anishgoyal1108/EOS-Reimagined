@@ -74,7 +74,7 @@ public:
     sdk_platform& operator=(const sdk_platform&) = delete;
 
     // The resolved emulator configuration (eosr.json / EOSR_*), which the game knows nothing about:
-    // the display name, the language, the discovery ports, and whether to run a peer network at all.
+    // the display name, language, discovery ports/seeds, and whether to run a peer network at all.
     // The flat layer supplies it before create(); a platform built without one (a unit test) keeps its
     // built-in defaults, so this is additive.
     void set_run_config(const resolved_config& config);

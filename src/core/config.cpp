@@ -19,8 +19,16 @@ const std::size_t max_display_bytes = 64;
 const std::size_t max_label_chars = 32;
 const i64 max_port = 65535;
 const i64 max_port_span = 64;
+const std::size_t max_peer_seeds = 16;
+const std::size_t max_peer_seed_text = 4096;
 
 const std::size_t max_locale_chars = 16;
+
+config_origin origin_from_name(const char* source) {
+    if (source == 0) return config_origin::default_value;
+    return std::string(source) == "environment" ? config_origin::environment :
+                                                   config_origin::file;
+}
 
 std::string lowered(const std::string& text) {
     std::string out;
@@ -66,11 +74,15 @@ bool valid_locale(const std::string& text) {
     if (text.empty() || text.size() > max_locale_chars) {
         return false;
     }
+    int separators = 0;
     for (std::size_t i = 0; i < text.size(); i++) {
         const char c = text[i];
         const bool letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-        if (!letter && c != '-' && c != '_') {
-            return false;
+        if (!letter) {
+            if ((c != '-' && c != '_') || ++separators > 1 || i == 0 ||
+                i + 1 == text.size()) {
+                return false;
+            }
         }
     }
     return true;
@@ -264,6 +276,105 @@ bool valid_ports(i64 first, i64 last, discovery_range& out) {
     return true;
 }
 
+std::string trim_ascii_space(const std::string& text) {
+    std::size_t first = 0;
+    while (first < text.size() && (text[first] == ' ' || text[first] == '\t')) {
+        first++;
+    }
+    std::size_t last = text.size();
+    while (last > first && (text[last - 1] == ' ' || text[last - 1] == '\t')) {
+        last--;
+    }
+    return text.substr(first, last - first);
+}
+
+bool parse_ipv4_literal(const std::string& text, u32& out) {
+    if (text.empty() || text.size() > 15) {
+        return false;
+    }
+    u32 address = 0;
+    std::size_t pos = 0;
+    for (int part = 0; part < 4; part++) {
+        const std::size_t start = pos;
+        u32 value = 0;
+        while (pos < text.size() && text[pos] >= '0' && text[pos] <= '9') {
+            value = value * 10 + static_cast<u32>(text[pos] - '0');
+            if (value > 255) {
+                return false;
+            }
+            pos++;
+        }
+        if (pos == start || (pos - start > 1 && text[start] == '0')) {
+            return false;
+        }
+        address = (address << 8) | value;
+        if (part < 3) {
+            if (pos >= text.size() || text[pos] != '.') {
+                return false;
+            }
+            pos++;
+        }
+    }
+    const u32 first_octet = address >> 24;
+    if (pos != text.size() || first_octet == 0 || first_octet >= 224) {
+        return false;
+    }
+    out = address;
+    return true;
+}
+
+bool parse_peer_seeds(const std::vector<std::string>& values, std::vector<u32>& out,
+                      const char*& reason) {
+    std::vector<u32> parsed;
+    for (std::size_t i = 0; i < values.size(); i++) {
+        u32 address = 0;
+        if (!parse_ipv4_literal(trim_ascii_space(values[i]), address)) {
+            reason = "invalid address";
+            return false;
+        }
+        bool duplicate = false;
+        for (std::size_t k = 0; k < parsed.size(); k++) {
+            if (parsed[k] == address) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) {
+            if (parsed.size() >= max_peer_seeds) {
+                reason = "too many addresses";
+                return false;
+            }
+            parsed.push_back(address);
+        }
+    }
+    out = parsed;
+    reason = 0;
+    return true;
+}
+
+bool split_peer_seeds(const std::string& text, std::vector<std::string>& out) {
+    if (text.empty() || text.size() > max_peer_seed_text) {
+        return false;
+    }
+    std::vector<std::string> values;
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        const std::size_t comma = text.find(',', start);
+        const std::size_t end = comma == std::string::npos ? text.size() : comma;
+        const std::string value = trim_ascii_space(text.substr(start, end - start));
+        if (value.empty()) {
+            return false;
+        }
+        values.push_back(value);
+        if (comma == std::string::npos) {
+            break;
+        }
+        start = comma + 1;
+    }
+    out = values;
+    return true;
+}
+
 u64 clamp_bytes(i64 value, std::vector<config_diagnostic>& diagnostics, const char* source) {
     if (value < static_cast<i64>(min_max_bytes)) {
         add_diag(diagnostics, "trace_max_bytes", source, "below minimum", "clamped");
@@ -327,6 +438,25 @@ void reject_unsupported(const config_source& source, const char* key, const char
 
 } // namespace
 
+resolved_config_sources::resolved_config_sources()
+    : display_name(config_origin::unknown), trace_level(config_origin::unknown),
+      trace_max_bytes(config_origin::unknown), trace_max_rotated_files(config_origin::unknown),
+      discovery_ports(config_origin::unknown), peer_seeds(config_origin::unknown),
+      instance_label(config_origin::unknown), trace_dir(config_origin::unknown),
+      locale(config_origin::unknown), log_level(config_origin::unknown),
+      enable_lan(config_origin::unknown), enable_overlay(config_origin::unknown),
+      unlock_dlcs(config_origin::unknown) {}
+
+const char* config_origin_name(config_origin origin) {
+    switch (origin) {
+        case config_origin::default_value: return "default";
+        case config_origin::file: return "file";
+        case config_origin::environment: return "environment";
+        case config_origin::unknown: break;
+    }
+    return 0;
+}
+
 resolved_config resolve_config(const config_source& source, const config_defaults& defaults) {
     resolved_config config;
     config.data_dir = defaults.data_dir;
@@ -340,6 +470,19 @@ resolved_config resolve_config(const config_source& source, const config_default
     config.enable_lan = true;      // the peer mesh is the whole point; it is on unless turned off
     config.enable_overlay = false;
     config.unlock_dlcs = false;
+    config.sources.display_name = config_origin::default_value;
+    config.sources.trace_level = config_origin::default_value;
+    config.sources.trace_max_bytes = config_origin::default_value;
+    config.sources.trace_max_rotated_files = config_origin::default_value;
+    config.sources.discovery_ports = config_origin::default_value;
+    config.sources.peer_seeds = config_origin::default_value;
+    config.sources.instance_label = config_origin::default_value;
+    config.sources.trace_dir = config_origin::default_value;
+    config.sources.locale = config_origin::default_value;
+    config.sources.log_level = config_origin::default_value;
+    config.sources.enable_lan = config_origin::default_value;
+    config.sources.enable_overlay = config_origin::default_value;
+    config.sources.unlock_dlcs = config_origin::default_value;
 
     std::vector<config_diagnostic>& diagnostics = config.diagnostics;
     std::string raw;
@@ -382,25 +525,26 @@ resolved_config resolve_config(const config_source& source, const config_default
                 add_diag(diagnostics, "display_name", used, "exceeds length cap", "truncated");
             }
             config.display_name = bounded;
+            config.sources.display_name = origin_from_name(used);
         }
     }
 
     // trace_level.
     {
         trace_level level;
-        bool have = false;
+        const char* used = 0;
         if (env_value(source, "EOSR_TRACE", raw)) {
             if (parse_level(raw, level)) {
-                have = true;
+                used = "environment";
             } else {
                 add_diag(diagnostics, "trace_level", "environment", "unrecognized value", "ignored");
             }
         }
-        if (!have) {
+        if (used == 0) {
             const lookup found = source.file_string("trace_level", raw);
             if (found == lookup::ok) {
                 if (parse_level(raw, level)) {
-                    have = true;
+                    used = "file";
                 } else {
                     add_diag(diagnostics, "trace_level", "file", "unrecognized value", "ignored");
                 }
@@ -408,8 +552,9 @@ resolved_config resolve_config(const config_source& source, const config_default
                 add_diag(diagnostics, "trace_level", "file", "wrong type", "ignored");
             }
         }
-        if (have) {
+        if (used != 0) {
             config.level = level;
+            config.sources.trace_level = origin_from_name(used);
         }
     }
 
@@ -434,6 +579,7 @@ resolved_config resolve_config(const config_source& source, const config_default
         }
         if (used != 0) {
             config.trace_max_bytes = clamp_bytes(value, diagnostics, used);
+            config.sources.trace_max_bytes = origin_from_name(used);
         }
     }
 
@@ -459,29 +605,30 @@ resolved_config resolve_config(const config_source& source, const config_default
         }
         if (used != 0) {
             config.trace_max_rotated_files = clamp_rotated(value, diagnostics, used);
+            config.sources.trace_max_rotated_files = origin_from_name(used);
         }
     }
 
     // discovery_ports.
     {
         discovery_range range;
-        bool have = false;
+        const char* used = 0;
         if (env_value(source, "EOSR_DISCOVERY_PORTS", raw)) {
             i64 first;
             i64 last;
             if (parse_port_range(raw, first, last) && valid_ports(first, last, range)) {
-                have = true;
+                used = "environment";
             } else {
                 add_diag(diagnostics, "discovery_ports", "environment", "invalid range", "ignored");
             }
         }
-        if (!have) {
+        if (used == 0) {
             i64 first;
             i64 last;
             const lookup found = source.file_int_pair("discovery_ports", first, last);
             if (found == lookup::ok) {
                 if (valid_ports(first, last, range)) {
-                    have = true;
+                    used = "file";
                 } else {
                     add_diag(diagnostics, "discovery_ports", "file", "invalid range", "ignored");
                 }
@@ -489,8 +636,44 @@ resolved_config resolve_config(const config_source& source, const config_default
                 add_diag(diagnostics, "discovery_ports", "file", "wrong type", "ignored");
             }
         }
-        if (have) {
+        if (used != 0) {
             config.discovery_ports = range;
+            config.sources.discovery_ports = origin_from_name(used);
+        }
+    }
+
+    // Optional unicast bootstrap addresses. They only replace the broadcast discovery step; every
+    // connection still has to complete the same authenticated handshake before it becomes a peer.
+    {
+        const char* used = 0;
+        if (env_value(source, "EOSR_PEER_SEEDS", raw)) {
+            std::vector<std::string> values;
+            const char* reason = "invalid list";
+            if (split_peer_seeds(raw, values) &&
+                parse_peer_seeds(values, config.peer_seeds, reason)) {
+                used = "environment";
+            } else {
+                add_diag(diagnostics, "peer_seeds", "environment", reason, "ignored");
+            }
+        }
+        if (used == 0) {
+            std::vector<std::string> values;
+            const lookup found = source.file_string_array("peer_seeds", values);
+            if (found == lookup::ok) {
+                const char* reason = 0;
+                if (parse_peer_seeds(values, config.peer_seeds, reason)) {
+                    used = "file";
+                } else {
+                    add_diag(diagnostics, "peer_seeds", "file", reason, "ignored");
+                }
+            } else if (found == lookup::wrong_type) {
+                add_diag(diagnostics, "peer_seeds", "file", "wrong type", "ignored");
+            }
+        }
+        if (used == 0) {
+            config.peer_seeds.clear();
+        } else {
+            config.sources.peer_seeds = origin_from_name(used);
         }
     }
 
@@ -501,6 +684,7 @@ resolved_config resolve_config(const config_source& source, const config_default
             if (valid_label(raw)) {
                 config.instance_label = raw;
                 have = true;
+                config.sources.instance_label = config_origin::environment;
             } else {
                 add_diag(diagnostics, "instance_label", "environment", "not a path-safe slug",
                          "ignored");
@@ -511,6 +695,7 @@ resolved_config resolve_config(const config_source& source, const config_default
             if (found == lookup::ok && !raw.empty()) {
                 if (valid_label(raw)) {
                     config.instance_label = raw;
+                    config.sources.instance_label = config_origin::file;
                 } else {
                     add_diag(diagnostics, "instance_label", "file", "not a path-safe slug", "ignored");
                 }
@@ -526,24 +711,31 @@ resolved_config resolve_config(const config_source& source, const config_default
         const char* used = 0;
         std::string candidate;
         if (env_value(source, "EOSR_TRACE_DIR", raw)) {
-            candidate = raw;
-            used = "environment";
-        } else {
+            const char* bad = path_reject_reason(raw);
+            if (bad == 0) {
+                candidate = raw;
+                used = "environment";
+            } else {
+                add_diag(diagnostics, "trace_dir", "environment", bad, "ignored");
+            }
+        }
+        if (used == 0) {
             const lookup found = source.file_string("trace_dir", raw);
             if (found == lookup::ok && !raw.empty()) {
-                candidate = raw;
-                used = "file";
+                const char* bad = path_reject_reason(raw);
+                if (bad == 0) {
+                    candidate = raw;
+                    used = "file";
+                } else {
+                    add_diag(diagnostics, "trace_dir", "file", bad, "ignored");
+                }
             } else if (found == lookup::wrong_type) {
                 add_diag(diagnostics, "trace_dir", "file", "wrong type", "ignored");
             }
         }
         if (used != 0) {
-            const char* bad = path_reject_reason(candidate);
-            if (bad == 0) {
-                dir = candidate;
-            } else {
-                add_diag(diagnostics, "trace_dir", used, bad, "ignored");
-            }
+            dir = candidate;
+            config.sources.trace_dir = origin_from_name(used);
         }
         config.trace_dir =
             platform::path_is_absolute(dir) ? dir : (config.data_dir + "/" + dir);
@@ -565,26 +757,32 @@ resolved_config resolve_config(const config_source& source, const config_default
         const char* used = 0;
         std::string candidate;
         if (env_value(source, "EOSR_LOCALE", raw)) {
-            candidate = raw;
-            used = "environment";
-        } else {
+            if (valid_locale(raw)) {
+                candidate = raw;
+                used = "environment";
+            } else {
+                add_diag(diagnostics, "locale", "environment", "not a language tag", "ignored");
+            }
+        }
+        if (used == 0) {
             lookup found = source.file_string("locale", raw);
             if (found == lookup::missing) {
                 found = source.file_string("language", raw);
             }
             if (found == lookup::ok && !raw.empty()) {
-                candidate = raw;
-                used = "file";
+                if (valid_locale(raw)) {
+                    candidate = raw;
+                    used = "file";
+                } else {
+                    add_diag(diagnostics, "locale", "file", "not a language tag", "ignored");
+                }
             } else if (found == lookup::wrong_type) {
                 add_diag(diagnostics, "locale", "file", "wrong type", "ignored");
             }
         }
         if (used != 0) {
-            if (valid_locale(candidate)) {
-                config.locale = candidate;
-            } else {
-                add_diag(diagnostics, "locale", used, "not a language tag", "ignored");
-            }
+            config.locale = candidate;
+            config.sources.locale = origin_from_name(used);
         }
     }
 
@@ -593,33 +791,46 @@ resolved_config resolve_config(const config_source& source, const config_default
         const char* used = 0;
         std::string candidate;
         if (env_value(source, "EOSR_LOG_LEVEL", raw)) {
-            candidate = raw;
-            used = "environment";
-        } else {
+            log_level level = log_level::off;
+            if (parse_log_level(raw, level)) {
+                candidate = raw;
+                used = "environment";
+            } else {
+                add_diag(diagnostics, "log_level", "environment", "unrecognized value", "ignored");
+            }
+        }
+        if (used == 0) {
             const lookup found = source.file_string("log_level", raw);
             if (found == lookup::ok && !raw.empty()) {
-                candidate = raw;
-                used = "file";
+                log_level level = log_level::off;
+                if (parse_log_level(raw, level)) {
+                    candidate = raw;
+                    used = "file";
+                } else {
+                    add_diag(diagnostics, "log_level", "file", "unrecognized value", "ignored");
+                }
             } else if (found == lookup::wrong_type) {
                 add_diag(diagnostics, "log_level", "file", "wrong type", "ignored");
             }
         }
         if (used != 0) {
             log_level level = log_level::off;
-            if (parse_log_level(candidate, level)) {
-                config.logging = level;
-            } else {
-                add_diag(diagnostics, "log_level", used, "unrecognized value", "ignored");
-            }
+            parse_log_level(candidate, level);
+            config.logging = level;
+            config.sources.log_level = origin_from_name(used);
         }
     }
 
-    resolve_flag(source, "EOSR_ENABLE_LAN", "enable_lan", diagnostics, config.enable_lan);
+    const char* lan_source =
+        resolve_flag(source, "EOSR_ENABLE_LAN", "enable_lan", diagnostics, config.enable_lan);
     const char* overlay_source =
         resolve_flag(source, "EOSR_ENABLE_OVERLAY", "enable_overlay", diagnostics,
                      config.enable_overlay);
     const char* dlcs_source =
         resolve_flag(source, "EOSR_UNLOCK_DLCS", "unlock_dlcs", diagnostics, config.unlock_dlcs);
+    if (lan_source != 0) config.sources.enable_lan = origin_from_name(lan_source);
+    if (overlay_source != 0) config.sources.enable_overlay = origin_from_name(overlay_source);
+    if (dlcs_source != 0) config.sources.unlock_dlcs = origin_from_name(dlcs_source);
 
     // Options we accept so an ecosystem config loads, but cannot honour. Identity is derived from the
     // profile key and recomputed by every peer from the key the handshake proves (wiki/developers/internals/adr/0001), so an

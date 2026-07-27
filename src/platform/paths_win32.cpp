@@ -5,6 +5,7 @@
 #include <cstring>
 #include <limits>
 #include <sstream>
+#include <vector>
 
 #include <windows.h>
 
@@ -14,6 +15,7 @@ namespace platform {
 namespace {
 
 const char* const app_directory_name = "eos-reimagined";
+const char module_anchor = 0;
 
 std::string from_env(const char* name) {
     const char* value = std::getenv(name);
@@ -78,6 +80,10 @@ std::string user_data_directory() {
     if (!override_directory.empty()) {
         return override_directory;
     }
+    return default_user_data_directory();
+}
+
+std::string default_user_data_directory() {
     std::string base = from_env("LOCALAPPDATA");
     if (base.empty()) {
         base = from_env("APPDATA");
@@ -184,6 +190,42 @@ bool path_is_absolute(const std::string& path) {
     const char c = path[0];
     return path.size() >= 3 && path[1] == ':' && (path[2] == '/' || path[2] == '\\') &&
            ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
+}
+
+bool path_is_fully_qualified(const std::string& path) {
+    if (path.size() >= 3 && path[1] == ':' && (path[2] == '/' || path[2] == '\\')) {
+        const char drive = path[0];
+        return (drive >= 'A' && drive <= 'Z') || (drive >= 'a' && drive <= 'z');
+    }
+    // UNC and extended-length paths both start with two separators and are independent of the
+    // process's current drive. Schema validation need not interpret their components further.
+    return path.size() >= 3 && (path[0] == '/' || path[0] == '\\') &&
+           (path[1] == '/' || path[1] == '\\');
+}
+
+bool loaded_module_path(std::string& out) {
+    out.clear();
+    HMODULE module = 0;
+    const DWORD flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
+    if (!GetModuleHandleExA(flags, reinterpret_cast<LPCSTR>(&module_anchor), &module)) {
+        return false;
+    }
+
+    std::vector<char> buffer(MAX_PATH);
+    const std::size_t max_path = 32768;
+    while (buffer.size() <= max_path) {
+        const DWORD count = GetModuleFileNameA(module, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (count == 0) {
+            return false;
+        }
+        if (count < buffer.size() - 1) {
+            out.assign(buffer.data(), count);
+            return path_is_fully_qualified(out);
+        }
+        buffer.resize(buffer.size() * 2);
+    }
+    return false;
 }
 
 bool append_file(const std::string& path, const std::string& data) {
